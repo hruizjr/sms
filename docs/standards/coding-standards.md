@@ -5,8 +5,9 @@
 | Draft — pending owner review | Project owner | 2026-11-24 |
 
 This document expands the rules in [`AGENTS.md`](../../AGENTS.md) §7–§10 with rationale and examples.
-**`AGENTS.md` is normative; this document explains.** If they conflict, follow `AGENTS.md` and report the
-conflict.
+The MUST / MUST NOT rules stated in `AGENTS.md` are project-wide non-negotiable rules; this document is
+authoritative for the language conventions and examples that elaborate them, as defined in [`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts).
+It does not grant permissions, widen task scope, or override restrictions in `AGENTS.md`. If it genuinely conflicts with another document, stop the affected work, report the conflict, and request owner resolution ([`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts)).
 
 Examples are illustrative only — they are not application code and do not define real APIs.
 
@@ -153,6 +154,13 @@ func (db *DB) InTx(ctx context.Context, fn func(tx Tx) error) error // commits i
   conditional `UPDATE ... WHERE balance >= $1 RETURNING ...`.
 - Batch inserts for high-volume paths; avoid per-row round trips in loops.
 
+### Money
+
+- No `float32`/`float64` anywhere in monetary paths, including intermediate calculations and tests.
+- The monetary type and scale are **not yet decided** (ADR-0019). Until accepted, do not implement monetary
+  types; when accepted, all amounts use one shared type with explicit currency and scale, and one shared
+  rounding function. Rules: [financial integrity](../architecture/financial-integrity.md).
+
 ### Logging
 
 ```go
@@ -250,6 +258,9 @@ export function Button({ variant = 'primary', size = 'md', loading = false, ...p
 - Named exports; one component per file; file name = component name.
 - Props are explicit types; avoid spreading unknown props onto DOM elements without typing.
 - Keep components presentational where possible; put data fetching and logic in hooks.
+- Complex interactive widgets (dialogs, menus, popovers, comboboxes) follow the component strategy in
+  ADR-0013: a headless accessible primitives library may be used once the owner approves one (D-140);
+  styling is always Tailwind. Until then, do not add such a library.
 
 ### Tailwind CSS and design tokens
 
@@ -305,7 +316,10 @@ show what succeeded and what failed.
 ### Formatting conventions
 
 - Phone numbers displayed in a readable local format; stored/sent as E.164.
-- Money: format from integer minor units with `Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' })`.
+- Money: display amounts provided by the server; never compute with JavaScript numbers. The API's
+  monetary format (string with documented scale) is defined by ADR-0019 (open); formatting for display
+  (e.g. with `Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' })`) must not lose
+  precision — convert from the exact string representation, not via floating point.
 - Dates: display in `Asia/Manila` unless the user chooses otherwise; show timezone in reports/exports.
 
 ### Accessibility checklist (per component/page)

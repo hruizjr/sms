@@ -2,9 +2,46 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — pending owner approval (ADR-0017) | Project owner | 2026-11-24 |
+| Draft — pending owner approval (ADR-0017) | Project owner | 2026-11-24 (current state added) |
 
 A deliberately simple, trunk-based workflow for **one human owner and multiple AI agents**.
+
+## 0. Current repository state and required owner actions
+
+**As of 2026-11-24, the target workflow below is not yet in place.**
+
+| Item | Current state |
+| ---- | ------------- |
+| `main` branch | **Does not exist** |
+| Default branch | `claude/ecstatic-gates-ji0o5b` (it became the default because it was the first branch pushed to an empty repository) |
+| Branch protection | **Not configured** |
+| Open documentation PRs | Target `claude/ecstatic-gates-ji0o5b`, because no `main` exists |
+
+AI agents MUST NOT create `main`, change the default branch, or change repository settings. These are
+**owner actions**:
+
+1. **Review and merge** any open Phase 1 documentation PRs into `claude/ecstatic-gates-ji0o5b`, so the
+   history to be promoted is complete.
+2. **Create `main`** from that branch's latest commit — either on GitHub (branch selector → type `main` →
+   "Create branch: main from claude/ecstatic-gates-ji0o5b"), or locally:
+
+   ```bash
+   git fetch origin
+   ```
+
+   ```bash
+   git push origin origin/claude/ecstatic-gates-ji0o5b:refs/heads/main
+   ```
+
+3. **Set `main` as the default branch**: repository Settings → General → Default branch (GitHub menu
+   names may change over time).
+4. **Configure branch protection** for `main` as described in §6 (Settings → Rules/Rulesets or Branches).
+5. **Retarget** any still-open PRs to `main` (PR page → Edit → base branch).
+6. Optionally, delete `claude/ecstatic-gates-ji0o5b` once nothing depends on it.
+7. From then on, **every task branch is created from the latest `main`**, and `AGENTS.md` §14 "Current state"
+   and this §0 are updated to reflect it (a small docs task).
+
+Until these actions are done, agents branch from the current default branch and target PRs at it.
 
 ## 1. Branches
 
@@ -78,7 +115,8 @@ Commits must not contain secrets, generated binaries, or unrelated changes.
 
 ## 6. Branch protection settings for `main` (recommended)
 
-Configure in GitHub → Settings → Branches (or Rulesets) once the repository has a `main` branch:
+Configure in GitHub → Settings → Branches (or Rulesets) once the repository has a `main` branch
+(see §0 — not yet configured):
 
 | Setting | Recommendation | Why |
 | ------- | -------------- | --- |

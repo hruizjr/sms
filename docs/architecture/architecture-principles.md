@@ -46,6 +46,8 @@ belongs to the API process or a separate ingestion service is an architecture-ph
 - Each telco adapter translates between our internal model and that telco's protocol.
 - Adapter differences (encoding, DLR format, error codes, TPS) are captured in the adapter and its
   configuration — backed by telco documentation, never assumed.
+- Adapters declare **capabilities** (e.g. receipt support, per-segment receipts, status query, provider-side
+  duplicate detection); core logic consults capabilities, never provider names (ADR-0012).
 - A **simulator adapter** behaves like a configurable telco (latency, failures, DLR delays) so the whole
   system is testable without telco access.
 - All adapters must pass one shared **provider contract test suite**.
@@ -53,8 +55,10 @@ belongs to the API process or a separate ingestion service is an architecture-ph
 ## P4. The database is the source of truth; events are derived
 
 - PostgreSQL holds the authoritative state of tenants, messages, and money.
-- State changes and the events that announce them are written in the same transaction (transactional
-  outbox). Consumers process events idempotently.
+- A state change and the outbox record announcing it are written in the same transaction (transactional
+  outbox, ADR-0020). Rolled-back changes publish nothing; committed events are published **at least once**
+  and may be published more than once, so consumers process events idempotently. Details:
+  [messaging reliability §2](messaging-reliability.md#2-internal-events-and-the-transactional-outbox).
 - Caches and analytics stores are derived and rebuildable; they are never authoritative for money or
   message state.
 
@@ -63,12 +67,17 @@ belongs to the API process or a separate ingestion service is an architecture-ph
 - Any message or event may be processed more than once; every handler must be safe to repeat.
 - Exactly-once **SMS delivery cannot be guaranteed**: if a telco submission times out, we cannot know
   whether the telco accepted it. Policies for these ambiguous cases are explicit per provider.
+- API acceptance, provider acknowledgment, and final receipts are different milestones; a missing receipt
+  is an **uncertain** outcome, not proof of non-delivery
+  ([messaging reliability §3–§5](messaging-reliability.md#3-message-lifecycle-milestones)).
 - Reconciliation jobs compare independent records (our states vs. DLRs; our ledger vs. telco CDRs) and
   surface discrepancies.
 
 ## P6. Money is exact, append-only, and auditable
 
-- Integer minor units, never floating point.
+- Exact arithmetic only, never floating point. The representation (scaled integer vs. exact decimal),
+  scale, and rounding rules are **open** until real rates and the pricing model are known (ADR-0019,
+  [financial integrity](financial-integrity.md)).
 - Every balance change is a ledger entry linked to its cause (message, top-up, admin adjustment).
 - Concurrency control at the database level prevents overspending under parallel requests.
 - Balances are derivable from the ledger; any cached balance is verifiable against it.
@@ -138,3 +147,6 @@ belongs to the API process or a separate ingestion service is an architecture-ph
 | AQ-8 | High availability and disaster recovery targets (RPO/RTO). | Business SLAs, budget |
 | AQ-9 | How are rate limits coordinated across multiple dispatcher instances? | Instance count, telco limits |
 | AQ-10 | Billing settlement point (submission vs. delivery) and its effect on the ledger flow. | Business decision D-080 |
+| AQ-11 | Should PostgreSQL Row-Level Security be adopted, given pooling and performance? | RLS evaluation (ADR-0010) |
+| AQ-12 | Monetary representation, scale, and rounding. | Actual rates and pricing model (ADR-0019) |
+| AQ-13 | Policy for uncertain submissions and `UNKNOWN` messages. | Business decisions D-095, D-096; telco capabilities |

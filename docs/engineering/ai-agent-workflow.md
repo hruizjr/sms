@@ -51,7 +51,9 @@ For tasks touching hot files, migrations, contracts, billing, security, or provi
 the plan before implementation.
 
 ### Step 4 — Implement (agent)
-- Create a branch from the latest `main` (naming in [git-workflow.md](git-workflow.md)).
+- Create a branch from the latest `main` (naming in [git-workflow.md](git-workflow.md)). Until `main`
+  exists, branch from the repository's current default branch
+  ([git-workflow §0](git-workflow.md#0-current-repository-state-and-required-owner-actions)).
 - Make only the changes in scope. Commit in logical steps with Conventional Commit messages.
 - Update documentation affected by the change in the same branch.
 - Never touch files outside the declared scope; report needed changes elsewhere instead.
@@ -97,7 +99,9 @@ Parallel work is safe when tasks do not overlap. Rules:
 - Approve or merge their own PRs, or push to `main`.
 - Mark ADRs or discovery items as accepted/confirmed.
 - Add dependencies, infrastructure, or services without approval.
-- Invent telco specifications, credentials, or regulatory facts.
+- Invent telco specifications, commercial terms, credentials, or regulatory facts.
+- Break the critical correctness rules in `AGENTS.md` §2.1 (no exactly-once claims, no blind retries of
+  ambiguous submissions, receipts treated as unreliable, no floating-point money, append-only audit history).
 - Use real personal data or send real messages.
 - Disable, skip, or weaken tests or checks to get a green build.
 - Claim untested work is working.
@@ -108,8 +112,9 @@ Parallel work is safe when tasks do not overlap. Rules:
 | --------- | ------------ |
 | Requirement ambiguous | Ask the owner; propose options with a recommendation |
 | Telco behaviour unknown | Add `TODO(telco-confirm)`, record in the telco checklist, use the simulator |
-| Docs conflict with each other | Follow `AGENTS.md`; report the conflict |
+| Docs genuinely conflict with each other | Stop the affected work; report both documents, sections, and wording; request owner resolution ([`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts)) |
 | Task needs a decision reserved for the owner | Stop; write a Proposed ADR or question |
+| Implementation depends on an open discovery item or a Proposed ADR (e.g. monetary scale, idempotency retention, uncertain-status policy) | Stop and ask for owner approval; do not pick a value |
 | Found a bug outside scope | Report it in the completion report; do not fix it in this PR |
 | Tests fail for reasons outside scope | Report with output; do not "fix" unrelated code silently |
 

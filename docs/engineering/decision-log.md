@@ -10,6 +10,12 @@ An **Architecture Decision Record (ADR)** is a short record of one significant d
 faced, the options, what we chose, and the consequences. ADRs let future AI agents and humans understand
 *why* the system is the way it is, and stop them from re-arguing or silently reversing decisions.
 
+**Authority** ([`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts)): **Accepted** ADRs
+are authoritative for approved architectural decisions. **Proposed** ADRs are the current direction but are
+not binding. No ADR grants permissions or widens task scope beyond `AGENTS.md`. If an ADR genuinely
+conflicts with another document, stop the affected work, report the conflict, and request owner
+resolution.
+
 ## 2. Process
 
 1. **Propose:** anyone (agent or owner) adds an ADR using the template below with status `Proposed`.
@@ -57,6 +63,8 @@ and keep a one-line entry in the index.
 
 ## 4. Index
 
+**Every ADR is `Proposed`. None has been accepted by the project owner.**
+
 | ADR | Title | Status |
 | --- | ----- | ------ |
 | 0001 | Record architecture decisions as ADRs | Proposed |
@@ -64,22 +72,54 @@ and keep a one-line entry in the index.
 | 0003 | Modular monolith with multiple executables | Proposed |
 | 0004 | HTTP router: Chi vs. standard library | Proposed |
 | 0005 | PostgreSQL as system of record | Proposed |
-| 0006 | Message broker (Kafka/Redpanda) — defer; transactional outbox now | Proposed |
-| 0007 | Redis — defer until a specific need | Proposed |
-| 0008 | ClickHouse — defer until analytics volume requires it | Proposed |
+| 0006 | Message broker (Kafka/Redpanda) — defer, with reconsideration criteria | Proposed (revised 2026-11-24) |
+| 0007 | Redis — defer, with reconsideration criteria | Proposed (revised 2026-11-24) |
+| 0008 | ClickHouse — defer, with reconsideration criteria | Proposed (revised 2026-11-24) |
 | 0009 | Logical control/data plane separation | Proposed |
-| 0010 | Multi-tenancy: shared schema with `tenant_id` + RLS defense-in-depth | Proposed |
-| 0011 | Credit ledger model | Proposed |
-| 0012 | Provider abstraction and simulator adapter | Proposed |
-| 0013 | Frontend application structure and supporting libraries | Proposed |
-| 0014 | Database access and migrations tooling | Proposed |
-| 0015 | API contracts: OpenAPI-first | Proposed |
+| 0010 | Multi-tenancy: shared schema with `tenant_id`; RLS as evaluated defense-in-depth | Proposed (revised 2026-11-24) |
+| 0011 | Credit ledger model | Proposed (revised 2026-11-24) |
+| 0012 | Provider abstraction, capabilities, and simulator adapter | Proposed (revised 2026-11-24) |
+| 0013 | Frontend application structure and component strategy | Proposed (revised 2026-11-24) |
+| 0014 | Database access and migration tooling | Proposed (revised 2026-11-24) |
+| 0015 | API contracts: OpenAPI-first | Proposed (revised 2026-11-24) |
 | 0016 | Structured logging with `log/slog` | Proposed |
-| 0017 | Git workflow for one owner + multiple AI agents | Proposed |
+| 0017 | Git workflow for one owner + multiple AI agents | Proposed (revised 2026-11-24) |
+| 0018 | API idempotency contract | Proposed (new 2026-11-24) |
+| 0019 | Monetary representation, scale, and rounding | Proposed — **open** (new 2026-11-24) |
+| 0020 | Internal event delivery: transactional outbox, at-least-once | Proposed (new 2026-11-24) |
+| 0021 | Message status model and uncertain outcomes | Proposed (new 2026-11-24) |
+
+## 5. Review summary (2026-11-24)
+
+This table is a **reviewer recommendation to help the owner decide**. It does not change any status.
+
+| ADR | Sufficiently defined? | Depends on external (telco / regulatory / commercial) info? | Recommendation | Outstanding conditions |
+| --- | --------------------- | ----------------------------------------------------------- | -------------- | ---------------------- |
+| 0001 | Yes | No | Can be accepted now | — |
+| 0002 | Yes | No | Can be accepted now | Go module path confirmed at scaffolding |
+| 0003 | Yes | No | Can be accepted now | Final executable list in architecture phase |
+| 0004 | Yes | No | Can be accepted now | Verify Chi maintenance status at scaffolding |
+| 0005 | Yes | No (hosting affects operations, not the choice) | Can be accepted now | Version and HA/DR targets later |
+| 0006 | Yes (as a deferral) | Traffic data for the eventual broker choice | Accept the **deferral and criteria** now; broker choice stays open | Measurements per criteria |
+| 0007 | Yes (as a deferral) | No | Accept the deferral now | — |
+| 0008 | Yes (as a deferral) | Reporting requirements | Accept the deferral now | — |
+| 0009 | Yes | No | Can be accepted now | Availability targets refine physical separation |
+| 0010 | Partly — RLS needs evaluation | No | Keep Proposed; decide after the RLS evaluation in Phase 3 | RLS evaluation (pooling, transaction-scoped context, roles, performance) |
+| 0011 | Structure yes; flows depend on business rules | **Commercial** (billing basis, credit unit, refunds) | Keep Proposed until D-080–D-084 decided | Phase 2 business decisions; ADR-0019 |
+| 0012 | Principle yes; interface shape no | **Telco** specifications | Accept the **principle** (abstraction + simulator + capabilities) now; interface shape after a telco spec | Telco technical documentation |
+| 0013 | Options defined; choices open | No | Keep Proposed until owner decides D-091 and D-140 | Owner decisions before Phase 3 |
+| 0014 | Direction yes; tool choice open | No | Keep Proposed; accept at Phase 3 start after verifying tool maintenance | Dependency approval |
+| 0015 | Yes | No | Can be accepted now | Generator tools at scaffolding |
+| 0016 | Yes | No | Can be accepted now | — |
+| 0017 | Yes | No | Can be accepted now | Owner actions in git-workflow §0 |
+| 0018 | Decision-ready; options listed | Client retry behaviour; volume | Keep Proposed; decide D-094 in Phase 2 | D-094a–e |
+| 0019 | Options defined; **no selection** | **Commercial** (actual rates, pricing model) | Keep Proposed (open) | D-081, D-092, D-093 |
+| 0020 | Yes | No | Can be accepted now | Dedupe retention set when broker/queue chosen |
+| 0021 | States defined; policies open | **Commercial and telco** | Keep Proposed until D-095–D-099 decided | Business decisions; telco receipt behaviour |
 
 ---
 
-## 5. Records
+## 6. Records
 
 ### ADR-0001: Record architecture decisions as ADRs
 
@@ -200,71 +240,103 @@ this). **Missing information** — Hosting decision; version to pin; HA/DR targe
 
 ---
 
-### ADR-0006: Message broker — defer Kafka/Redpanda; use transactional outbox now
+### ADR-0006: Message broker — defer Kafka/Redpanda, with reconsideration criteria
 
-- **Status:** Proposed · **Date proposed:** 2026-11-24
+- **Status:** Proposed · **Date proposed:** 2026-11-24 · **Revised:** 2026-11-24 (outbox semantics moved
+  to ADR-0020; reconsideration criteria added)
 
-**Context** — The data plane needs durable buffering between acceptance and dispatch, and between DLR
-receipt and processing. Kafka and Redpanda are candidates. Traffic volume is unverified.
+**Context** — The data plane needs durable buffering between acceptance and dispatch, and between receipt
+ingestion and processing. Kafka and Redpanda are candidates. Traffic volume is unverified.
 
 **Options considered**
 | Option | Advantages | Disadvantages |
 | ------ | ---------- | ------------- |
 | A. Kafka | Industry standard; very high throughput; durable replicated log; large ecosystem | Operationally demanding (clusters, partitions, upgrades, monitoring); significant for a small team |
-| B. Redpanda | Kafka-API compatible; single binary; simpler operations | Smaller community; licensing terms should be reviewed; vendor dependence |
-| C. PostgreSQL-backed queue (outbox table + workers using `FOR UPDATE SKIP LOCKED`) | No new infrastructure; transactional with business data | Throughput ceiling lower than a log broker; table bloat must be managed |
+| B. Redpanda | Kafka-API compatible; single binary; simpler operations | Smaller community; licensing terms must be reviewed; vendor dependence |
+| C. PostgreSQL-backed queue (outbox table + workers claiming rows with `FOR UPDATE SKIP LOCKED`) | No new infrastructure; transactional with business data | Lower throughput ceiling than a log broker; table bloat and vacuum must be managed |
 | D. Managed cloud queue/stream | No cluster operations | Cloud lock-in; depends on hosting decision |
 | E. NATS JetStream / RabbitMQ | Simpler than Kafka for queues | Not in owner's preferences; different semantics |
 
-**Recommendation** — Start with **C** for the first messaging milestones, behind an internal
-publisher/consumer interface, with the transactional outbox pattern (needed regardless of broker).
-Choose a Kafka-API broker (A or B, or a managed Kafka-compatible service) when verified throughput,
-retention, or fan-out needs exceed what C handles — decided by load tests and traffic data. Because both
-A and B speak the Kafka protocol, client code would work with either.
+**Recommendation** — Start with **C** for early messaging milestones, behind an internal publisher/consumer
+interface, using the transactional outbox (ADR-0020, needed regardless of broker). Because A and B both
+speak the Kafka protocol, client code would work with either if a broker is later adopted.
 
-**Consequences** — Fewer moving parts early; a migration step later if a broker is adopted (mitigated by
-the interface). Load tests must establish the PostgreSQL queue's ceiling.
+**Reconsideration criteria (evidence, not arbitrary thresholds).** Reopen this decision when any of the
+following is **measured** against **verified** requirements and service-level objectives (SLOs) — the
+numeric targets come from the traffic discovery and SLOs once they are set, not from this ADR:
+1. Load tests show the PostgreSQL-backed queue cannot sustain the verified peak rate with agreed headroom
+   while keeping database utilization within agreed limits.
+2. Queue lag (age of the oldest unprocessed item) exceeds the latency objective (e.g. for OTPs) under
+   verified load, and tuning (batching, indexing, partitioning, more workers) has been tried.
+3. Queue-table churn (bloat, vacuum, lock contention) measurably degrades the transactional workload.
+4. Approved requirements need capabilities a log broker provides natively: multiple independent consumer
+   groups, long event retention, or replay of history (e.g. for an analytics pipeline).
+5. Operational capacity exists to run a broker (staffing, monitoring) or a managed Kafka-compatible service
+   is available in the chosen hosting.
 
-**Operational cost** — C: low. A: high. B: moderate. **Missing information** — Peak TPS, retention needs,
-number of consumers, hosting model, ops staffing.
+**Consequences** — Fewer moving parts early; a migration step later if a broker is adopted (mitigated by the
+interface). Load tests must establish the PostgreSQL queue's measured ceiling.
+
+**Operational cost** — C: low. A: high. B: moderate. **Missing information** — Peak rate, retention needs,
+number of consumers, hosting model, ops staffing, SLOs.
 
 ---
 
-### ADR-0007: Redis — defer until a specific need
+### ADR-0007: Redis — defer, with reconsideration criteria
 
-- **Status:** Proposed · **Date proposed:** 2026-11-24
+- **Status:** Proposed · **Date proposed:** 2026-11-24 · **Revised:** 2026-11-24 (criteria added)
 
 **Context** — Redis is proposed for caching and short-lived coordination (e.g. distributed rate limiting).
 
 **Options considered**
 | Option | Advantages | Disadvantages |
 | ------ | ---------- | ------------- |
-| A. Introduce Redis now | Ready when needed | Another system to secure, monitor, back up; temptation to store authoritative data in it |
-| B. Introduce when a concrete need arises (e.g. cross-instance rate limiting, hot-path caching measured as necessary) | No premature complexity | Must be added later |
+| A. Introduce Redis now | Ready when needed | Another system to secure, monitor, and operate; temptation to store authoritative data in it |
+| B. Introduce when a concrete, measured need arises | No premature complexity | Must be added later |
 
-**Recommendation** — B. When introduced, Redis MUST NOT be the source of truth for credits, balances,
-idempotency records required for billing correctness, or message state.
+**Recommendation** — B.
 
-**Operational cost** — Moderate when introduced. **Missing information** — Number of dispatcher instances,
-rate-limit coordination design (AQ-9).
+**Reconsideration criteria** — Reopen when one of these is measured or required:
+1. Rate limits must be shared across several dispatcher or API instances (e.g. one telco throughput limit
+   shared by multiple processes), and a database-based or single-owner approach has been shown inadequate
+   (accuracy, latency, or load).
+2. Profiling shows hot, repeated reads causing measurable database load or latency after query and index
+   optimization, and an in-process cache is insufficient (e.g. because of multiple instances needing
+   consistent invalidation).
+3. A specific approved feature needs short-lived shared state with expiry that PostgreSQL serves poorly.
+
+**Constraints if introduced** — Redis MUST NOT be the source of truth for credits, balances, ledger
+entries, idempotency records required for correctness (ADR-0018), or message state. Losing Redis data must
+never cause financial or message-state errors.
+
+**Operational cost** — Moderate when introduced. **Missing information** — Number of instances; rate-limit
+coordination design (architecture question AQ-9).
 
 ---
 
-### ADR-0008: ClickHouse — defer until analytics volume requires it
+### ADR-0008: ClickHouse — defer, with reconsideration criteria
 
-- **Status:** Proposed · **Date proposed:** 2026-11-24
+- **Status:** Proposed · **Date proposed:** 2026-11-24 · **Revised:** 2026-11-24 (criteria added)
 
-**Context** — ClickHouse is excellent for large-scale analytical queries. Reporting requirements and
-volumes are unknown.
+**Context** — ClickHouse is strong for large-scale analytical queries. Reporting requirements and volumes
+are unknown.
 
 **Options considered**
 | Option | Advantages | Disadvantages |
 | ------ | ---------- | ------------- |
-| A. ClickHouse from the start | Fast analytics at scale | Data pipeline, second store, consistency questions, ops cost |
-| B. PostgreSQL with pre-aggregated reporting tables first | Simple; consistent | May not scale to very large history |
+| A. ClickHouse from the start | Fast analytics at scale | Data pipeline, second store, consistency questions, operational cost |
+| B. PostgreSQL with pre-aggregated reporting tables first; a read replica for reporting as an intermediate step | Simple; consistent | May not scale to very large history or ad hoc analysis |
 
-**Recommendation** — B initially; adopt A when reporting volume or query latency, measured against verified
-requirements, demands it.
+**Recommendation** — B initially.
+
+**Reconsideration criteria** — Reopen when one of these is measured or required:
+1. Reporting queries miss their approved latency objectives after aggregation tables, partitioning, and
+   indexing have been applied.
+2. Reporting load measurably degrades the transactional workload even with a read replica.
+3. Approved analytics requirements need ad hoc queries over long histories at a volume PostgreSQL cannot
+   serve within objectives (requires D-072 and D-073 answers).
+
+ClickHouse, if adopted, holds **derived** data only; PostgreSQL remains authoritative.
 
 **Operational cost** — A: moderate to high. **Missing information** — Reporting requirements (D-072),
 retention (D-073), volumes (D-060).
@@ -291,125 +363,194 @@ databases is a later, evidence-based decision.
 
 ---
 
-### ADR-0010: Multi-tenancy — shared schema with `tenant_id` plus Row-Level Security
+### ADR-0010: Multi-tenancy — shared schema with `tenant_id`; RLS as evaluated defense-in-depth
 
-- **Status:** Proposed · **Date proposed:** 2026-11-24
+- **Status:** Proposed · **Date proposed:** 2026-11-24 · **Revised:** 2026-11-24 (RLS role and evaluation
+  requirements clarified)
 
 **Context** — Many tenants, strict isolation, potentially large data volume.
 
 **Options considered**
 | Option | Advantages | Disadvantages |
 | ------ | ---------- | ------------- |
-| A. Shared tables with `tenant_id` column, enforced in application | Simple; scales to many tenants; easy cross-tenant admin reporting | One missed filter leaks data |
-| B. A + PostgreSQL Row-Level Security as defense-in-depth | A database-level backstop against missed filters | Requires setting tenant context per connection/transaction; must design admin and background-job access; some performance consideration |
-| C. Schema per tenant | Stronger separation | Migrations × tenants; operational burden grows with tenant count |
-| D. Database per tenant | Strongest isolation | Expensive; complex; only for special customers |
+| A. Shared tables with `tenant_id`, enforced in application | Simple; scales to many tenants; easy cross-tenant admin reporting | One missed filter leaks data |
+| B. A + PostgreSQL Row-Level Security (RLS) as defense-in-depth | Database-level backstop against missed tenant filters | Tenant context must be set safely per transaction; admin and background access must be designed; performance must be measured |
+| C. Schema per tenant | Stronger separation | Migrations multiplied by tenants; operational burden grows |
+| D. Database per tenant | Strongest isolation | Expensive and complex; only for special contractual cases |
 
-**Recommendation** — B for control-plane tenant data. Evaluate RLS for high-volume data-plane tables in the
-architecture phase (performance testing). Keep D available as a premium/government option only if a
-customer contract requires it.
+**Recommendation** — A as the baseline for all tenant data, with B **adopted only after evaluation** (Phase 3
+spike). D remains an option only if a customer contract requires dedicated infrastructure.
 
-**Operational cost** — Low to moderate. **Missing information** — Whether any customers require dedicated
-infrastructure; sub-account/reseller hierarchy (D-064).
+**What RLS is and is not**
+- RLS restricts **which rows** a database session can see or change. It is **not a substitute for
+  application authorization**: it does not know user roles or permissions, which actions are allowed, or
+  business rules. Application-level tenant scoping and permission checks remain mandatory with or without RLS.
+- RLS protects only if the database role used by the application is actually subject to it. PostgreSQL
+  documentation states that **superusers and roles with `BYPASSRLS` always bypass** row security, and that
+  **table owners normally bypass it** unless the table uses `ALTER TABLE ... FORCE ROW LEVEL SECURITY`.
+  The application must therefore connect as a non-owner, non-superuser role without `BYPASSRLS`
+  (or tables must force RLS).
+- With RLS enabled and no applicable policy, PostgreSQL applies **default deny** (no rows visible).
+
+**Evaluation required before adoption**
+1. **Transaction-scoped tenant context.** The tenant identifier must be set per transaction (e.g.
+   `set_config('app.tenant_id', $1, true)`, where `true` limits it to the current transaction), never as
+   a session-level setting that could survive on a pooled connection and leak into another tenant's request.
+2. **Connection pooling.** Confirm behaviour with the application pool (pgx) and any external pooler
+   (e.g. transaction-mode pooling, where session state is unreliable). Every tenant-scoped query must run
+   inside a transaction that sets the context.
+3. **Fail closed.** Policies must return no rows when the context is missing (e.g. reading the setting with
+   `current_setting('app.tenant_id', true)`, which returns NULL when unset, so comparisons match nothing).
+4. **Cross-tenant access.** Admin reporting, reconciliation, and background jobs that legitimately span
+   tenants use a separate, minimal, audited path (dedicated role or explicit policies) — never by
+   disabling RLS ad hoc.
+5. **Performance.** Measure policy overhead on hot queries and high-volume data-plane tables; indexes must
+   lead with `tenant_id`.
+6. **Tests.** Missing context returns no rows; a pooled connection reused by another tenant cannot see the
+   previous tenant's data; the application role cannot bypass RLS.
+
+**Operational cost** — Low to moderate. **Missing information** — RLS evaluation results; dedicated
+infrastructure requirements; sub-account/reseller hierarchy (D-064).
 
 ---
 
 ### ADR-0011: Credit ledger model
 
-- **Status:** Proposed · **Date proposed:** 2026-11-24
+- **Status:** Proposed · **Date proposed:** 2026-11-24 · **Revised:** 2026-11-24 (monetary representation
+  moved to ADR-0019; rules reference [financial integrity](../architecture/financial-integrity.md))
 
 **Context** — Credits must never be double-spent, lost, or silently changed, even with many concurrent
-sends.
+sends, duplicate events, or duplicate receipts.
 
 **Options considered**
 | Option | Advantages | Disadvantages |
 | ------ | ---------- | ------------- |
-| A. Single mutable `balance` column | Simple | No history; errors are invisible; hard to audit |
-| B. Append-only ledger entries + balance derived (or cached and verifiable) + reservations | Full audit trail; reconcilable; concurrency-safe with row locks/conditional updates | More design work; cached balance must stay consistent |
+| A. Single mutable `balance` column | Simple | No history; errors invisible; hard to audit |
+| B. Append-only ledger entries + balance row maintained in the same transaction and verifiable against the ledger + reservations | Full audit trail; reconcilable; concurrency-safe with row locks/conditional updates | More design work |
 | C. External billing system | Offloads work | Integration complexity; latency in the send path |
 
-**Recommendation** — B:
-- Amounts as `bigint` integer minor units; the unit and precision depend on business decision D-081.
-- Entry types (proposed): `top_up`, `reservation`, `reservation_release`, `charge`, `refund`,
-  `adjustment` (admin, requires reason and audit), each with an idempotency key (e.g. message ID + type).
-- A per-account balance row updated in the same transaction as ledger inserts, with a `CHECK` that
-  available balance never goes below the allowed limit; periodic verification against the ledger sum.
-- Reservation at acceptance, settlement/release per business rules (D-080, D-083).
+**Recommendation** — B, following the rules F1–F8 and the entry types in
+[financial integrity](../architecture/financial-integrity.md):
+- entry types `top_up`, `reservation`, `reservation_release`, `charge`, `refund`, `reversal`, `adjustment`;
+- each entry carries a unique idempotency key so duplicates are impossible;
+- corrections are compensating entries, never edits or deletes;
+- balance invariants enforced by the database in the same transaction;
+- amount representation and scale per **ADR-0019 (open)** — this ADR does not choose one.
 
-**Consequences** — Strong correctness guarantees; the balance row is a contention point for very
-high-volume single tenants (mitigation options: batched reservations, sub-balances — to be evaluated
-with load tests).
+**Consequences** — Strong correctness guarantees. The per-account balance row is a contention point for very
+high-volume tenants (mitigations such as batched reservations to be evaluated with load tests).
 
-**Operational cost** — Low (it is application design). **Missing information** — D-080 to D-084.
+**Operational cost** — Low. **Missing information** — D-080 to D-084 (settlement point, credit unit,
+payment model, refunds, pricing structure); ADR-0019.
 
 ---
 
-### ADR-0012: Provider abstraction and simulator adapter
+### ADR-0012: Provider abstraction, capabilities, and simulator adapter
 
-- **Status:** Proposed · **Date proposed:** 2026-11-24
+- **Status:** Proposed · **Date proposed:** 2026-11-24 · **Revised:** 2026-11-24 (provider capabilities and
+  receipt normalization added)
 
-**Context** — Owner requires Smart and Globe as independent adapters behind a common interface.
+**Context** — Owner requires Smart and Globe as independent adapters behind a common interface. Providers
+will differ in protocol, receipt behaviour, encodings, limits, and extra features.
 
 **Options considered**
 | Option | Advantages | Disadvantages |
 | ------ | ---------- | ------------- |
 | A. Telco logic in the dispatcher with branches per telco | Quick start | Tight coupling; every new telco touches core code |
-| B. `Provider` interface; one adapter package per telco; simulator adapter; shared contract test suite | Isolation; testability; new telcos added without core changes | Interface must be designed carefully to fit real telco behaviour |
-| C. Third-party SMS gateway software in front of telcos | Less protocol code | Another system to operate; may not fit; licensing |
+| B. `Provider` interface; one adapter package per telco; simulator adapter; capability description; shared contract test suite | Isolation; testability; new telcos added without core changes | Interface must fit real telco behaviour |
+| C. Third-party SMS gateway software in front of telcos | Less protocol code | Another system to operate; fit and licensing unknown |
 
-**Recommendation** — B. The interface is drafted **after** at least one telco's technical specification is
-received, so it reflects reality; the simulator is built first against a provisional interface. The SMPP
-client library choice is a separate ADR made with telco specifications in hand.
+**Recommendation** — B, with these elements:
+- **Capabilities, not telco names.** Each adapter declares its capabilities (for example: receipts
+  supported, per-segment or per-message receipts, inbound messages, supported encodings, maximum segments,
+  status-query support, provider-side duplicate detection, throughput limits from configuration). Core logic
+  consults capabilities and never branches on a provider's identity. Every declared capability must cite
+  telco documentation; unknown capabilities are declared as unknown and treated conservatively.
+- **Normalization inside adapters.** Adapters map provider responses and receipts to normalized results
+  and statuses ([messaging reliability §5.1](../architecture/messaging-reliability.md#51-adapter-boundary));
+  raw codes are kept as opaque data for audit and reconciliation.
+- **Outcome classification inside adapters.** Each adapter classifies responses as success, retryable,
+  permanent, or ambiguous, from documented error codes.
+- **Simulator** configurable to emulate capability profiles and failure modes.
+- The concrete interface is drafted **after** at least one telco specification is received; the simulator is
+  built against a provisional interface first. The SMPP client library is a separate ADR made with specs in hand.
 
 **Operational cost** — Low. **Missing information** — Telco protocols and behaviours (telco checklist).
 
 ---
 
-### ADR-0013: Frontend application structure and supporting libraries
+### ADR-0013: Frontend application structure and component strategy
 
-- **Status:** Proposed · **Date proposed:** 2026-11-24
+- **Status:** Proposed · **Date proposed:** 2026-11-24 · **Revised:** 2026-11-24 (component strategy
+  direction proposed by the owner recorded)
 
-**Context** — React + TS + Vite + Tailwind are preferred. Two audiences (clients, our admins). Owner wants
-no unnecessary UI or styling libraries.
+**Context** — The selected stack is React, TypeScript, Vite, and Tailwind CSS. Two audiences (clients, our
+admins). The owner wants no unnecessary UI or styling libraries.
 
-**Decisions to make**
+**Component strategy (proposed direction, from the owner's recommendation)**
+- **Tailwind CSS remains the only styling system.**
+- Carefully selected, maintained, accessible **headless** (unstyled) UI primitives **may** be used for
+  complex interactive behaviours: dialogs, menus, dropdowns, popovers, comboboxes, and similar. These
+  provide keyboard interaction and focus management, which are difficult to build correctly from scratch.
+- Simple components (buttons, inputs, cards, badges, tables) are built in-house with Tailwind.
+- All components must be keyboard accessible with appropriate focus management (WCAG 2.2 AA target).
+- A large, opinionated UI framework (pre-styled component suites) is **not** introduced for convenience.
+- **Selection criteria** before choosing any library: maintenance activity and release history;
+  documented accessibility behaviour (keyboard, focus, screen readers); licence; compatibility with the
+  pinned React version and Tailwind; dependency footprint and bundle size; security history; ability to
+  adopt per-component.
+- **The library choice is an owner decision (D-140).** No package is added until approved.
+
+**Other decisions**
 | Topic | Options | Recommendation |
 | ----- | ------- | -------------- |
-| App split | One app vs. two apps sharing a `ui` package | Two apps in a small workspace (security: admin on separate origin) |
-| Routing | React Router vs. TanStack Router | Either; choose at scaffolding based on current docs. Not a styling library. |
+| App split | One app vs. two apps sharing a `ui` package | Two apps in a small workspace (admin on a separate origin) — **owner decision D-091** |
+| Routing | React Router vs. TanStack Router | Choose at scaffolding from current documentation |
 | Server data | Hand-written hooks vs. TanStack Query | TanStack Query (caching, retries, invalidation are hard to hand-build correctly) |
 | Form validation | Hand-written vs. a schema library (e.g. Zod) + form library | Schema library; shared schemas improve consistency |
-| Accessible primitives | Build dialogs/menus/comboboxes ourselves vs. a headless (unstyled) primitives library | Owner decision — headless libraries add no styling (Tailwind remains the only styling system) but are a dependency; building accessible primitives from scratch is error-prone |
-| Package manager | npm vs. pnpm | pnpm (good workspace support) — or npm for simplicity |
+| Package manager | npm vs. pnpm | pnpm (workspace support) — or npm for simplicity |
 
-**Operational cost** — Low. **Missing information** — Owner's view on each dependency; current versions at
-scaffolding time.
+Each library above is a dependency requiring approval under `AGENTS.md` §2 rule 5.
+
+**Operational cost** — Low. **Missing information** — Owner choices (D-091, D-140); current versions at scaffolding.
 
 ---
 
 ### ADR-0014: Database access and migration tooling
 
-- **Status:** Proposed · **Date proposed:** 2026-11-24
+- **Status:** Proposed · **Date proposed:** 2026-11-24 · **Revised:** 2026-11-24 (selection criteria added)
 
-**Options considered**
+**Options considered (data access)**
 | Option | Advantages | Disadvantages |
 | ------ | ---------- | ------------- |
 | A. `pgx` + hand-written SQL | Full control, performance | Boilerplate; manual scanning errors |
 | B. `pgx` + `sqlc` (type-safe Go generated from SQL) | Plain SQL reviewed as SQL; compile-time type safety; no ORM magic | Code generation step |
-| C. ORM (GORM, ent) | Less SQL | Hidden queries; harder performance tuning; harder to reason about transactions and locking |
+| C. ORM (GORM, ent) | Less SQL | Hidden queries; harder tuning; harder to reason about transactions and locking |
 
-Migration tools: `goose`, `golang-migrate`, `atlas` — all viable; choose one supporting SQL migration
-files, timestamp versioning, and programmatic execution.
+**Migration tool candidates** — `goose`, `golang-migrate`, `atlas`.
 
-**Recommendation** — B with one SQL-file migration tool selected at scaffolding.
+**Selection criteria for the migration tool**
+- Plain SQL migration files reviewed like code; timestamp-based versions (parallel agents).
+- Each migration in a transaction by default, with an explicit opt-out for statements that cannot run in
+  a transaction (e.g. `CREATE INDEX CONCURRENTLY`).
+- Locking so two deployments cannot run migrations concurrently.
+- Programmatic execution from the `migrate` executable; clear status reporting.
+- Forward-only production use (down migrations optional, not relied upon).
+- Active maintenance and compatible licence.
 
-**Operational cost** — Low. **Missing information** — Tool versions and maintenance status at scaffolding.
+**Recommendation** — B for data access; migration tool chosen against the criteria at Phase 3 start. The data
+access layer must support transaction-scoped tenant context if RLS is adopted (ADR-0010), and exact monetary
+types per ADR-0019.
+
+**Operational cost** — Low. **Missing information** — Tool versions and maintenance status at scaffolding;
+ADR-0010 and ADR-0019 outcomes.
 
 ---
 
 ### ADR-0015: API contracts — OpenAPI-first
 
-- **Status:** Proposed · **Date proposed:** 2026-11-24
+- **Status:** Proposed · **Date proposed:** 2026-11-24 · **Revised:** 2026-11-24 (idempotency and money
+  details delegated to ADR-0018 and ADR-0019)
 
 **Options considered**
 | Option | Advantages | Disadvantages |
@@ -418,8 +559,9 @@ files, timestamp versioning, and programmatic execution.
 | B. Code-first: generate spec from Go annotations | Less duplication for backend developers | Spec quality depends on annotations; frontend waits on backend |
 | C. gRPC/GraphQL | Strong typing / flexible queries | Not REST; public SMS API consumers expect REST |
 
-**Recommendation** — A. Conventions: `/v1` versioning, `snake_case` JSON, RFC 9457 errors, cursor pagination,
-idempotency keys on submission.
+**Recommendation** — A. Conventions: `/v1` versioning, `snake_case` JSON, RFC 9457 errors, cursor pagination.
+Idempotency keys follow ADR-0018; monetary amounts are transmitted as strings with documented scale per
+ADR-0019 (proposed).
 
 **Operational cost** — Low. **Missing information** — Generator tool choices at scaffolding.
 
@@ -439,9 +581,12 @@ our needs; revisit only if profiling shows logging as a bottleneck.
 
 ### ADR-0017: Git workflow for one owner + multiple AI agents
 
-- **Status:** Proposed · **Date proposed:** 2026-11-24
+- **Status:** Proposed · **Date proposed:** 2026-11-24 · **Revised:** 2026-11-24 (current repository state noted)
 
-**Context** — One human reviewer; several agents possibly working in parallel.
+**Context** — One human reviewer; several agents possibly working in parallel. **Current state:** the
+repository has no `main` branch yet; `claude/ecstatic-gates-ji0o5b` is the default branch holding the project
+history, and no branch protection is configured. The owner actions required to reach the target workflow
+are listed in [git-workflow.md §0](git-workflow.md#0-current-repository-state-and-required-owner-actions).
 
 **Options considered**
 | Option | Advantages | Disadvantages |
@@ -452,3 +597,98 @@ our needs; revisit only if profiling shows logging as a bottleneck.
 **Recommendation** — A, detailed in [git-workflow.md](git-workflow.md).
 
 **Operational cost** — Low. **Missing information** — None.
+
+---
+
+### ADR-0018: API idempotency contract
+
+- **Status:** Proposed · **Date proposed:** 2026-11-24
+
+**Context** — Clients retry requests after timeouts. Without idempotency, a retry can create a second
+message, a second charge, and a second SMS to a real person.
+
+**Options considered** — key scope per tenant + operation, per API credential + operation, or per tenant
+across operations; required vs. optional keys; which outcomes are recorded; retention periods. Full option
+tables with advantages and disadvantages are in [API idempotency](../architecture/api-idempotency.md).
+
+**Recommendation** — The contract in [API idempotency](../architecture/api-idempotency.md): `Idempotency-Key`
+header (aligned with the IETF Internet-Draft, which is not yet a standard); scope tenant + operation;
+request fingerprint; replay of the original response for the same request; `422` for a reused key with a
+different request; `409` while the original is in progress; concurrency resolved by a database unique
+constraint in the acceptance transaction.
+
+**Consequences** — Prevents duplicate operations **inside our platform**. It does **not** prevent duplicate
+submissions to a telco; that is governed by ADR-0021 and
+[messaging reliability §4](../architecture/messaging-reliability.md#4-provider-submission-and-ambiguous-outcomes).
+
+**Operational cost** — Low (one table, one constraint, retention cleanup). **Missing information** — Owner
+decisions D-094a–e (required vs. optional, scope, recorded outcomes, retention, bulk semantics).
+
+---
+
+### ADR-0019: Monetary representation, scale, and rounding
+
+- **Status:** Proposed — **open; no option selected** · **Date proposed:** 2026-11-24
+
+**Context** — Ledger amounts and rates must be exact. The customer credit unit, currency, the precision of
+actual telco and retail rates, and rounding rules are not yet known. Centavos may not be sufficient for
+wholesale rates.
+
+**Options considered** — (A) integer centavos; (B) integer in a finer fixed sub-unit; (C) exact decimal
+(`numeric` + a Go decimal type); (D) hybrid: decimal rates, scaled-integer ledger amounts. Trade-offs are
+in [financial integrity §3](../architecture/financial-integrity.md#3-representation-options-decision-deferred-to-adr-0019).
+
+**Fixed regardless of option** — no IEEE floating point anywhere in monetary paths; documented currency
+and scale per field; one shared rounding function; amounts transmitted in APIs as strings (proposed);
+frontend never performs monetary arithmetic.
+
+**Decision** — Deferred until actual telco rates and the commercial pricing model are available (Phase 2).
+
+**Operational cost** — Depends on option. **Missing information** — D-081, D-092, D-093, D-127; telco
+checklist §15.
+
+---
+
+### ADR-0020: Internal event delivery — transactional outbox, at-least-once
+
+- **Status:** Proposed · **Date proposed:** 2026-11-24 (split out of ADR-0006 so it can be decided
+  independently of broker choice)
+
+**Context** — State changes must reliably produce events (e.g. "message accepted" → dispatch), without
+publishing events for rolled-back changes and without losing events for committed ones.
+
+**Options considered**
+| Option | Advantages | Disadvantages |
+| ------ | ---------- | ------------- |
+| A. Publish directly to the queue inside request handling (dual write) | Simple | A crash between the database commit and the publish loses the event, or an event is published for a rolled-back change |
+| B. Transactional outbox + publisher, at-least-once, idempotent consumers | Atomic with the business change; no loss of committed events; broker-agnostic | Duplicates are possible and every consumer must handle them; publication delay |
+| C. Change data capture from the database log | No outbox writes in application code | Additional infrastructure and operational complexity |
+
+**Recommendation** — B, with the guarantees, non-guarantees, publisher and consumer requirements, and
+ordering rules in [messaging reliability §2](../architecture/messaging-reliability.md#2-internal-events-and-the-transactional-outbox).
+The outbox does **not** provide exactly-once publication.
+
+**Operational cost** — Low. **Missing information** — Dedupe record retention depends on the queue/broker
+redelivery window (ADR-0006).
+
+---
+
+### ADR-0021: Message status model and uncertain outcomes
+
+- **Status:** Proposed · **Date proposed:** 2026-11-24
+
+**Context** — API acceptance, queueing, provider submission, provider acknowledgment, final receipts, and
+customer-visible status are different milestones. Timeouts and missing receipts do not prove
+non-delivery.
+
+**Options considered**
+| Option | Advantages | Disadvantages |
+| ------ | ---------- | ------------- |
+| A. Simple sent/failed/delivered model; timeouts and missing receipts treated as failures | Simple for customers | Misreports delivered messages as failed; wrong refunds; invites duplicate resends |
+| B. Explicit milestones with uncertain states (`SUBMIT_UNCERTAIN`, `UNKNOWN`), precedence rules, and auditable history | Accurate; reconcilable; late receipts handled | More states to explain to customers |
+
+**Recommendation** — B, as described in [messaging reliability §3–§5](../architecture/messaging-reliability.md#3-message-lifecycle-milestones).
+The customer-visible status set is a mapping decided separately (D-099).
+
+**Operational cost** — Low. **Missing information** — D-095 to D-099; telco receipt behaviour (D-104,
+D-114–D-116).

@@ -51,7 +51,9 @@ Phase 11 Scale-out and expansion (more telcos, analytics, broker, features)
   guidance; business decisions (billing basis, credit model, MVP scope, launch customers).
 - Write: MVP Software Requirements Specification, domain model, system architecture, threat model,
   RBAC design, data classification and retention schedule (draft).
-- Decide ADRs 0002–0017 (accept/reject/amend).
+- Decide ADRs 0001–0021 (accept/reject/amend) — see the review summary in the decision log.
+- Decide monetary representation and rounding (ADR-0019, D-092, D-093), the idempotency details (D-094),
+  and the uncertain-outcome and receipt policies (D-095–D-099).
 **Acceptance criteria:**
 - [ ] MVP scope approved in writing by the owner.
 - [ ] Traffic figures for launch customers recorded with sources, or an explicit decision to proceed with
@@ -63,7 +65,8 @@ Phase 11 Scale-out and expansion (more telcos, analytics, broker, features)
 
 ### Phase 3 — Walking skeleton
 **Goal:** a minimal end-to-end technical skeleton with no business features.
-**Depends on:** ADR-0002/0003/0004/0013/0014/0015/0016 accepted (does not depend on telco answers).
+**Depends on:** ADR-0002/0003/0004/0013/0014/0015/0016 accepted (does not depend on telco answers); owner
+actions in git-workflow §0 (create `main`, set default branch, configure protection).
 **Work:** `go.mod`, `cmd/api` with health/readiness endpoints, config loading, logging, metrics endpoint;
 frontend app(s) with design tokens and app shell; local Docker Compose with PostgreSQL; migration tooling;
 CI (format, lint, test, type check, vulnerability and secret scan); OpenAPI skeleton with type generation.
@@ -72,6 +75,7 @@ CI (format, lint, test, type check, vulnerability and secret scan); OpenAPI skel
 - [ ] CI runs on every PR and blocks merging on failure.
 - [ ] Branch protection configured on `main`.
 - [ ] Health endpoint served; frontend shell renders; tokens applied; all tests pass.
+- [ ] RLS evaluation completed and documented (ADR-0010, D-141), before Phase 4.
 
 ### Phase 4 — Control-plane core
 **Goal:** tenants, users, authentication (with admin MFA), RBAC, audit log.
@@ -82,16 +86,19 @@ CI (format, lint, test, type check, vulnerability and secret scan); OpenAPI skel
 - [ ] Security-relevant actions appear in the audit log.
 
 ### Phase 5 — Billing ledger core
-**Depends on:** business decisions D-080 to D-084.
+**Depends on:** business decisions D-080 to D-084, D-092, D-093; ADR-0011 and ADR-0019 accepted.
 **Acceptance criteria:**
 - [ ] Top-up, reservation, settlement, release, refund, and adjustment entries implemented and audited.
 - [ ] Concurrency tests prove no overspending; balance equals ledger sum.
 - [ ] Idempotent ledger operations proven by tests.
+- [ ] No floating-point types in any monetary path; rounding follows the accepted rules (FI scenarios pass).
 
 ### Phase 6 — Messaging core with simulator
 **Goal:** accept → reserve → persist → queue → dispatch → simulated DLR → status → settle.
 **Acceptance criteria:**
-- [ ] Public API submission with idempotency keys; segmentation and cost estimate.
+- [ ] Public API submission with idempotency keys per the accepted ADR-0018; segmentation and cost estimate.
+- [ ] Outbox scenarios (OB-1 to OB-9), submission scenarios (PS-1 to PS-7), and receipt scenarios
+      (DR-1 to DR-10) pass, including duplicate publication and duplicate consumption.
 - [ ] Provider interface and simulator adapter; provider contract suite passing.
 - [ ] Rate limiting, retry classification, ambiguous-outcome handling, DLR correlation, expiry.
 - [ ] Opt-out/suppression enforced before dispatch.

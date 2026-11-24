@@ -62,10 +62,18 @@ usage; **how each Philippine telco implements a concept must be confirmed with t
 | **Exactly-once** | Every event processed exactly once. Achievable inside some systems, but **not end-to-end for SMS**, because a telco timeout leaves us unsure whether the message was accepted. |
 | **Idempotency** | Doing the same operation twice has the same effect as doing it once. |
 | **Idempotency key** | A client-supplied unique value identifying a request so retries are recognised as duplicates. |
-| **Transactional outbox** | Writing a database change and the event about it in one transaction, then publishing the event separately — so events are never lost or invented. |
+| **Transactional outbox** | Writing a database change and the event about it in one transaction, then publishing the event separately. Events for rolled-back changes are never published and committed events are not lost, but an event **may be published more than once**, so consumers must be idempotent. |
 | **Back-pressure** | Slowing down intake when downstream is overloaded, rather than failing or buffering without limit. |
 | **Circuit breaker** | Automatically stopping calls to a failing dependency for a period, to let it recover and fail fast. |
 | **Dead-letter queue / store** | Where messages that cannot be processed are parked for investigation. |
+| **Provider acknowledgment** | The telco's response accepting (or rejecting) a submitted message, e.g. with its own message ID. It means the telco took responsibility for delivery — **not** that the phone received it. |
+| **Ambiguous outcome** | A submission whose result is unknown (e.g. timeout with no response). The telco may or may not have accepted it; retrying risks a duplicate SMS. |
+| **`UNKNOWN` status** (proposed) | A message with no final delivery information within the configured window. Uncertain — not proof of non-delivery; a late receipt can still update it. |
+| **Request fingerprint** | A hash of a request's meaningful content, stored with an idempotency key to detect the same key being reused for a different request. |
+| **Monetary scale** | How many decimal places an amount is stored with (e.g. 2 for centavos). Must cover the precision of real rates. |
+| **Rounding mode** | The rule for rounding a value that falls between two representable amounts (e.g. half-up, half-even). Must be explicit and consistent. |
+| **Compensating entry** | A new ledger entry that corrects or reverses an earlier one, instead of editing it. |
+| **Headless UI primitives** | Unstyled components providing behaviour (keyboard handling, focus management, accessibility attributes) for complex widgets such as dialogs and menus; styling is applied separately (here, with Tailwind). |
 | **Ledger** | An append-only list of financial entries. Balances are computed from entries; entries are never edited. |
 | **Credit reservation (hold)** | Temporarily setting aside credit for a message that has been accepted but not yet charged. |
 | **Reconciliation** | Comparing two records of the same reality (our ledger vs. telco CDRs/invoices) and investigating differences. |
