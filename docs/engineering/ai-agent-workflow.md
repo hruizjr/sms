@@ -112,7 +112,7 @@ Parallel work is safe when tasks do not overlap. Rules:
 | --------- | ------------ |
 | Requirement ambiguous | Ask the owner; propose options with a recommendation |
 | Telco behaviour unknown | Add `TODO(telco-confirm)`, record in the telco checklist, use the simulator |
-| Docs conflict with each other | Follow `AGENTS.md`; report the conflict |
+| Docs genuinely conflict with each other | Stop the affected work; report both documents, sections, and wording; request owner resolution ([`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts)) |
 | Task needs a decision reserved for the owner | Stop; write a Proposed ADR or question |
 | Implementation depends on an open discovery item or a Proposed ADR (e.g. monetary scale, idempotency retention, uncertain-status policy) | Stop and ask for owner approval; do not pick a value |
 | Found a bug outside scope | Report it in the completion report; do not fix it in this PR |

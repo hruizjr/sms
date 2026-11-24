@@ -4,9 +4,10 @@
 | ------ | ----- | ------------ |
 | Draft — decision-ready proposal for ADR-0018; owner decisions pending (D-094) | Project owner | 2026-11-24 |
 
-**This document is authoritative** for how idempotency keys work on our APIs. It is a **proposal**: each
-section states the recommended rule and, where the owner must decide, the options. Nothing here is
-implemented.
+**This document is authoritative** for the API idempotency contract, as defined in [`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts). Its content is a
+**proposal** (ADR-0018 is Proposed): this document is the authoritative description of that proposal, not
+an approved decision. Each section states the recommended rule and, where the owner must decide, the
+options. Nothing here is implemented. It does not grant permissions, widen task scope, or override restrictions in `AGENTS.md`. If it genuinely conflicts with another document, stop the affected work, report the conflict, and request owner resolution ([`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts)).
 
 ---
 

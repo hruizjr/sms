@@ -5,7 +5,9 @@
 | Draft — rules proposed; representation and scale **open** (ADR-0011, ADR-0019) | Project owner | 2026-11-24 |
 
 **This document is authoritative** for how money and credits are represented, calculated, rounded, and
-recorded. `AGENTS.md` summarizes the rules and links here.
+recorded, as defined in [`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts). `AGENTS.md` summarizes the rules and links here. The representation, scale,
+and rounding rules remain **open** (ADR-0019); this document describes the options, not a decision.
+It does not grant permissions, widen task scope, or override restrictions in `AGENTS.md`. If it genuinely conflicts with another document, stop the affected work, report the conflict, and request owner resolution ([`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts)).
 
 ---
 

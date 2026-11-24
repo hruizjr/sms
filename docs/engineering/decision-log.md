@@ -10,6 +10,12 @@ An **Architecture Decision Record (ADR)** is a short record of one significant d
 faced, the options, what we chose, and the consequences. ADRs let future AI agents and humans understand
 *why* the system is the way it is, and stop them from re-arguing or silently reversing decisions.
 
+**Authority** ([`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts)): **Accepted** ADRs
+are authoritative for approved architectural decisions. **Proposed** ADRs are the current direction but are
+not binding. No ADR grants permissions or widens task scope beyond `AGENTS.md`. If an ADR genuinely
+conflicts with another document, stop the affected work, report the conflict, and request owner
+resolution.
+
 ## 2. Process
 
 1. **Propose:** anyone (agent or owner) adds an ADR using the template below with status `Proposed`.

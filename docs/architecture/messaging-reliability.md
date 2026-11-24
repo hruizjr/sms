@@ -5,9 +5,10 @@
 | Draft — pending owner review (supports ADR-0020, ADR-0021) | Project owner | 2026-11-24 |
 
 **This document is authoritative** for internal event-delivery guarantees, the transactional outbox,
-message lifecycle milestones, provider submission outcomes, and delivery receipt (DLR) handling.
-`AGENTS.md` §11 summarizes these rules and links here; other documents must reference this one rather
-than restate it. If anything here conflicts with `AGENTS.md`, report the conflict.
+message lifecycle milestones, provider submission outcomes, and delivery receipt (DLR) handling, as
+defined in [`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts). `AGENTS.md` §11 summarizes these rules and links here; other documents must reference
+this one rather than restate it. Items tied to Proposed ADRs or open discovery items remain proposals.
+It does not grant permissions, widen task scope, or override restrictions in `AGENTS.md`. If it genuinely conflicts with another document, stop the affected work, report the conflict, and request owner resolution ([`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts)).
 
 Nothing in this document describes the behaviour of a specific telco. Provider behaviour must come from
 official telco documentation (see the [telco discovery checklist](../integrations/telco-discovery-checklist.md)).

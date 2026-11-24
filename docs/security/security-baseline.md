@@ -7,6 +7,9 @@
 This baseline sets the minimum security principles for all work. It is **not** a complete security
 program; §11 lists the security engineering still required. Nothing here is legal advice.
 
+**Authority:** this document is authoritative for security principles and controls, as defined in [`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts);
+`AGENTS.md` §12 summarizes it. It does not grant permissions, widen task scope, or override restrictions in `AGENTS.md`. If it genuinely conflicts with another document, stop the affected work, report the conflict, and request owner resolution ([`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts)).
+
 ## 1. What we are protecting
 
 | Asset | Why it matters |

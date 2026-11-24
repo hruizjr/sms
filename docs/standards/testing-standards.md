@@ -4,6 +4,11 @@
 | ------ | ----- | ------------ |
 | Draft — pending owner review | Project owner | 2026-11-24 |
 
+**Authority:** this document is authoritative for test levels, required scenarios, and testing
+expectations, as defined in [`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts); `AGENTS.md` §13 summarizes it. Scenario lists owned by specialist
+documents (messaging reliability, API idempotency, financial integrity) are referenced here, not
+redefined. It does not grant permissions, widen task scope, or override restrictions in `AGENTS.md`. If it genuinely conflicts with another document, stop the affected work, report the conflict, and request owner resolution ([`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts)).
+
 ## 1. Why testing matters more here
 
 Most code will be written by AI agents. Automated tests are the owner's main evidence that work is

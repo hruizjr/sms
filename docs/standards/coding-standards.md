@@ -5,8 +5,9 @@
 | Draft — pending owner review | Project owner | 2026-11-24 |
 
 This document expands the rules in [`AGENTS.md`](../../AGENTS.md) §7–§10 with rationale and examples.
-**`AGENTS.md` is normative; this document explains.** If they conflict, follow `AGENTS.md` and report the
-conflict.
+The MUST / MUST NOT rules stated in `AGENTS.md` are project-wide non-negotiable rules; this document is
+authoritative for the language conventions and examples that elaborate them, as defined in [`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts).
+It does not grant permissions, widen task scope, or override restrictions in `AGENTS.md`. If it genuinely conflicts with another document, stop the affected work, report the conflict, and request owner resolution ([`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts)).
 
 Examples are illustrative only — they are not application code and do not define real APIs.
 

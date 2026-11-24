@@ -1,8 +1,10 @@
 # AGENTS.md — Instructions for AI Coding Agents
 
 > **Every AI agent must read this entire file before doing any work in this repository.**
-> It is the single source of truth for how work is done here. If any other document conflicts with
-> this file, this file wins — and you must report the conflict.
+> It is authoritative for **agent conduct, permissions, task boundaries, repository workflow, and
+> project-wide non-negotiable rules**. Technical subjects have their own authoritative documents.
+> The full hierarchy, and what to do when documents conflict, is in
+> [§1.1 Document authority and conflicts](#11-document-authority-and-conflicts).
 
 | Field | Value |
 | ----- | ----- |
@@ -17,6 +19,7 @@
 ## Contents
 
 1. [Current status and what you may do](#1-current-status-and-what-you-may-do)
+   - [1.1 Document authority and conflicts](#11-document-authority-and-conflicts)
 2. [AI agent operating rules](#2-ai-agent-operating-rules)
 3. [Project context](#3-project-context)
 4. [Repository map and required reading](#4-repository-map-and-required-reading)
@@ -56,6 +59,36 @@ Until a task explicitly authorizes it, you MUST NOT:
 - add dependencies, `go.mod`, or `package.json`;
 - provision servers, deploy anything, or configure real telco credentials;
 - send any message to any real phone number.
+
+### 1.1 Document authority and conflicts
+
+This section is the **only** definition of the document hierarchy; other documents refer to it.
+
+| Source | Authoritative for |
+| ------ | ----------------- |
+| **`AGENTS.md`** (this file) | Agent conduct, permissions, task boundaries, repository workflow, and project-wide non-negotiable rules (MUST / MUST NOT rules in this file). [Git workflow](docs/engineering/git-workflow.md) and [AI agent workflow](docs/engineering/ai-agent-workflow.md) give the detailed procedures; they add detail but cannot relax this file. |
+| **Specialist documents** | Their own technical subjects: [messaging reliability](docs/architecture/messaging-reliability.md) (event delivery, message lifecycle, provider submission outcomes, delivery receipts); [API idempotency](docs/architecture/api-idempotency.md) (idempotency contract); [financial integrity](docs/architecture/financial-integrity.md) (monetary representation, rounding, ledger rules); [security baseline](docs/security/security-baseline.md) (security principles and controls); [testing standards](docs/standards/testing-standards.md) (test levels, scenarios, expectations); [coding standards](docs/standards/coding-standards.md) (language conventions and examples). |
+| **Accepted ADRs** in the [decision log](docs/engineering/decision-log.md) | Approved architectural decisions. **Proposed** ADRs are direction, not binding (rule 3). |
+| **[Discovery register](docs/requirements/discovery-register.md)** | Status of known, assumed, and unresolved project information. |
+
+Rules:
+
+1. **Summaries are pointers.** Where this file summarizes a technical subject (e.g. §11), the specialist
+   document holds the full rule. A difference between a summary and its specialist document is a
+   conflict (rule 4), not a choice.
+2. **Proposals stay proposals.** When a specialist document describes something tied to a Proposed ADR or
+   an open discovery item, it is the authoritative description of that **proposal or open question**,
+   not an approved decision.
+3. **No document overrides owner restrictions.** No specialist document, ADR, or register entry may grant
+   a permission, widen a task's scope, or override a restriction or task boundary in this file or in the
+   owner's task definition.
+4. **Genuine conflicts stop work.** If two documents genuinely conflict (they require incompatible
+   actions or state incompatible facts), agents MUST stop the affected work, report the conflict (both
+   documents, sections, and wording), and request owner resolution. Agents MUST NOT silently choose
+   one. Additional detail or a stricter requirement that is consistent with the other document is not a
+   conflict.
+5. **Fixing a conflict.** Once the owner decides, update the authoritative document first, then any
+   summaries that refer to it, in the same pull request.
 
 ---
 
@@ -541,7 +574,7 @@ Details: [coding standards](docs/standards/coding-standards.md#frontend).
 
 The authoritative definitions are in [messaging reliability](docs/architecture/messaging-reliability.md)
 (events, lifecycle, receipts), [API idempotency](docs/architecture/api-idempotency.md), and
-[financial integrity](docs/architecture/financial-integrity.md). This section summarizes them. Read the
+[financial integrity](docs/architecture/financial-integrity.md) (see §1.1). This section summarizes them. Read the
 [glossary](docs/glossary.md) if any term is unfamiliar.
 
 ### 11.1 Asynchronous processing and the transactional outbox
@@ -627,7 +660,7 @@ The authoritative definitions are in [messaging reliability](docs/architecture/m
 
 ## 12. Security standards
 
-Details: [security baseline](docs/security/security-baseline.md).
+Authoritative detail: [security baseline](docs/security/security-baseline.md) (see §1.1).
 
 - **Secrets:** never in the repository, images, logs, or frontend bundles. Loaded from the environment
   or a secret manager at runtime. `.env` files are git-ignored; only `.env.example` with placeholders is
@@ -658,7 +691,7 @@ Details: [security baseline](docs/security/security-baseline.md).
 
 ## 13. Testing requirements
 
-Details: [testing standards](docs/standards/testing-standards.md).
+Authoritative detail: [testing standards](docs/standards/testing-standards.md) (see §1.1).
 
 - Every behaviour change ships with tests at the appropriate level (unit, integration, contract, E2E).
 - **Mandatory test coverage areas** (no exceptions): ledger and credit operations (including rounding),
