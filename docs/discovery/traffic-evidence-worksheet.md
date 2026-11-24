@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Template — **no traffic data collected yet** | Project owner | 2026-11-24 |
+| Template — **no traffic data collected yet** | Project owner | 2026-11-24 (SIM comparison removed) |
 
 Use this worksheet to collect evidence that tests the reported **~5 billion per month** figure (D-004) and
 replaces it with verified demand. The questions and sizing formulas are defined in
@@ -60,15 +60,23 @@ store. Record the unit for every number.
 Sizing calculations, once inputs exist, use the formulas in
 [traffic capacity discovery §4](../requirements/traffic-capacity-discovery.md#4-derived-values-to-be-computed-once-data-exists).
 
-## 5. Sanity check (context only, not evidence)
+## 5. Context, evidence, and verified demand
 
-News reports found in a web search (secondary; not verified against NTC publications) put the number of
-registered SIMs at roughly **114 million** when mandatory SIM registration closed in 2023, against about
-**168 million** SIMs before registration (e.g. https://newsinfo.inquirer.net/?p=1810114, seen in search
-results on 2026-11-24). If "5 billion" meant messages per month, that would be on the order of **40–45 SMS
-per registered SIM per month** from A2P traffic routed through one aggregator. That is not impossible, but
-it is a strong claim that needs strong evidence. Obtain current subscriber figures from official sources
-before using them.
+This worksheet keeps three kinds of information strictly apart:
+
+| Kind | What it is | Can it validate the 5-billion figure? |
+| ---- | ---------- | ------------------------------------- |
+| **Context** | Market background (e.g. national subscriber counts, industry reports, news) | **No.** Context may suggest questions to ask; it never confirms or rejects a traffic figure. |
+| **Evidence** | Customer records, historical volume reports from current providers, signed contracts or letters of intent stating volumes, source-backed projections with a documented method | Yes, within the scope and date of each document, once logged in the [evidence register](evidence-register.md) |
+| **Verified demand** | The total built only from evidence rows in §3, split into committed, estimated, and aspirational (§4) | This is the only basis for capacity planning, telco negotiations, and cost estimates |
+
+National mobile subscriber or SIM-registration counts are **not** used to judge whether the 5-billion
+figure is plausible: they do not reflect how much A2P traffic businesses send, how many messages one
+person receives, or what share any one aggregator would carry. An earlier draft of this worksheet included
+such a comparison; it was removed because it could be mistaken for validation.
+
+Actual demand must be established through customer records, documented commitments, and source-backed
+volume projections recorded in §2–§4.
 
 ## 6. Status
 
