@@ -39,4 +39,10 @@ src/
 └── styles/            Tailwind entry point and design tokens (CSS variables)
 ```
 
+## Component strategy (ADR-0013 — Proposed)
+
+Tailwind CSS is the only styling system. Complex interactive widgets (dialogs, menus, dropdowns, popovers,
+comboboxes) may use a maintained, accessible **headless** primitives library — selection is an owner
+decision (D-140), and no package is added until approved. No pre-styled UI framework.
+
 Follow [`AGENTS.md`](../AGENTS.md) §8 (Frontend standards).

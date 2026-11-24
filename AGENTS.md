@@ -10,7 +10,7 @@
 | Current phase | **Phase 1 — Engineering Foundation (documentation only)** |
 | Next phase authorized? | **No.** Do not start Phase 2 work until the project owner explicitly approves it. |
 | Decision authority | The project owner (a single human). Agents propose; the owner decides. |
-| Last updated | 2026-11-24 |
+| Last updated | 2026-11-24 (Phase 1 documentation remediation) |
 
 ---
 
@@ -68,11 +68,12 @@ These rules apply to every agent, on every task, with no exceptions.
 3. **Follow approved architectural decisions** in the [decision log](docs/engineering/decision-log.md).
    Decisions marked *Proposed* are the current direction but not binding — if your task depends on one,
    say so in your report.
-4. **Never invent telco API specifications or SMPP configurations.** Hostnames, ports, system IDs,
-   system types, TON/NPI values, throughput limits, error-code meanings, delivery-receipt formats, and
-   encoding behaviour MUST come from official telco documentation stored or referenced in
-   `docs/integrations/`. If it is not documented, write `TODO(telco-confirm): <question>` and record the
-   question in the [telco discovery checklist](docs/integrations/telco-discovery-checklist.md).
+4. **Never invent telco API specifications, SMPP configurations, or commercial terms.** Hostnames, ports,
+   system IDs, system types, TON/NPI values, throughput limits, error-code meanings, delivery-receipt
+   formats, encoding behaviour, rates, and billing terms MUST come from official telco documentation or
+   signed agreements stored or referenced in `docs/integrations/`. If it is not documented, write
+   `TODO(telco-confirm): <question>` and record the question in the
+   [telco discovery checklist](docs/integrations/telco-discovery-checklist.md).
 5. **Never introduce a dependency without explaining why.** In the PR, state: what it does, why the
    standard library or an existing dependency is insufficient, its licence, its maintenance status, and
    its security record. New dependencies require owner approval.
@@ -110,7 +111,31 @@ Additional rules:
     phone numbers, or message content into prompts, logs, or fixtures.
 21. **Stop and ask** when a task would require a decision reserved for the project owner (§17), an
     action outside the repository (deployment, account creation, contacting third parties), or breaking
-    a MUST rule.
+    a MUST rule. This includes any implementation that depends on an **open** item in the
+    [discovery register](docs/requirements/discovery-register.md) or a **Proposed** ADR whose choice
+    affects the code — ask for owner approval instead of picking an answer.
+
+### 2.1 Critical correctness rules (messaging and money)
+
+These summarize rules whose full definitions live in the linked authoritative documents. They apply to
+code, comments, API documentation, UI text, and reports.
+
+22. **Never claim exactly-once SMS delivery** unless a provider-specific, documented guarantee exists and
+    an ADR records it. Internal events are at-least-once; consumers are idempotent
+    ([messaging reliability §1–§2](docs/architecture/messaging-reliability.md)).
+23. **Treat a provider submission timeout as an ambiguous outcome**, not as a failure. **Never blindly
+    retry** an ambiguous submission — it can send a duplicate SMS to a real person
+    ([messaging reliability §4](docs/architecture/messaging-reliability.md#4-provider-submission-and-ambiguous-outcomes)).
+24. **Treat delivery receipts as potentially late, missing, duplicated, conflicting, or out of order.**
+    A missing receipt is not proof of non-delivery
+    ([messaging reliability §5](docs/architecture/messaging-reliability.md#5-delivery-receipt-dlr-handling)).
+25. **Never use floating-point arithmetic for money**, and never choose a monetary scale or rounding rule
+    yourself — they are open decisions
+    ([financial integrity](docs/architecture/financial-integrity.md), ADR-0019).
+26. **Preserve financial and status audit history.** Ledger entries, raw receipts, and status history are
+    append-only; corrections are new entries.
+27. **An idempotency key prevents duplicate operations inside our platform only** — it does not guarantee
+    a single telco submission ([API idempotency](docs/architecture/api-idempotency.md)).
 
 ---
 
@@ -201,8 +226,9 @@ docs/              All project documentation (index: docs/README.md)
 | Go code | [docs/standards/coding-standards.md](docs/standards/coding-standards.md), [docs/architecture/architecture-principles.md](docs/architecture/architecture-principles.md) |
 | Frontend | [docs/standards/coding-standards.md](docs/standards/coding-standards.md) (frontend sections) |
 | Database | §10 below, [decision log](docs/engineering/decision-log.md) (ADR-0005, 0010, 0011, 0014) |
-| Messaging / providers | §11 below, [telco discovery checklist](docs/integrations/telco-discovery-checklist.md), [glossary](docs/glossary.md) |
-| Billing / credits | §10, §11.9, ADR-0011 |
+| Messaging / providers / events | §11 below, [messaging reliability](docs/architecture/messaging-reliability.md), [telco discovery checklist](docs/integrations/telco-discovery-checklist.md), [glossary](docs/glossary.md) |
+| Public API / message submission | §9 below, [API idempotency](docs/architecture/api-idempotency.md) |
+| Billing / credits / pricing | §10, §11.9, [financial integrity](docs/architecture/financial-integrity.md), ADR-0011, ADR-0019 |
 | Auth, tenants, API keys, PII | [docs/security/security-baseline.md](docs/security/security-baseline.md) |
 | Tests | [docs/standards/testing-standards.md](docs/standards/testing-standards.md) |
 | Requirements questions | [docs/requirements/discovery-register.md](docs/requirements/discovery-register.md) |
@@ -253,9 +279,9 @@ These constraints must be preserved by all future work. Changing one requires an
    Balances can never be silently changed. Every charge is traceable to a message or an authorized
    administrative action.
 5. **At-least-once processing with idempotency.** Internal processing assumes events may be delivered
-   more than once. Every consumer is idempotent. Reconciliation jobs detect and repair drift.
-   **Never promise exactly-once SMS delivery** — telco submission is inherently ambiguous on timeouts
-   (see §11.5).
+   more than once. Every consumer is idempotent. Reconciliation jobs detect drift and report it; repairs
+   are explicit, audited actions. **Never promise exactly-once SMS delivery** — telco submission is
+   inherently ambiguous on timeouts (see §11.5).
 6. **Scalability based on verified requirements.** No single process is assumed to handle all traffic,
    but capacity targets come only from verified traffic data and contracted telco throughput.
 
@@ -342,7 +368,8 @@ Details and examples: [coding standards](docs/standards/coding-standards.md#go).
 - Tooling (proposed): `gofmt`, `go vet`, `golangci-lint`, `govulncheck`.
 
 ### 7.10 Other rules
-- Money and credits are **never** `float32`/`float64`. Use integer minor units (ADR-0011).
+- Money, rates, and credits are **never** `float32`/`float64`. Use the exact representation decided in
+  ADR-0019 (currently **open** — see [financial integrity](docs/architecture/financial-integrity.md)).
 - Times are `time.Time` in UTC internally; convert to `Asia/Manila` only for display.
 - Use generics only where they clearly remove duplication.
 
@@ -378,8 +405,10 @@ Details: [coding standards](docs/standards/coding-standards.md#frontend).
 - Before creating a component, search `components/ui/` for an existing one. Extend it rather than copy it.
 - New shared components need: typed props, all interactive states (hover, focus, disabled, loading,
   error), keyboard support, and tests.
-- Whether to adopt a headless accessible-primitives library is an open decision (ADR-0013); until
-  decided, do not add one.
+- Proposed direction (ADR-0013): complex interactive behaviours (dialogs, menus, dropdowns, popovers,
+  comboboxes) may use a maintained, accessible **headless** primitives library, styled with Tailwind.
+  No pre-styled UI framework. The specific library is an owner decision (D-140); until approved, do not
+  add one.
 
 ### 8.5 API integration
 - All HTTP calls go through the single typed API client in `src/lib/api/`. Components never call `fetch`
@@ -417,6 +446,7 @@ Details: [coding standards](docs/standards/coding-standards.md#frontend).
 - **Never put secrets in frontend code.** Any variable exposed to the Vite client bundle (e.g.
   `VITE_*`) is public.
 - Never render user-supplied content as HTML (`dangerouslySetInnerHTML` is prohibited for user data).
+- Never perform monetary arithmetic with JavaScript numbers; display server-provided amounts only.
 - Store session state in secure, HttpOnly cookies managed by the server (ADR pending), not in
   `localStorage`.
 
@@ -432,7 +462,9 @@ Details: [coding standards](docs/standards/coding-standards.md#frontend).
   (`+639171234567`).
 - Errors: RFC 9457 Problem Details (`application/problem+json`) with a stable machine-readable `type`.
 - Pagination: cursor-based for large collections.
-- Message-submission endpoints MUST support an **idempotency key** supplied by the client.
+- Message-submission endpoints MUST support an **idempotency key** supplied by the client, following the
+  proposed contract in [API idempotency](docs/architecture/api-idempotency.md) (ADR-0018).
+- Monetary amounts are transmitted as strings with documented currency and scale (proposed, ADR-0019).
 - Resource IDs are opaque strings; never expose sequential database IDs.
 - Every endpoint documents: authentication, required permission, rate limit, and error cases.
 - Request body size limits and server timeouts are always set.
@@ -461,14 +493,16 @@ Details: [coding standards](docs/standards/coding-standards.md#frontend).
 
 ### 10.3 Types
 - IDs: UUID (UUIDv7 proposed for time-ordering); never expose sequential integers publicly.
-- Money/credits: `bigint` in integer minor units (ADR-0011). **Never** `float`/`real`/`double precision`.
+- Money/credits/rates: exact types only, with documented currency and scale. **Never**
+  `float`/`real`/`double precision`. The representation (scaled integer vs. `numeric`) and scale are
+  **open** (ADR-0019) — do not choose them in a migration without an accepted ADR.
 - `jsonb` only for genuinely unstructured data (e.g. raw provider payloads), never to avoid modelling.
 
 ### 10.4 Transactions
 - Keep transactions short. **No external network calls inside a transaction.**
 - Use row locks (`SELECT ... FOR UPDATE`) or atomic conditional updates for balances and state changes.
 - Retry on serialization failures and deadlocks with bounded attempts.
-- Writing a business change **and** the event announcing it happens in the same transaction
+- A business change **and** the outbox record announcing it are written in the same transaction
   (transactional outbox, §11.1).
 
 ### 10.5 Indexes
@@ -485,7 +519,9 @@ Details: [coding standards](docs/standards/coding-standards.md#frontend).
 - Every tenant-owned table has `tenant_id NOT NULL`.
 - Every query on tenant data filters by `tenant_id` derived from the authenticated principal.
 - Prefer composite keys/constraints that include `tenant_id` so cross-tenant references are impossible.
-- PostgreSQL Row-Level Security as defense-in-depth is proposed (ADR-0010).
+- PostgreSQL Row-Level Security as defense-in-depth is proposed, **subject to evaluation** (ADR-0010).
+  RLS never replaces application authorization; if adopted, tenant context is set per transaction, never
+  per pooled session.
 - Every tenant-scoped repository has a test proving tenant A cannot read or modify tenant B's data.
 
 ### 10.8 Data retention
@@ -503,22 +539,29 @@ Details: [coding standards](docs/standards/coding-standards.md#frontend).
 
 ## 11. Messaging standards
 
-Read the [glossary](docs/glossary.md) if any term below is unfamiliar.
+The authoritative definitions are in [messaging reliability](docs/architecture/messaging-reliability.md)
+(events, lifecycle, receipts), [API idempotency](docs/architecture/api-idempotency.md), and
+[financial integrity](docs/architecture/financial-integrity.md). This section summarizes them. Read the
+[glossary](docs/glossary.md) if any term is unfamiliar.
 
-### 11.1 Asynchronous processing
+### 11.1 Asynchronous processing and the transactional outbox
 - Accepting a message and sending it to a telco are **separate steps**. The API accepts, validates,
   reserves credit, persists, and returns a message ID; dispatch happens asynchronously.
-- Persisting a state change and publishing the corresponding event use the **transactional outbox**
-  pattern, so an event is never lost or published for a change that was rolled back.
+- A state change and its outbox record are committed **atomically**; if the transaction rolls back, the
+  event is never published. A committed outbox record will eventually be published.
+- The outbox publisher may publish the **same event more than once** (crash before marking, ambiguous
+  acknowledgment, retries). Events carry a stable event ID. Delivery is **at-least-once**, not exactly-once.
 - The queue/broker technology is deferred (ADR-0006). Code against an internal interface.
 
 ### 11.2 Idempotency
-- Every API submission accepts a client **idempotency key**; repeats within the retention window
-  return the original result and never create a second message or a second charge.
-- Every consumer is idempotent: processing the same event twice has the same effect as once
-  (dedupe on stable IDs, conditional state transitions).
+- **Consumers:** every consumer is idempotent and documents its duplicate-detection mechanism
+  (processed-event record, conditional state transition, or unique business key — messaging reliability §2.4).
+- **API:** message submission accepts a client idempotency key per the proposed contract (ADR-0018). It
+  prevents duplicate operations **inside our platform**; it does not guarantee a single telco submission.
 - Our internal message ID is created once at acceptance and never changes. Telco message IDs are stored
   as a mapping, never used as our primary identity.
+- **Ordering:** no global ordering is guaranteed. Where correctness depends on order, the component
+  documents the scope, mechanism, and handling of out-of-order events (messaging reliability §2.5).
 
 ### 11.3 Bounded concurrency
 - Worker counts, in-flight windows, and queue sizes are configured and finite.
@@ -531,24 +574,32 @@ Read the [glossary](docs/glossary.md) if any term below is unfamiliar.
 - Exceeding a telco's limit can lead to throttling or suspension; limits are enforced centrally, not
   by each worker guessing.
 
-### 11.5 Retry policy
-- Classify every provider response as **success**, **retryable** (temporary), **permanent failure**,
-  or **ambiguous** (e.g. timeout with no response — the telco may or may not have accepted it).
-- Retry only retryable failures, with exponential backoff and jitter, a maximum attempt count, and a
-  **maximum message age** (an OTP that arrives 20 minutes late is useless and may confuse users).
-- **Ambiguous outcomes are not blindly retried**: a retry may produce a duplicate SMS to a real person.
-  The per-provider policy for ambiguous outcomes is a documented decision.
-- Messages that exhaust retries go to a failed state visible to operators; credits are handled per the
-  billing rules.
+### 11.5 Provider submission and retries
+- Distinguish the milestones: accepted by our API → queued → submission attempted → provider
+  acknowledgment → final receipt → customer-visible status. None before a final receipt proves delivery
+  (messaging reliability §3).
+- Classify every provider response as **success**, **retryable**, **permanent**, or **ambiguous**
+  (e.g. timeout with no response). Classification lives in the provider adapter, from telco documentation.
+- Retry only **retryable** outcomes, with exponential backoff and jitter, an attempt limit, and a
+  **maximum message age**.
+- Record a submission attempt before sending; a redelivered dispatch event must not submit again.
+- **Ambiguous outcomes are never blindly retried**: the message moves to an uncertain state and is
+  resolved by the per-provider policy (an owner decision, D-095).
 
 ### 11.6 Delivery receipt (DLR) processing
-- DLRs are correlated to messages via the stored telco message ID mapping.
-- DLRs may arrive late, out of order, duplicated, or never. They may even arrive before our record of
-  the submission response is written. Processing MUST tolerate all of these.
-- Message state transitions are explicit and **monotonic** (a final state is never overwritten by an
-  earlier one). Unmatched DLRs are stored for reconciliation, not discarded.
-- Messages without a final DLR after a configured window move to an explicit `unknown`/`expired` state.
-- DLR formats vary by telco; parsing MUST follow each telco's documentation.
+- Receipts may be late, missing, duplicated, conflicting, or out of order, and may arrive before our
+  record of the provider acknowledgment. Processing MUST tolerate all of these.
+- Store every raw receipt and every status transition in append-only history.
+- No final receipt within the configured window → `UNKNOWN` (proposed name): an **uncertain** state,
+  **not** proof of non-delivery. The window is configured per provider; there is no universal default.
+- Late receipts are still correlated, applied by precedence rules, and eligible for reconciliation.
+- State changes follow **precedence, not arrival order**; a final state is never replaced by a
+  transitional one; conflicting finals are flagged, not silently overwritten.
+- Duplicate receipts never cause duplicate billing, refunds, or webhooks (side effects keyed per message
+  and effect type).
+- Provider receipt formats and status mappings stay **inside provider adapters**.
+- Final-status rules, billing treatment of uncertain states, and segment roll-up are pending owner
+  decisions (D-095–D-098); do not invent them.
 
 ### 11.7 Failure handling
 - Provider outages trigger circuit breaking and, where approved, failover routing — never silent loss.
@@ -557,16 +608,18 @@ Read the [glossary](docs/glossary.md) if any term below is unfamiliar.
 
 ### 11.8 Message ordering
 - SMS delivery order is **not guaranteed** by telcos. The system MUST NOT promise ordering to clients.
-- Internal ordering is required only where documented (e.g. a message's own state transitions).
-  Multi-part (concatenated) messages are reassembled by the handset using segment headers.
+- Multi-part (concatenated) messages are reassembled by the handset using segment headers.
 
 ### 11.9 Billing consistency
 - Credit is **reserved** at acceptance, **settled** at the point defined by the billing rules
-  (submission or delivery — a business decision), and **released** for messages that fail before
+  (submission or delivery — business decision D-080), and **released** for messages that fail before
   being chargeable.
-- Reservation, settlement, and release are ledger entries, each idempotent and keyed to a message ID.
-- Charges are by **segment** count unless the business decides otherwise; segment calculation is shared
-  code used by both the cost estimate and the actual charge.
+- Reservation, settlement, release, refund, and reversal are separate ledger entries, each idempotent
+  (unique key per message and entry type). Corrections are compensating entries, never edits.
+- Charges are based on **billable segments**, computed by one shared segmentation function used for the
+  estimate and the charge — not on the number of API requests.
+- Amounts, rates, and rounding follow [financial integrity](docs/architecture/financial-integrity.md);
+  representation, scale, and rounding rules are open (ADR-0019, D-092, D-093).
 - Reconciliation compares our ledger, our message states, and telco billing records; discrepancies are
   reported, never auto-corrected silently.
 
@@ -608,9 +661,11 @@ Details: [security baseline](docs/security/security-baseline.md).
 Details: [testing standards](docs/standards/testing-standards.md).
 
 - Every behaviour change ships with tests at the appropriate level (unit, integration, contract, E2E).
-- **Mandatory test coverage areas** (no exceptions): ledger and credit operations, idempotency,
-  tenant isolation, authorization checks, segment/encoding calculation, message state transitions,
-  DLR correlation, retry classification.
+- **Mandatory test coverage areas** (no exceptions): ledger and credit operations (including rounding),
+  API idempotency, outbox publication and duplicate event consumption, tenant isolation, authorization
+  checks, segment/encoding calculation, message state transitions, ambiguous submission handling,
+  DLR correlation (late, missing, duplicate, out-of-order), retry classification. Representative scenarios
+  are listed in the authoritative documents and in the testing standards.
 - Tests are deterministic: no real time, randomness, or network unless injected/controlled.
 - **No test may send a real SMS or connect to a production telco endpoint.**
 - Report the exact test commands you ran and their results in your completion report.
@@ -621,7 +676,10 @@ Details: [testing standards](docs/standards/testing-standards.md).
 
 Full detail: [git workflow](docs/engineering/git-workflow.md).
 
-- `main` is protected. **Never commit or push directly to `main`.** Never force-push shared branches.
+- **Current state:** `main` does not exist yet and no branch protection is configured; the owner actions
+  to create it are in [git workflow §0](docs/engineering/git-workflow.md#0-current-repository-state-and-required-owner-actions).
+  Until then, branch from the repository's default branch and target PRs at it.
+- **Target state:** `main` is protected. **Never commit or push directly to `main`.** Never force-push shared branches.
 - One task → one branch → one pull request. Branch names: `<type>/<task-id>-<short-description>`
   (types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`). Tool-assigned branch names (e.g.
   `claude/...`) are acceptable if the PR title carries the task ID.

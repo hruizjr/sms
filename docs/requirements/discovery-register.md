@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — living document | Project owner | 2026-11-24 |
+| Draft — living document | Project owner | 2026-11-24 (remediation: D-092–D-099, D-114–D-117, D-140–D-142 added) |
 
 This register lists everything we know, assume, or still need to find out. **It is the authority on
 what is known.** AI agents must not treat any item as confirmed unless it is in §1 with evidence.
@@ -21,6 +21,7 @@ what is known.** AI agents must not treat any item as confirmed unless it is in 
   - **Business decision** — the owner must decide.
   - **Telco-dependent** — only the telcos can answer.
   - **Regulatory-dependent** — depends on law/regulators; needs qualified legal advice.
+  - **Engineering decision** — a technical choice reserved for the owner (§9).
 
 ---
 
@@ -50,7 +51,7 @@ what is known.** AI agents must not treat any item as confirmed unless it is in 
 | D-020 | Define an MVP scope (candidate list in the product brief) before building features. | Avoids building everything at once. |
 | D-021 | MFA mandatory for all Super Admin users. | Admins can move money and change routing. |
 | D-022 | Sender IDs must be approved before use; impersonation checks during approval. | Smishing and brand impersonation risk. |
-| D-023 | Public API supports idempotency keys on message submission. | Prevents duplicate sends and charges on client retries. |
+| D-023 | Public API supports idempotency keys on message submission (contract proposed in ADR-0018; open details in D-094). | Prevents duplicate operations and charges on client retries inside our platform. Does not by itself prevent duplicate telco submissions. |
 | D-024 | Opt-out/suppression list is enforced platform-wide before dispatch. | Compliance and recipient protection. |
 | D-025 | Campaigns above a configurable size (or from new tenants) require admin approval. | Abuse prevention; owner listed "campaign approval". |
 | D-026 | A simulator provider adapter is built before any real telco adapter. | Enables development and testing without telco access. |
@@ -95,7 +96,7 @@ what is known.** AI agents must not treat any item as confirmed unless it is in 
 | ID | Decision | Options / notes |
 | -- | -------- | --------------- |
 | D-080 | Charge on submission or on delivery? | Delivery-based is friendlier to clients but exposes us to telco charges for undelivered messages. Depends on telco billing basis. |
-| D-081 | Credit unit: pesos or SMS credits? Precision of prices (e.g. fractions of a centavo)? | Affects ledger design (ADR-0011). |
+| D-081 | Credit unit: pesos or SMS credits? | Affects ledger design (ADR-0011) and representation (ADR-0019). |
 | D-082 | Prepaid only, or postpaid for some customers? | Credit limits, invoicing, collections. |
 | D-083 | Refund policy for failed/undelivered messages. | Ledger release rules. |
 | D-084 | Pricing structure: per network, per message type, volume tiers? | Pricing engine complexity. |
@@ -106,6 +107,14 @@ what is known.** AI agents must not treat any item as confirmed unless it is in 
 | D-089 | MVP scope and launch customers. | Roadmap. |
 | D-090 | Budget envelope for infrastructure and operations. | Technology choices. |
 | D-091 | Single vs. separate admin and client portals (ADR-0013). | Security vs. simplicity. |
+| D-092 | **Monetary representation and precision**: currency(ies); precision (decimal places) of actual telco wholesale rates and our retail rates; resulting storage representation and scale (scaled integer vs. exact decimal). | Requires actual rate cards and the pricing model. Centavos may be insufficient. See ADR-0019 and [financial integrity](../architecture/financial-integrity.md). |
+| D-093 | **Rounding rules**: where rounding occurs (per segment, message, campaign, invoice), rounding mode, residue handling, and audit inputs recorded. | Determines estimate/charge consistency and reconciliation with telco invoices. |
+| D-094 | **API idempotency details** (ADR-0018): (a) key required vs. optional; (b) scope per tenant + operation vs. per API credential; (c) whether business rejections (e.g. insufficient credit) are recorded; (d) retention period; (e) bulk request semantics (all-or-nothing vs. per-recipient). | Recommendations in [API idempotency](../architecture/api-idempotency.md). |
+| D-095 | **Policy for ambiguous provider submissions** (timeouts, crash after sending), per provider and traffic type: never resubmit, resubmit after status query, wait for receipt, or resubmit for selected traffic types. | Trade-off between losing a message and sending a duplicate SMS. Depends on provider capabilities (D-115). |
+| D-096 | **Treatment of uncertain messages** (`SUBMIT_UNCERTAIN`, `UNKNOWN`): customer-visible label, billing (hold, charge, release), and effect of a late receipt after a release or refund. | Customer trust, margin, and reconciliation. |
+| D-097 | **Multi-segment roll-up**: how per-segment outcomes determine message status, and billing of partially delivered messages. | Depends on provider receipt behaviour (D-104). |
+| D-098 | **Conflicting final receipts**: resolution policy when a provider reports different final states for one message. | Reconciliation and customer reporting. |
+| D-099 | **Customer-visible status set and webhook semantics** (statuses exposed; webhooks documented as at-least-once with event IDs). | Public API contract. |
 
 ## 7. Telco-dependent requirements
 
@@ -127,6 +136,10 @@ Full checklist: [telco discovery checklist](../integrations/telco-discovery-chec
 | D-111 | SLAs, maintenance windows, escalation contacts. |
 | D-112 | Whether PLDT Enterprise and Smart are separate integrations or a single route. |
 | D-113 | Aggregator/reseller authorization requirements imposed by each telco. |
+| D-114 | Provider message ID format, uniqueness (across binds and over time), and reuse period. |
+| D-115 | Provider capabilities for resolving ambiguous submissions: status-query API, provider-side duplicate detection. |
+| D-116 | Receipt timing characteristics (typical and maximum delay) to set per-provider `UNKNOWN` windows. |
+| D-117 | Number of decimal places in telco rates; telco's own rounding and segment-counting rules for billing. |
 
 ## 8. Regulatory-dependent requirements
 
@@ -144,3 +157,11 @@ is legal advice.
 | D-126 | Lawful requests from authorities for records: process and obligations. |
 | D-127 | Tax and invoicing requirements (e.g. BIR rules for receipts/invoices). |
 | D-128 | Implications of the SIM Registration Act (RA 11934) for sender identities, if any. |
+
+## 9. Engineering decisions requiring owner approval
+
+| ID | Decision | Notes |
+| -- | -------- | ----- |
+| D-140 | Selection of a headless accessible UI primitives library (if any) for complex interactions. | Direction proposed in ADR-0013; evaluate maintenance, accessibility, licence, compatibility, footprint. No package added until approved. |
+| D-141 | Adoption of PostgreSQL Row-Level Security after evaluation. | ADR-0010 lists the evaluation requirements (pooling, transaction-scoped context, roles, performance, tests). |
+| D-142 | Acceptance of each Proposed ADR. | See the review summary in the [decision log](../engineering/decision-log.md#5-review-summary-2026-11-24). |

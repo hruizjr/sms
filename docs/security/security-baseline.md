@@ -53,7 +53,10 @@ program; §11 lists the security engineering still required. Nothing here is leg
 
 - Tenant derived from the authenticated identity only.
 - Database scoping by `tenant_id` on every tenant-owned record; Row-Level Security as defense-in-depth
-  (ADR-0010).
+  **if adopted after evaluation** (ADR-0010). RLS is **not** a substitute for application authorization:
+  it only filters rows and knows nothing about roles or permissions. If adopted, tenant context is set per
+  transaction (never per pooled session), the application role must not own tables, be a superuser, or
+  hold `BYPASSRLS`, and policies must fail closed when context is missing.
 - Opaque, non-sequential identifiers.
 - Exports, reports, caches, and background jobs are tenant-scoped too.
 - Automated cross-tenant tests for every tenant-scoped feature.
@@ -77,6 +80,8 @@ program; §11 lists the security engineering still required. Nothing here is leg
 - **Protection:** TLS for all traffic; encryption at rest for databases and backups; field-level
   encryption for especially sensitive data considered in design.
 - **Logs:** phone numbers masked; message bodies and OTP values never logged.
+- **Raw delivery receipts** are stored for audit, and some formats can include a fragment of message text;
+  they are treated as personal data (restricted access, retention rules).
 - **Access:** staff access to message content restricted by role and audited.
 - **Data subject rights and breach response:** processes to be defined with privacy counsel under the
   Data Privacy Act; conflicts between erasure requests and mandatory retention to be resolved explicitly.

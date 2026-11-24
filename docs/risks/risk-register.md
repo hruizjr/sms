@@ -54,6 +54,10 @@ All risks below are **Open** at the time of writing; no mitigation has been impl
 | R-37 | Limited telco binds create single points of failure in connector processes. | Medium | Medium | Active/standby design (AQ-3); reconnect logic; monitoring of bind status. | Open |
 | R-38 | PostgreSQL write volume or table growth becomes a bottleneck. | Medium | Medium | Partitioning, batching, retention; load tests; broker adoption when justified. | Open |
 | R-39 | Encoding/segmentation errors cause garbled messages or unexpected costs. | Medium | Medium | Exhaustively tested segmentation; cost preview; telco-confirmed encoding rules. | Open |
+| R-60 | Monetary precision or rounding errors (e.g. storing centavos when rates need more precision) cause material discrepancies at volume. | High | Medium | Exact arithmetic only; representation decided from real rates (ADR-0019); one shared rounding function; reconciliation. | Open |
+| R-61 | Duplicate event publication or consumption causes duplicate side effects (charges, refunds, webhooks). | High | Medium | At-least-once with idempotent consumers (ADR-0020); unique keys on side effects; test scenarios OB/DR. | Open |
+| R-62 | Treating timeouts or missing receipts as failures causes wrong refunds, misleading reports, and customer resends that duplicate SMS. | Medium | High | Uncertain states (`SUBMIT_UNCERTAIN`, `UNKNOWN`); late-receipt reconciliation (ADR-0021). | Open |
+| R-63 | Row-Level Security misconfigured (session-level context on pooled connections, owner/BYPASSRLS role) leaks tenant data or gives false assurance. | High | Low–Medium | Evaluation before adoption; transaction-scoped context; non-owner role; fail-closed policies; leak tests (ADR-0010). | Open |
 
 ## Operational
 

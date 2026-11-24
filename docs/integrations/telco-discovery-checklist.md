@@ -126,6 +126,8 @@ Legend: `—` not asked · `Asked` · `Partial` · `Confirmed` (with evidence) �
 - [ ] Are DLRs provided for all traffic? On-net and off-net?
 - [ ] DLR format (e.g. text in `short_message` vs. TLVs `receipted_message_id`/`message_state`).
 - [ ] Message ID format and consistency between `submit_sm_resp` and DLR (e.g. hex vs. decimal).
+- [ ] Are provider message IDs unique across binds and over time? After how long can an ID be reused?
+- [ ] Can multiple final receipts arrive for the same message? Can a receipt arrive before `submit_sm_resp`?
 - [ ] DLR per segment or per message?
 - [ ] Full list of final and intermediate states and their meanings.
 - [ ] Typical and maximum DLR delay; does the telco retry DLR delivery if we are disconnected?
@@ -146,11 +148,13 @@ Legend: `—` not asked · `Asked` · `Partial` · `Confirmed` (with evidence) �
 - [ ] Telco recommendations for retrying after temporary errors (timing, maximum attempts).
 - [ ] Does the telco retry delivery to unreachable handsets internally? For how long (validity period)?
 - [ ] Recommended handling of submission timeouts (no `submit_sm_resp`) to avoid duplicates.
-- [ ] Does the telco detect duplicate submissions?
+- [ ] Does the telco detect duplicate submissions? On what basis, and is this guaranteed in writing?
+- [ ] Is there an API to query the status of a previously submitted message (to resolve ambiguous outcomes)?
 
 ## 15. Billing and reconciliation
 - [ ] Billing basis: per submitted segment, per delivered segment, per message? **[Business]**
 - [ ] Rates; differences by traffic type, destination network, volume tier. **[Business]**
+- [ ] Currency and number of decimal places in rates; the telco's own rounding rules on invoices. **[Business]**
 - [ ] Prepaid deposit, credit limit, minimum commitment, or settlement terms. **[Business]**
 - [ ] Availability and format of CDRs or usage reports; frequency; delivery method.
 - [ ] Dispute and reconciliation process; timelines.
