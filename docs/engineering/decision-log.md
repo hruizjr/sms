@@ -510,7 +510,7 @@ admins). The owner wants no unnecessary UI or styling libraries.
 | Form validation | Hand-written vs. a schema library (e.g. Zod) + form library | Schema library; shared schemas improve consistency |
 | Package manager | npm vs. pnpm | pnpm (workspace support) — or npm for simplicity |
 
-Each library above is a dependency requiring approval under `AGENTS.md` rule 5.
+Each library above is a dependency requiring approval under `AGENTS.md` §2 rule 5.
 
 **Operational cost** — Low. **Missing information** — Owner choices (D-091, D-140); current versions at scaffolding.
 
