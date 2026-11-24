@@ -1,0 +1,17 @@
+# Normalize line endings to LF for all text files.
+* text=auto eol=lf
+
+# Binary files — never apply line-ending conversion or text diffs.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.pdf  binary
+*.xlsx binary
+*.woff binary
+*.woff2 binary
+
+# Generated files (to be added when code generation is introduced) should be
+# marked `linguist-generated=true` so they are collapsed in pull request diffs.

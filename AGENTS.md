@@ -1,0 +1,689 @@
+# AGENTS.md — Instructions for AI Coding Agents
+
+> **Every AI agent must read this entire file before doing any work in this repository.**
+> It is the single source of truth for how work is done here. If any other document conflicts with
+> this file, this file wins — and you must report the conflict.
+
+| Field | Value |
+| ----- | ----- |
+| Project | Enterprise A2P SMS Platform (Philippines) |
+| Current phase | **Phase 1 — Engineering Foundation (documentation only)** |
+| Next phase authorized? | **No.** Do not start Phase 2 work until the project owner explicitly approves it. |
+| Decision authority | The project owner (a single human). Agents propose; the owner decides. |
+| Last updated | 2026-11-24 |
+
+---
+
+## Contents
+
+1. [Current status and what you may do](#1-current-status-and-what-you-may-do)
+2. [AI agent operating rules](#2-ai-agent-operating-rules)
+3. [Project context](#3-project-context)
+4. [Repository map and required reading](#4-repository-map-and-required-reading)
+5. [Engineering principles](#5-engineering-principles)
+6. [Architectural constraints](#6-architectural-constraints)
+7. [Go standards](#7-go-standards)
+8. [Frontend standards](#8-frontend-standards)
+9. [API standards](#9-api-standards)
+10. [Database standards](#10-database-standards)
+11. [Messaging standards](#11-messaging-standards)
+12. [Security standards](#12-security-standards)
+13. [Testing requirements](#13-testing-requirements)
+14. [Git and pull request workflow](#14-git-and-pull-request-workflow)
+15. [Definition of Done](#15-definition-of-done)
+16. [Completion report format](#16-completion-report-format)
+17. [Decisions: how to read and propose them](#17-decisions-how-to-read-and-propose-them)
+
+The words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are used deliberately. MUST rules are not
+optional; if you believe one must be broken, stop and ask the project owner.
+
+---
+
+## 1. Current status and what you may do
+
+The repository contains only documentation, folder structure, and repository hygiene files.
+
+**Verified facts:** almost none. The business *intends* to become an A2P SMS aggregator. No telco
+agreement, technical integration, accreditation, regulatory authorization, or traffic volume has been
+verified. Treat everything else as a proposal until the
+[discovery register](docs/requirements/discovery-register.md) says otherwise.
+
+Until a task explicitly authorizes it, you MUST NOT:
+
+- implement application features, REST endpoints, business logic, or UI pages;
+- create database schemas or migrations;
+- write SMS-sending code or SMPP/telco connector code;
+- add dependencies, `go.mod`, or `package.json`;
+- provision servers, deploy anything, or configure real telco credentials;
+- send any message to any real phone number.
+
+---
+
+## 2. AI agent operating rules
+
+These rules apply to every agent, on every task, with no exceptions.
+
+1. **Read this `AGENTS.md` before starting work.**
+2. **Read the relevant project documentation** before implementing a task (see §4 for what to read).
+3. **Follow approved architectural decisions** in the [decision log](docs/engineering/decision-log.md).
+   Decisions marked *Proposed* are the current direction but not binding — if your task depends on one,
+   say so in your report.
+4. **Never invent telco API specifications or SMPP configurations.** Hostnames, ports, system IDs,
+   system types, TON/NPI values, throughput limits, error-code meanings, delivery-receipt formats, and
+   encoding behaviour MUST come from official telco documentation stored or referenced in
+   `docs/integrations/`. If it is not documented, write `TODO(telco-confirm): <question>` and record the
+   question in the [telco discovery checklist](docs/integrations/telco-discovery-checklist.md).
+5. **Never introduce a dependency without explaining why.** In the PR, state: what it does, why the
+   standard library or an existing dependency is insufficient, its licence, its maintenance status, and
+   its security record. New dependencies require owner approval.
+6. **Never modify unrelated files.** No drive-by refactors, reformatting, or "improvements" outside the
+   task scope. If you spot a problem elsewhere, report it instead.
+7. **Never silently change database schemas or API contracts.** Any change to migrations,
+   `contracts/`, event schemas, or public API behaviour MUST be listed under "Schema / contract changes"
+   in the PR description with its compatibility impact.
+8. **Write appropriate automated tests** for every behaviour change (see §13).
+9. **Run the relevant tests before declaring completion**, and report the exact commands and results.
+   If you could not run them, say so plainly and explain why.
+10. **Report every changed file** and explain the change (see §16).
+11. **Identify assumptions and unresolved issues** explicitly. Never hide uncertainty.
+12. **Never commit directly to the `main` branch.** Work on a feature branch and open a pull request.
+13. **Never expose credentials, API keys, tokens, or secrets** — not in code, tests, fixtures, logs,
+    commit messages, PR descriptions, screenshots, or chat output.
+14. **Never claim an integration works without an actual test.** State precisely what was tested:
+    "verified against the telco test environment on <date>", "verified against the local simulator",
+    or "mock test only". Untested integrations MUST be described as untested.
+
+Additional rules:
+
+15. **Work only on a clearly defined task** (see [AI agent workflow](docs/engineering/ai-agent-workflow.md)).
+    If the task is ambiguous, ask before writing code.
+16. **Avoid overlapping modifications to shared files.** Shared "hot" files — `AGENTS.md`, anything in
+    `contracts/`, migrations, `go.mod`/`go.sum`, `package.json`/lockfiles, CI configuration, and
+    `infra/` — may only be changed when the task explicitly includes them.
+17. **Do not mark business, telco, or regulatory items as confirmed** without evidence (a signed
+    document, official specification, or written confirmation referenced in the docs).
+18. **Prefer the simplest design that meets the documented requirement.** Do not add infrastructure,
+    services, abstractions, or configurability "for the future" without an approved requirement.
+19. **Keep documentation true.** If your change makes a document inaccurate, update the document in the
+    same pull request.
+20. **Never use real personal data.** Test data must be synthetic. Do not paste customer data,
+    phone numbers, or message content into prompts, logs, or fixtures.
+21. **Stop and ask** when a task would require a decision reserved for the project owner (§17), an
+    action outside the repository (deployment, account creation, contacting third parties), or breaking
+    a MUST rule.
+
+---
+
+## 3. Project context
+
+### 3.1 The business
+
+We are building the software for a **Philippine A2P SMS aggregation business**. "A2P"
+(Application-to-Person) means messages sent by a business system to a person's phone — one-time
+passwords (OTPs), transaction alerts, appointment reminders, government advisories, and marketing.
+An **aggregator** connects many business customers to the mobile networks through one platform.
+
+Intended telco partners: **Smart Communications**, **Globe Telecom**, **PLDT Enterprise**, and
+possibly others later (the third mobile network operator, DITO, is not yet in scope — see the
+discovery register). Initial discussions have reportedly occurred with Smart, Globe, PLDT, and the
+**NTC** (National Telecommunications Commission, the Philippine regulator). **None of these are
+confirmed.** The relationship between PLDT Enterprise and Smart (same corporate group) must be
+clarified — they may or may not be separate technical integrations.
+
+The owner has reported a projected **~5 billion monthly traffic** figure. This is **unverified** and its
+unit is unknown (messages? segments? recipients? prospective totals?). **Do not size or design anything
+on this number.** See [traffic capacity discovery](docs/requirements/traffic-capacity-discovery.md).
+
+### 3.2 What the platform does (intended)
+
+- **Client Portal:** onboarding, users, contacts and imports, campaigns and scheduling, message
+  composition, delivery reports, analytics, credit balance, API keys.
+- **Super Admin Portal:** client and user management, sender ID management, campaign approval and
+  monitoring, pricing, credit allocation, billing history, provider configuration, monitoring, audit logs.
+- **Messaging infrastructure:** provider adapters (Smart, Globe, ...), ingestion, queueing, routing,
+  per-provider rate limiting, delivery receipts, retries, duplicate protection, connection monitoring.
+- **Billing:** client-specific pricing, credits, reservations, deductions, ledger, reconciliation.
+- **Developer platform:** public REST API, authentication, documentation, webhooks, rate limits.
+- **Security and compliance:** tenant isolation, RBAC, consent, opt-out/suppression, audit logs,
+  data protection, campaign restrictions, retention.
+
+Details and gaps: [product brief](docs/product/product-brief.md) and
+[discovery register](docs/requirements/discovery-register.md).
+
+### 3.3 Intended architecture (direction, not final)
+
+- **Monorepo** containing frontend, backend, contracts, infrastructure config, and docs.
+- **Modular monolith** in Go: one module, several executables, strict module boundaries (ADR-0003, Proposed).
+- **Control plane / data plane separation** — logical from the start, physical (separate processes)
+  where justified (ADR-0009, Proposed).
+- **Provider abstraction** — every telco is an adapter behind one interface (ADR-0012, Proposed).
+- **PostgreSQL** as the system of record (ADR-0005, Proposed).
+- Kafka/Redpanda, Redis, ClickHouse are **candidates, deferred** until verified requirements justify them
+  (ADR-0006/0007/0008, Proposed).
+
+### 3.4 Technology preferences and their status
+
+| Area | Preference | Status |
+| ---- | ---------- | ------ |
+| Frontend | React, TypeScript (strict), Vite, Tailwind CSS | Preferred by owner; versions to be pinned at scaffolding |
+| Styling | Tailwind CSS only; no other styling or CSS frameworks | Owner requirement |
+| Backend language | Go | Preferred by owner |
+| HTTP router | Chi | Under evaluation vs. Go standard library (ADR-0004) |
+| API style | REST + JSON, OpenAPI contracts | Proposed (ADR-0015) |
+| Primary database | PostgreSQL | Proposed (ADR-0005) |
+| Message broker | Kafka or Redpanda | **Deferred** (ADR-0006) |
+| Cache / coordination | Redis | **Deferred** (ADR-0007) |
+| Analytics store | ClickHouse | **Deferred** (ADR-0008) |
+| Containers | Docker | Preferred |
+| Metrics / dashboards | Prometheus / Grafana | Preferred |
+
+---
+
+## 4. Repository map and required reading
+
+```
+AGENTS.md          This file
+backend/           Go module (cmd/ = executables, internal/ = modules)   — empty
+frontend/          React applications                                    — empty
+contracts/         OpenAPI specs, event and webhook schemas              — empty
+infra/             Docker, local dev stack, observability config         — empty
+scripts/           Helper scripts                                        — empty
+tests/             E2E, load, provider-contract suites                   — empty
+docs/              All project documentation (index: docs/README.md)
+.github/           PR template, task template
+```
+
+**Required reading by task type** (in addition to this file):
+
+| Task touches... | Read first |
+| --------------- | ---------- |
+| Anything | [docs/engineering/ai-agent-workflow.md](docs/engineering/ai-agent-workflow.md), [docs/engineering/git-workflow.md](docs/engineering/git-workflow.md) |
+| Go code | [docs/standards/coding-standards.md](docs/standards/coding-standards.md), [docs/architecture/architecture-principles.md](docs/architecture/architecture-principles.md) |
+| Frontend | [docs/standards/coding-standards.md](docs/standards/coding-standards.md) (frontend sections) |
+| Database | §10 below, [decision log](docs/engineering/decision-log.md) (ADR-0005, 0010, 0011, 0014) |
+| Messaging / providers | §11 below, [telco discovery checklist](docs/integrations/telco-discovery-checklist.md), [glossary](docs/glossary.md) |
+| Billing / credits | §10, §11.9, ADR-0011 |
+| Auth, tenants, API keys, PII | [docs/security/security-baseline.md](docs/security/security-baseline.md) |
+| Tests | [docs/standards/testing-standards.md](docs/standards/testing-standards.md) |
+| Requirements questions | [docs/requirements/discovery-register.md](docs/requirements/discovery-register.md) |
+
+---
+
+## 5. Engineering principles
+
+1. **Maintainable and readable code.** Code is read far more than written, mostly by other agents.
+   Prefer obvious over clever. Name things for what they mean in the business domain.
+2. **Separation of concerns.** Transport (HTTP, SMPP), application logic, and persistence are separate
+   layers. Business rules never live in HTTP handlers, SQL strings, or React components.
+3. **Modular architecture.** Organize by business capability. Modules expose a small Go API and own
+   their data. Cross-module calls go through that API, never through another module's tables.
+4. **Security by design.** Tenant isolation, least privilege, input validation, and auditability are
+   designed in from the first line, not added later.
+5. **Testability.** Inject dependencies (database, clock, ID generator, provider adapters) so logic can be
+   tested without real infrastructure. No hidden globals.
+6. **Scalability without premature complexity.** Design so components *can* be separated and scaled
+   (stateless services, idempotent processing, explicit boundaries), but do not introduce distributed
+   infrastructure until verified requirements need it.
+7. **Explicit interface contracts.** APIs, events, and provider interfaces are written down, versioned,
+   and tested. Implicit coupling (shared tables, undocumented JSON fields) is not allowed.
+8. **Database integrity.** Use the database's guarantees — constraints, foreign keys, transactions,
+   unique indexes — rather than hoping application code is always correct.
+9. **Correctness over throughput for money.** Financial operations must be exact, auditable, and
+   reconcilable even if that costs performance.
+10. **Honesty about uncertainty.** Unknowns are documented, not guessed.
+
+---
+
+## 6. Architectural constraints
+
+These constraints must be preserved by all future work. Changing one requires an accepted ADR.
+
+1. **Provider abstraction.** Smart, Globe, and any future telco are independent **adapters** that
+   implement a common provider interface defined by the messaging module. Business logic (campaigns,
+   billing, routing policy) MUST NOT import a specific adapter or contain telco-specific branches.
+   A **simulator adapter** MUST exist so the whole system can run and be tested without any telco.
+2. **Control plane vs. data plane.** Control-plane concerns (tenants, users, auth, configuration,
+   pricing, billing, administration) and data-plane concerns (ingestion, dispatch, routing, delivery
+   receipts) are separate modules with explicit interfaces, so they can run as separate processes.
+   An outage or slowdown of the admin portal must not stop message dispatch, and a traffic spike must
+   not take down the portals.
+3. **Multi-tenancy.** Every client business is a **tenant**. Tenant data is strictly isolated. The
+   tenant is always derived from the authenticated identity, never from user-supplied input.
+4. **Financial integrity.** Credits and charges are recorded in an append-only, concurrency-safe ledger.
+   Balances can never be silently changed. Every charge is traceable to a message or an authorized
+   administrative action.
+5. **At-least-once processing with idempotency.** Internal processing assumes events may be delivered
+   more than once. Every consumer is idempotent. Reconciliation jobs detect and repair drift.
+   **Never promise exactly-once SMS delivery** — telco submission is inherently ambiguous on timeouts
+   (see §11.5).
+6. **Scalability based on verified requirements.** No single process is assumed to handle all traffic,
+   but capacity targets come only from verified traffic data and contracted telco throughput.
+
+---
+
+## 7. Go standards
+
+Details and examples: [coding standards](docs/standards/coding-standards.md#go).
+
+### 7.1 Package organization
+- One Go module in `backend/`. Executables in `backend/cmd/<name>/`; application code in
+  `backend/internal/<module>/`; shared technical plumbing in `backend/internal/platform/`.
+- `main.go` is thin: load config → build dependencies → run → shut down gracefully.
+- Package names are short, lowercase, singular, without underscores (`billing`, not `billing_service`).
+- MUST NOT create `utils`, `common`, `helpers`, `misc`, or `pkg/` (unless code is genuinely meant for
+  external import, which requires an ADR).
+- Define interfaces **where they are consumed**, keep them small, and return concrete types.
+- No import cycles; dependencies point inward (handler → service → repository).
+
+### 7.2 Error handling
+- Every error is handled. `_ = err` requires a comment explaining why.
+- Wrap with context: `fmt.Errorf("reserve credits for message %s: %w", id, err)`. Inspect with
+  `errors.Is` / `errors.As`.
+- Expected conditions use exported sentinel or typed errors (`ErrInsufficientCredit`, `ErrNotFound`).
+- Map domain errors to HTTP status codes **only at the transport boundary**. Never return internal error
+  text, SQL errors, or stack traces to clients.
+- Log an error **once**, at the boundary that handles it — do not log and return.
+- `panic` only for programmer errors at startup. Recover panics at HTTP middleware and at the top of
+  every long-running goroutine, log them, and convert them to errors.
+
+### 7.3 Context propagation
+- `ctx context.Context` is the first parameter of any function that does I/O or may block.
+- Never store a context in a struct; never pass `nil`; never use `context.Background()` inside request
+  handling (only in `main` and tests).
+- Every outbound call (database, HTTP, telco, broker) has a deadline.
+- Context values are only for request-scoped metadata (request ID, authenticated principal, tenant),
+  using unexported typed keys and accessor functions.
+
+### 7.4 Concurrency and goroutine lifecycle
+- **Every goroutine has an owner** responsible for stopping it and waiting for it to exit.
+- No fire-and-forget `go func()` in request paths. No unbounded goroutine creation per message/request.
+- Concurrency is **bounded**: worker pools or semaphores with configured limits.
+- Long-running loops `select` on `ctx.Done()`.
+- The sender closes a channel; receivers never close.
+- Shared state is protected by a mutex or confined to one goroutine. Do not use `time.Sleep` to
+  synchronize.
+- Graceful shutdown on SIGTERM/SIGINT: stop accepting work → finish or hand back in-flight work within a
+  deadline → close resources in reverse order of creation.
+- All Go tests run with `-race` in CI.
+
+### 7.5 Resource cleanup
+- `defer x.Close()` immediately after successful acquisition. Check `Close` errors on writes.
+- Always close HTTP response bodies, `rows.Close()` and check `rows.Err()`, stop tickers/timers.
+- Connection pools (DB, HTTP clients) are created once and shared; never per request.
+
+### 7.6 Logging
+- Use the standard library `log/slog`. JSON output outside local development.
+- Structured fields, not string concatenation. Standard keys: `request_id`, `tenant_id`, `user_id`,
+  `message_id`, `provider`, `campaign_id`, `error`.
+- **MUST NOT log** secrets, tokens, passwords, API keys, full message bodies, OTP values, or full
+  phone numbers. Mask phone numbers (e.g. `+63917****567`).
+- Levels: `DEBUG` (development detail), `INFO` (state changes), `WARN` (recoverable problems),
+  `ERROR` (failed operations needing attention).
+
+### 7.7 Configuration
+- Configuration comes from environment variables, parsed **once** at startup into a typed struct,
+  validated, and failing fast with a clear message if invalid.
+- No global mutable configuration. Pass config to constructors.
+- Safe defaults for development; **no defaults for secrets**.
+- Every variable is documented in an `.env.example` (no real values).
+
+### 7.8 Database access
+- PostgreSQL driver and query approach per ADR-0014 (proposed: `pgx` + `sqlc`).
+- SQL lives only in repository code. **Parameterized queries only** — never build SQL with string
+  formatting from input.
+- Tenant-scoped repository methods take `tenantID` as an explicit parameter.
+- Transactions via a helper that accepts `func(tx) error`, commits on success, rolls back on error.
+- **No network calls to telcos or external HTTP services inside a database transaction.**
+
+### 7.9 Testing (Go)
+- Standard `testing` package; table-driven tests; `t.Parallel()` where safe; `t.Cleanup` for teardown.
+- Prefer hand-written fakes over generated mocks. Inject clocks and ID generators for determinism.
+- Integration tests use a real PostgreSQL (containerized), not mocks of SQL.
+- Tooling (proposed): `gofmt`, `go vet`, `golangci-lint`, `govulncheck`.
+
+### 7.10 Other rules
+- Money and credits are **never** `float32`/`float64`. Use integer minor units (ADR-0011).
+- Times are `time.Time` in UTC internally; convert to `Asia/Manila` only for display.
+- Use generics only where they clearly remove duplication.
+
+---
+
+## 8. Frontend standards
+
+Details: [coding standards](docs/standards/coding-standards.md#frontend).
+
+### 8.1 Component organization
+- Feature-first structure: `src/features/<feature>/` contains that feature's components, hooks, API
+  calls, and tests. Shared primitives live in `src/components/ui/`; layouts in `src/components/layout/`.
+- A feature MUST NOT import another feature's internal files. Share via `components/` or `lib/`.
+- Function components, named exports, one component per file, explicit prop types.
+- UI primitives contain no business logic; business logic lives in hooks or feature modules.
+
+### 8.2 TypeScript
+- `"strict": true` plus `noUncheckedIndexedAccess`, `noImplicitOverride`, `noFallthroughCasesInSwitch`.
+- No `any` (use `unknown` and narrow). No `@ts-ignore`; `@ts-expect-error` only with a comment.
+- API types are **generated from `contracts/`** (ADR-0015), not hand-written duplicates.
+
+### 8.3 Tailwind CSS and design tokens
+- Tailwind CSS is the **only** styling system. No CSS-in-JS, Bootstrap, Material UI, or similar.
+- All colours, spacing scale extensions, radii, shadows, and typography are **design tokens** defined
+  once as CSS variables (Tailwind's theme configuration) in `src/styles/`.
+- Components use **semantic** tokens (`bg-surface`, `text-muted`, `border-danger`), never raw hex values
+  or arbitrary values like `bg-[#1a2b3c]`.
+- Variants (size, intent) are defined in one place per component, not scattered conditionals.
+- Inline `style` only for genuinely dynamic values (e.g. a computed progress width).
+- Dark mode support is an open question; tokens must make it possible without rewriting components.
+
+### 8.4 Reusable components
+- Before creating a component, search `components/ui/` for an existing one. Extend it rather than copy it.
+- New shared components need: typed props, all interactive states (hover, focus, disabled, loading,
+  error), keyboard support, and tests.
+- Whether to adopt a headless accessible-primitives library is an open decision (ADR-0013); until
+  decided, do not add one.
+
+### 8.5 API integration
+- All HTTP calls go through the single typed API client in `src/lib/api/`. Components never call `fetch`
+  directly.
+- Server data is managed by the data-fetching layer chosen in ADR-0013; do not copy server data into
+  global client state.
+- Handle `401` (session expired) and `403` (forbidden) centrally. Display RFC 9457 problem details
+  returned by the server.
+
+### 8.6 Form validation
+- Validate on the client for usability **and** on the server for correctness — the server is the
+  authority.
+- Map server field errors to the matching fields. Prevent double submission.
+- Actions that send messages or spend credits MUST show a confirmation step with recipient count,
+  segment count, and estimated cost.
+
+### 8.7 Error, empty, and loading states
+- Every data view handles **loading, empty, error, and success** states explicitly.
+- Errors are user-friendly with a retry action; never show stack traces or raw server errors.
+- Use skeletons for initial loads; avoid layout shift.
+
+### 8.8 Responsive layouts
+- Mobile-first. Verify at 360 px, 768 px, and 1280 px widths.
+- Wide data tables must remain usable on small screens (responsive columns, card layout, or contained
+  horizontal scroll — not page-level horizontal scroll).
+
+### 8.9 Accessibility
+- Target **WCAG 2.2 Level AA**.
+- Semantic HTML first; ARIA only when semantics are insufficient.
+- Every input has a visible label; errors are associated with their inputs.
+- Full keyboard operability; visible focus indicators; dialogs trap and restore focus.
+- Colour contrast meets AA; never convey meaning by colour alone (e.g. delivery status uses icon + text).
+
+### 8.10 Frontend security
+- **Never put secrets in frontend code.** Any variable exposed to the Vite client bundle (e.g.
+  `VITE_*`) is public.
+- Never render user-supplied content as HTML (`dangerouslySetInnerHTML` is prohibited for user data).
+- Store session state in secure, HttpOnly cookies managed by the server (ADR pending), not in
+  `localStorage`.
+
+---
+
+## 9. API standards
+
+(Proposed in ADR-0015; apply once accepted.)
+
+- REST over HTTPS, JSON bodies, OpenAPI specification in `contracts/openapi/` as the source of truth.
+- Versioned paths: `/v1/...`. No breaking changes within a published version.
+- JSON field naming: `snake_case` (proposed). Timestamps: RFC 3339 in UTC. Phone numbers: E.164
+  (`+639171234567`).
+- Errors: RFC 9457 Problem Details (`application/problem+json`) with a stable machine-readable `type`.
+- Pagination: cursor-based for large collections.
+- Message-submission endpoints MUST support an **idempotency key** supplied by the client.
+- Resource IDs are opaque strings; never expose sequential database IDs.
+- Every endpoint documents: authentication, required permission, rate limit, and error cases.
+- Request body size limits and server timeouts are always set.
+
+---
+
+## 10. Database standards
+
+### 10.1 Migrations
+- All schema changes are **versioned migration files** in `backend/migrations/` (tool per ADR-0014).
+- Migration file names use a **timestamp** prefix to avoid numbering collisions between parallel agents.
+- A merged migration is **immutable**. Fix mistakes with a new migration.
+- Production migrations are forward-only; every PR with a migration describes its rollback plan.
+- Breaking changes use **expand → migrate → contract** across separate releases.
+- Never drop or rename columns/tables holding data without explicit owner approval.
+- Create indexes on large tables `CONCURRENTLY`; set `lock_timeout` in migrations touching hot tables.
+
+### 10.2 Naming conventions
+- `snake_case` everywhere. Tables **plural** (`messages`), columns **singular**.
+- Primary key `id`; foreign keys `<referenced_singular>_id` (`tenant_id`).
+- Timestamps end in `_at` and use `timestamptz`. Booleans start with `is_` / `has_`.
+- Constraint/index names: `pk_<table>`, `fk_<table>__<column>`, `ux_<table>__<columns>`,
+  `ix_<table>__<columns>`, `ck_<table>__<rule>`.
+- Status-like values: `text` + `CHECK` constraint (proposed) rather than PostgreSQL enum types, because
+  enums are harder to evolve.
+
+### 10.3 Types
+- IDs: UUID (UUIDv7 proposed for time-ordering); never expose sequential integers publicly.
+- Money/credits: `bigint` in integer minor units (ADR-0011). **Never** `float`/`real`/`double precision`.
+- `jsonb` only for genuinely unstructured data (e.g. raw provider payloads), never to avoid modelling.
+
+### 10.4 Transactions
+- Keep transactions short. **No external network calls inside a transaction.**
+- Use row locks (`SELECT ... FOR UPDATE`) or atomic conditional updates for balances and state changes.
+- Retry on serialization failures and deadlocks with bounded attempts.
+- Writing a business change **and** the event announcing it happens in the same transaction
+  (transactional outbox, §11.1).
+
+### 10.5 Indexes
+- Every foreign key is indexed. Tenant-scoped indexes lead with `tenant_id`.
+- Indexes are justified by a query; check `EXPLAIN` for hot paths.
+- High-write tables (messages, delivery receipts) carry the minimum number of indexes.
+
+### 10.6 Foreign keys and constraints
+- Control-plane tables use foreign keys, `NOT NULL`, `UNIQUE`, and `CHECK` constraints wherever valid.
+- For very high-volume, partitioned data-plane tables, the FK strategy is decided in the architecture
+  phase; integrity must then be enforced another way and tested.
+
+### 10.7 Tenant isolation
+- Every tenant-owned table has `tenant_id NOT NULL`.
+- Every query on tenant data filters by `tenant_id` derived from the authenticated principal.
+- Prefer composite keys/constraints that include `tenant_id` so cross-tenant references are impossible.
+- PostgreSQL Row-Level Security as defense-in-depth is proposed (ADR-0010).
+- Every tenant-scoped repository has a test proving tenant A cannot read or modify tenant B's data.
+
+### 10.8 Data retention
+- Every table is assigned a retention class in its migration PR (e.g. *financial*, *audit*,
+  *message content*, *message metadata*, *operational logs*). Retention periods are **not yet defined**
+  — they depend on regulatory and business decisions.
+- High-volume time-series data is designed for time-based partitioning so expiry is cheap.
+
+### 10.9 Auditability
+- Tables include `created_at`, `updated_at`; sensitive tables include `created_by`/`updated_by`.
+- Ledger and audit tables are **append-only**: no `UPDATE`, no `DELETE` by application roles.
+- Financial and audit records are never hard-deleted.
+
+---
+
+## 11. Messaging standards
+
+Read the [glossary](docs/glossary.md) if any term below is unfamiliar.
+
+### 11.1 Asynchronous processing
+- Accepting a message and sending it to a telco are **separate steps**. The API accepts, validates,
+  reserves credit, persists, and returns a message ID; dispatch happens asynchronously.
+- Persisting a state change and publishing the corresponding event use the **transactional outbox**
+  pattern, so an event is never lost or published for a change that was rolled back.
+- The queue/broker technology is deferred (ADR-0006). Code against an internal interface.
+
+### 11.2 Idempotency
+- Every API submission accepts a client **idempotency key**; repeats within the retention window
+  return the original result and never create a second message or a second charge.
+- Every consumer is idempotent: processing the same event twice has the same effect as once
+  (dedupe on stable IDs, conditional state transitions).
+- Our internal message ID is created once at acceptance and never changes. Telco message IDs are stored
+  as a mapping, never used as our primary identity.
+
+### 11.3 Bounded concurrency
+- Worker counts, in-flight windows, and queue sizes are configured and finite.
+- When downstream is saturated, apply **back-pressure** (slow intake, queue) rather than spawning more work.
+
+### 11.4 Rate limiting
+- Outbound throughput is limited **per provider, per connection, and per sender/account** according
+  to contracted telco limits (to be confirmed — never assumed).
+- Inbound API rate limits are per tenant and per API key.
+- Exceeding a telco's limit can lead to throttling or suspension; limits are enforced centrally, not
+  by each worker guessing.
+
+### 11.5 Retry policy
+- Classify every provider response as **success**, **retryable** (temporary), **permanent failure**,
+  or **ambiguous** (e.g. timeout with no response — the telco may or may not have accepted it).
+- Retry only retryable failures, with exponential backoff and jitter, a maximum attempt count, and a
+  **maximum message age** (an OTP that arrives 20 minutes late is useless and may confuse users).
+- **Ambiguous outcomes are not blindly retried**: a retry may produce a duplicate SMS to a real person.
+  The per-provider policy for ambiguous outcomes is a documented decision.
+- Messages that exhaust retries go to a failed state visible to operators; credits are handled per the
+  billing rules.
+
+### 11.6 Delivery receipt (DLR) processing
+- DLRs are correlated to messages via the stored telco message ID mapping.
+- DLRs may arrive late, out of order, duplicated, or never. They may even arrive before our record of
+  the submission response is written. Processing MUST tolerate all of these.
+- Message state transitions are explicit and **monotonic** (a final state is never overwritten by an
+  earlier one). Unmatched DLRs are stored for reconciliation, not discarded.
+- Messages without a final DLR after a configured window move to an explicit `unknown`/`expired` state.
+- DLR formats vary by telco; parsing MUST follow each telco's documentation.
+
+### 11.7 Failure handling
+- Provider outages trigger circuit breaking and, where approved, failover routing — never silent loss.
+- Poison messages (that always fail processing) are isolated in a dead-letter store with the reason.
+- Every failure is observable: metrics, structured logs, and operator-visible state.
+
+### 11.8 Message ordering
+- SMS delivery order is **not guaranteed** by telcos. The system MUST NOT promise ordering to clients.
+- Internal ordering is required only where documented (e.g. a message's own state transitions).
+  Multi-part (concatenated) messages are reassembled by the handset using segment headers.
+
+### 11.9 Billing consistency
+- Credit is **reserved** at acceptance, **settled** at the point defined by the billing rules
+  (submission or delivery — a business decision), and **released** for messages that fail before
+  being chargeable.
+- Reservation, settlement, and release are ledger entries, each idempotent and keyed to a message ID.
+- Charges are by **segment** count unless the business decides otherwise; segment calculation is shared
+  code used by both the cost estimate and the actual charge.
+- Reconciliation compares our ledger, our message states, and telco billing records; discrepancies are
+  reported, never auto-corrected silently.
+
+---
+
+## 12. Security standards
+
+Details: [security baseline](docs/security/security-baseline.md).
+
+- **Secrets:** never in the repository, images, logs, or frontend bundles. Loaded from the environment
+  or a secret manager at runtime. `.env` files are git-ignored; only `.env.example` with placeholders is
+  committed. A leaked secret is rotated, not just deleted from git.
+- **Authentication:** portal users via secure sessions (HttpOnly, Secure, SameSite cookies); passwords
+  hashed with a modern adaptive algorithm (Argon2id proposed); **MFA mandatory for all Super Admin
+  users** and available for clients. API clients use API keys, stored only as hashes and shown once.
+- **Authorization:** deny by default; role-based permissions checked server-side on every request;
+  the frontend hides controls for convenience only — it is never the security boundary.
+- **Input validation:** validate type, length, format, and range at every boundary (HTTP, file imports,
+  webhooks, telco callbacks). Phone numbers are normalized to E.164 and validated. File uploads have
+  size and row limits. Exported CSV/Excel files are protected against formula injection.
+- **API security:** TLS only; per-tenant and per-key rate limits; request size limits; CORS restricted
+  to known origins; CSRF protection for cookie-authenticated endpoints.
+- **Webhooks:** outbound payloads are signed (HMAC with timestamp); customer webhook URLs are validated
+  against SSRF (no private, loopback, or metadata addresses).
+- **Tenant isolation:** see §10.7. Admin access to a tenant's data is audited.
+- **Audit logging:** all security-relevant and financial actions (login, role change, API key creation,
+  credit adjustment, pricing change, sender ID approval, provider configuration, impersonation) are
+  recorded in an append-only audit log with actor, tenant, action, target, timestamp, and source IP.
+- **Sensitive information:** phone numbers and message content are personal data under the Philippine
+  Data Privacy Act of 2012 (RA 10173). Minimize collection, mask in logs, restrict access, encrypt in
+  transit and at rest, and respect retention limits. OTP content is never logged or shown to admins.
+- **Abuse prevention:** sender IDs must be approved before use; impersonation of banks, government, or
+  other brands is a primary risk. Content and URL policies are pending (discovery register).
+
+---
+
+## 13. Testing requirements
+
+Details: [testing standards](docs/standards/testing-standards.md).
+
+- Every behaviour change ships with tests at the appropriate level (unit, integration, contract, E2E).
+- **Mandatory test coverage areas** (no exceptions): ledger and credit operations, idempotency,
+  tenant isolation, authorization checks, segment/encoding calculation, message state transitions,
+  DLR correlation, retry classification.
+- Tests are deterministic: no real time, randomness, or network unless injected/controlled.
+- **No test may send a real SMS or connect to a production telco endpoint.**
+- Report the exact test commands you ran and their results in your completion report.
+
+---
+
+## 14. Git and pull request workflow
+
+Full detail: [git workflow](docs/engineering/git-workflow.md).
+
+- `main` is protected. **Never commit or push directly to `main`.** Never force-push shared branches.
+- One task → one branch → one pull request. Branch names: `<type>/<task-id>-<short-description>`
+  (types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`). Tool-assigned branch names (e.g.
+  `claude/...`) are acceptable if the PR title carries the task ID.
+- Commit messages follow Conventional Commits (`feat(billing): add credit reservation`).
+- PRs use the repository PR template and are opened as **drafts** until tests pass.
+- Only the project owner approves and merges. Squash-merge is the default.
+
+---
+
+## 15. Definition of Done
+
+A task is done only when **all** apply:
+
+- [ ] The task's acceptance criteria are met — no more, no less.
+- [ ] Code follows this file and the standards documents.
+- [ ] Tests are written and pass locally; commands and results are reported.
+- [ ] Lint/format checks pass (once tooling exists).
+- [ ] No secrets, real personal data, or real phone numbers added.
+- [ ] Schema, contract, and dependency changes are declared in the PR.
+- [ ] Affected documentation is updated in the same PR.
+- [ ] The completion report (§16) is provided.
+
+---
+
+## 16. Completion report format
+
+End every task with this report (also paste it into the PR description):
+
+```markdown
+## Summary
+<1–3 sentences: what was done and why>
+
+## Changed files
+| File | Change |
+| ---- | ------ |
+| path/to/file | <what changed and why> |
+
+## Schema / contract / dependency changes
+<"None" or a list with compatibility impact>
+
+## Tests
+- Commands run: `<exact commands>`
+- Result: <pass/fail counts, or "not run because ...">
+- Integration status: <"verified against simulator" | "mock test only" | "not tested">
+
+## Assumptions
+- <each assumption made>
+
+## Unresolved issues / questions for the owner
+- <each open item>
+```
+
+---
+
+## 17. Decisions: how to read and propose them
+
+- All decisions are recorded in [docs/engineering/decision-log.md](docs/engineering/decision-log.md)
+  as ADRs with status **Proposed**, **Accepted**, **Rejected**, **Superseded**, or **Deprecated**.
+- Only the project owner can change a status to **Accepted**. Agents MUST NOT mark their own proposals
+  accepted.
+- To propose a decision, add an ADR with status *Proposed* following the template, explaining purpose,
+  alternatives, trade-offs, recommendation, operational cost, missing information.
+- **Decisions reserved for the project owner** include: adopting new infrastructure components,
+  adding dependencies, changing architectural constraints (§6), public API breaking changes, pricing
+  and billing rules, retention periods, telco routing policy, and anything with legal or regulatory effect.

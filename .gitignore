@@ -1,0 +1,61 @@
+# -----------------------------------------------------------------------------
+# Secrets and local environment — NEVER commit these.
+# If you need to document a variable, add it to an `.env.example` file instead.
+# -----------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+secrets/
+credentials/
+
+# -----------------------------------------------------------------------------
+# Operating system and editor files
+# -----------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.swp
+*.swo
+
+# -----------------------------------------------------------------------------
+# Go (backend)
+# -----------------------------------------------------------------------------
+/backend/bin/
+/backend/tmp/
+*.test
+*.out
+coverage.out
+coverage.html
+
+# -----------------------------------------------------------------------------
+# Node / frontend
+# -----------------------------------------------------------------------------
+node_modules/
+/frontend/dist/
+/frontend/coverage/
+*.tsbuildinfo
+.vite/
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+# -----------------------------------------------------------------------------
+# Test and tooling output
+# -----------------------------------------------------------------------------
+playwright-report/
+test-results/
+/tests/**/results/
+
+# -----------------------------------------------------------------------------
+# Local infrastructure data (database volumes, broker data, etc.)
+# -----------------------------------------------------------------------------
+/infra/**/data/
+*.log
