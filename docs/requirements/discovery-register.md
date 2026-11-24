@@ -171,9 +171,9 @@ is legal advice. Public sources consulted so far are listed in the
 
 | ID | Item |
 | -- | ---- |
-| D-120 | Which NTC registrations, licences, or authorizations are required to operate as an A2P aggregator / value-added service provider, and current status of each. Confirm the current legal framework, including any recent legislative changes. |
-| D-121 | Data Privacy Act of 2012 (RA 10173) obligations: lawful basis for processing recipient data, roles (we are likely a *personal information processor* for client data — to be confirmed), breach notification, Data Protection Officer, NPC registration requirements. |
-| D-122 | Consent and opt-out obligations for marketing vs. transactional messages. |
+| D-120 | Which NTC registrations, licences, or authorizations are required to operate as an A2P aggregator / value-added service provider, and current status of each. Confirm the current legal framework, including any recent legislative changes. (Texts and leads: research log LR-01–LR-05, LR-16, LR-17.) |
+| D-121 | Data Privacy Act of 2012 (RA 10173) obligations: lawful basis for processing recipient data, roles (we are likely a *personal information processor* for client data — to be confirmed), breach notification, Data Protection Officer, NPC registration requirements. (Texts and leads: research log LR-09–LR-11, LR-18.) |
+| D-122 | Consent and opt-out obligations for marketing vs. transactional messages. (NTC broadcast messaging circulars: research log LR-06–LR-08.) |
 | D-123 | Sender ID and anti-spam/anti-scam rules (regulatory and telco-imposed). |
 | D-124 | Record-keeping and retention obligations (message logs, billing records, tax records). |
 | D-125 | Requirements for serving government clients (procurement, security accreditation, data residency). |
@@ -182,7 +182,7 @@ is legal advice. Public sources consulted so far are listed in the
 | D-128 | Implications of the SIM Registration Act (RA 11934) for sender identities, if any. |
 | D-129 | Obligations for cross-border processing if hosting, backups, or service providers are outside the Philippines (Data Privacy Act Sec. 21 identified in public research; interpretation pending). |
 | D-130 | Customer due diligence and acceptable-use obligations required by law (as distinct from business policy D-085, D-086). |
-| D-131 | Whether the Anti-Financial Account Scamming Act (RA 12010) creates obligations or exposure for an SMS platform. |
+| D-131 | Whether the Anti-Financial Account Scamming Act (RA 12010) creates obligations or exposure for an SMS platform. (Research log LR-13.) |
 
 ## 9. Engineering decisions requiring owner approval
 
