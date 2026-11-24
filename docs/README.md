@@ -12,6 +12,7 @@ consistent decisions, so **keeping it accurate is part of every task**.
 | Product | [`product/product-brief.md`](product/product-brief.md) | Business overview, customers, business model, initial scope | Business direction or scope changes |
 | Requirements | [`requirements/discovery-register.md`](requirements/discovery-register.md) | Every open question, assumption, and its status | Any question is answered or raised |
 | Requirements | [`requirements/traffic-capacity-discovery.md`](requirements/traffic-capacity-discovery.md) | Investigation of the reported 5-billion monthly figure | Traffic data is received |
+| Discovery | [`discovery/phase2-discovery-guide.md`](discovery/phase2-discovery-guide.md) | Phase 2 discovery: workstreams, priorities, critical path, and the full Phase 2A package (workbook, questionnaires, research log, worksheets, evidence register, exit checklist) | Discovery progresses |
 | Architecture | [`architecture/architecture-principles.md`](architecture/architecture-principles.md) | Principles that govern the design (not the final design) | An ADR changes a principle |
 | Architecture | [`architecture/messaging-reliability.md`](architecture/messaging-reliability.md) | **Authoritative:** event delivery (outbox, at-least-once), message lifecycle, ambiguous submissions, delivery receipts | Messaging semantics change |
 | Architecture | [`architecture/api-idempotency.md`](architecture/api-idempotency.md) | **Authoritative:** proposed API idempotency contract | Contract decisions are made |

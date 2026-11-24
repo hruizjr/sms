@@ -54,6 +54,8 @@ Phase 11 Scale-out and expansion (more telcos, analytics, broker, features)
 - Decide ADRs 0001–0021 (accept/reject/amend) — see the review summary in the decision log.
 - Decide monetary representation and rounding (ADR-0019, D-092, D-093), the idempotency details (D-094),
   and the uncertain-outcome and receipt policies (D-095–D-099).
+**Discovery package:** [Phase 2 discovery guide](../discovery/phase2-discovery-guide.md); progress against the
+criteria below is tracked in the [Phase 2 exit checklist](../discovery/phase2-exit-checklist.md).
 **Acceptance criteria:**
 - [ ] MVP scope approved in writing by the owner.
 - [ ] Traffic figures for launch customers recorded with sources, or an explicit decision to proceed with
