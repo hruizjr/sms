@@ -6,8 +6,8 @@ belongs in `backend/internal/`, never in `cmd/`.
 
 ## Executables
 
-Approved for Phase 3 (ADR-0003, accepted 2026-11-25): **`api`** and **`migrate`** only. The other rows are
-candidates that need a separately approved task.
+Approved for Phase 3 (ADR-0003, accepted 2026-11-25): **`api`** (created in Group 1) and **`migrate`**
+(Group 2) only. The other rows are candidates that need a separately approved task.
 
 | Candidate          | Plane         | Responsibility                                                                 |
 | ------------------ | ------------- | ------------------------------------------------------------------------------ |
