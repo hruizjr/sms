@@ -16,7 +16,7 @@ Phase 1  Engineering foundation ...................... COMPLETE
 Phase 2  Discovery closure & solution architecture ◀── telco, regulatory, traffic, business inputs
          (2A preparation package merged; external discovery and 2B ONGOING)
    │
-Phase 3  Walking skeleton (tooling, CI, local stack)   AUTHORIZED, IN PROGRESS (Group 0 in review)
+Phase 3  Walking skeleton (tooling, CI, local stack)   AUTHORIZED, IN PROGRESS (Group 2 in review)
    │
 Phase 4  Control-plane core: tenants, identity, RBAC, audit
    │
@@ -75,13 +75,13 @@ criteria below is tracked in the [Phase 2 exit checklist](../discovery/phase2-ex
 **Status:** Authorized by the owner on 2026-11-25 and **in progress**. It will be delivered in six groups, each
 reviewed and merged before the next starts
 ([decision log §7](../engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25)).
-**Implementation status:** Group 1 (Go API skeleton) is the first application code and is in review.
+**Implementation status:** Group 1 (Go API skeleton) is merged; Group 2 (PostgreSQL foundation) is in review.
 
 | Group | Scope | State |
 | ----- | ----- | ----- |
 | 0 | Record owner decisions (documentation only) | Merged (PR #3) |
-| 1 | Go API skeleton, with basic CI | Submitted — awaiting owner review and merge |
-| 2 | PostgreSQL, migrations, local database | Not started |
+| 1 | Go API skeleton, with basic CI | Merged (PR #4) |
+| 2 | PostgreSQL, migrations, local database | Submitted — awaiting owner review and merge |
 | 3 | API contract (OpenAPI) | Not started |
 | 4 | Frontend | Not started |
 | 5 | Local development stack and expanded CI | Not started |
