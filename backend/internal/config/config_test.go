@@ -394,3 +394,53 @@ func TestSecretIsRedactedWhenPrinted(t *testing.T) {
 		t.Error("Reveal() must return the secret value")
 	}
 }
+
+func TestIsLoopbackIP(t *testing.T) {
+	t.Parallel()
+
+	for host, want := range map[string]bool{
+		"127.0.0.1":        true,
+		"127.0.0.2":        true,
+		"::1":              true,
+		"::ffff:127.0.0.1": true,
+		"":                 false,
+		"0.0.0.0":          false,
+		"::":               false,
+		"10.0.0.5":         false,
+		"192.0.2.10":       false,
+		"2001:db8::1":      false,
+		"::ffff:10.0.0.5":  false,
+		"localhost":        false,
+		"db.example.com":   false,
+	} {
+		if got := IsLoopbackIP(host); got != want {
+			t.Errorf("IsLoopbackIP(%q) = %v, want %v", host, got, want)
+		}
+	}
+}
+
+func TestExplicitEnvironment(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		vars   map[string]string
+		want   Environment
+		wantOK bool
+	}{
+		{"missing", map[string]string{}, "", false},
+		{"blank", map[string]string{EnvAppEnv: "  "}, "", false},
+		{"test", map[string]string{EnvAppEnv: "test"}, EnvironmentTest, true},
+		{"normalized", map[string]string{EnvAppEnv: " Development "}, EnvironmentDevelopment, true},
+		{"unknown value returned as is", map[string]string{EnvAppEnv: "staging"}, "staging", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := ExplicitEnvironment(env(tt.vars))
+			if got != tt.want || ok != tt.wantOK {
+				t.Errorf("ExplicitEnvironment() = %q, %v; want %q, %v", got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}

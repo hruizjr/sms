@@ -1,12 +1,8 @@
 //go:build integration
 
-// Package dbtest gives integration tests an isolated, throwaway PostgreSQL database.
-//
-// It is compiled only with the "integration" build tag. Connection settings come from the same
-// DB_* environment variables as the API (for example the local Docker Compose database, or the CI
-// service container). The configured DB_NAME is used only to connect to the server; tests never
-// create objects in it, modify it, or drop it. Each test gets a new database named
-// sms_test_<random>, which is dropped when the test ends, whether it passed or failed.
+// The helpers in this file create and drop databases, so they are compiled only with the
+// "integration" build tag and always go through the TargetConfig safeguards (target.go).
+
 package dbtest
 
 import (
@@ -14,7 +10,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -24,23 +19,19 @@ import (
 	"github.com/hruizjr/sms/backend/internal/database"
 )
 
-// NamePrefix starts the name of every database created by this package. Only databases with this
-// prefix are ever dropped.
-const NamePrefix = "sms_test_"
-
 const adminTimeout = 30 * time.Second
 
-// ServerConfig returns the database settings from the environment. It fails the test, with
-// instructions, if they are missing or invalid.
+// ServerConfig returns the database settings from the process environment after the TargetConfig
+// safeguards (APP_ENV=test, valid configuration, loopback DB_HOST). It fails the test with setup
+// instructions otherwise; the message never contains the password.
 func ServerConfig(t testing.TB) config.DatabaseConfig {
 	t.Helper()
-	cfg, err := config.Load(os.LookupEnv)
+	cfg, err := TargetConfig(os.LookupEnv)
 	if err != nil {
-		// Configuration errors never contain the password.
-		t.Fatalf("integration tests need a PostgreSQL server configured through the DB_* environment "+
-			"variables (see backend/README.md, \"Integration tests\"): %v", err)
+		t.Fatalf("%v\nIntegration tests need APP_ENV=test and a local PostgreSQL server configured through "+
+			"the DB_* variables (see backend/README.md, \"Testing\").", err)
 	}
-	return cfg.Database
+	return cfg
 }
 
 // NewDatabase creates an empty database with a random name and returns settings that point to it.
@@ -49,11 +40,16 @@ func NewDatabase(t testing.TB) config.DatabaseConfig {
 	t.Helper()
 	server := ServerConfig(t)
 	name := NamePrefix + randomSuffix(t)
+	if err := checkDisposableName(name, server.Name); err != nil {
+		t.Fatalf("refusing to create database: %v", err)
+	}
 
 	exec(t, server, "CREATE DATABASE "+pgx.Identifier{name}.Sanitize())
 	t.Cleanup(func() {
-		if !strings.HasPrefix(name, NamePrefix) {
-			t.Fatalf("refusing to drop database %q without the %q prefix", name, NamePrefix)
+		// Checked again immediately before dropping: only a generated sms_test_ name that is not the
+		// configured maintenance database (DB_NAME) can ever be dropped.
+		if err := checkDisposableName(name, server.Name); err != nil {
+			t.Fatalf("refusing to drop database: %v", err)
 		}
 		exec(t, server, "DROP DATABASE IF EXISTS "+pgx.Identifier{name}.Sanitize()+" WITH (FORCE)")
 	})

@@ -182,6 +182,19 @@ type LogConfig struct {
 // os.LookupEnv satisfies it; tests pass a map-backed function.
 type LookupFunc func(key string) (string, bool)
 
+// ExplicitEnvironment returns APP_ENV exactly as supplied (trimmed and lower-cased) and whether it
+// was supplied and non-blank. Unlike Load, it applies no default, so a safety check that must not
+// rely on the "development" default (migration rollback, integration-test database creation)
+// can tell "explicitly development" from "not set".
+func ExplicitEnvironment(lookup LookupFunc) (Environment, bool) {
+	v, ok := lookup(EnvAppEnv)
+	v = strings.ToLower(strings.TrimSpace(v))
+	if !ok || v == "" {
+		return "", false
+	}
+	return Environment(v), true
+}
+
 // Load reads the configuration through lookup, applies defaults, and validates it.
 // The returned error lists every invalid variable so that all problems can be fixed at once.
 func Load(lookup LookupFunc) (Config, error) {
@@ -222,7 +235,7 @@ func Load(lookup LookupFunc) (Config, error) {
 	httpHost, httpPort, httpOK := r.address(EnvHTTPAddr, cfg.HTTP.Addr)
 	metricsHost, metricsPort, metricsOK := r.address(EnvMetricsAddr, cfg.Metrics.Addr)
 
-	if metricsOK && !isLoopbackIP(metricsHost) {
+	if metricsOK && !IsLoopbackIP(metricsHost) {
 		r.fail(EnvMetricsAddr, "must be a loopback IP address such as 127.0.0.1:9090 or [::1]:9090 "+
 			"(non-loopback metrics exposure is not supported); got %q", cfg.Metrics.Addr)
 	}
@@ -389,12 +402,13 @@ func (r *reader) address(key, addr string) (host string, port int, ok bool) {
 	return host, port, true
 }
 
-// isLoopbackIP reports whether host is a loopback IP literal (127.0.0.0/8 or ::1).
+// IsLoopbackIP reports whether host is a loopback IP literal (127.0.0.0/8 or ::1).
 //
-// Host names, including "localhost", are deliberately not accepted: validation does not resolve
-// names, and a name could resolve to a non-loopback address at bind time. An empty host means
-// "all interfaces" and is therefore not loopback.
-func isLoopbackIP(host string) bool {
+// Host names, including "localhost", are deliberately not accepted: nothing here resolves names,
+// and a name could resolve to a non-loopback address when it is used. An empty host means "all
+// interfaces" and is therefore not loopback. It is used for the metrics listener, and by the
+// integration-test and migration-rollback safeguards for DB_HOST.
+func IsLoopbackIP(host string) bool {
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
 }
