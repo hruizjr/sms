@@ -21,14 +21,14 @@ func TestNewLoggerJSON(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	logger := NewLogger(&buf, config.LogConfig{Format: config.LogFormatJSON, Level: slog.LevelInfo})
+	logger := NewLogger(&buf, config.LogConfig{Format: config.LogFormatJSON, Level: slog.LevelInfo}, "migrate")
 	logger.Info("hello", "request_id", "abc")
 
 	var entry map[string]any
 	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
 		t.Fatalf("JSON logger output is not JSON: %v (%q)", err, buf.String())
 	}
-	for key, want := range map[string]any{"msg": "hello", "level": "INFO", "service": "api", "request_id": "abc"} {
+	for key, want := range map[string]any{"msg": "hello", "level": "INFO", "service": "migrate", "request_id": "abc"} {
 		if entry[key] != want {
 			t.Errorf("entry[%q] = %v, want %v", key, entry[key], want)
 		}
@@ -39,7 +39,7 @@ func TestNewLoggerText(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	logger := NewLogger(&buf, config.LogConfig{Format: config.LogFormatText, Level: slog.LevelInfo})
+	logger := NewLogger(&buf, config.LogConfig{Format: config.LogFormatText, Level: slog.LevelInfo}, "api")
 	logger.Info("hello")
 
 	out := buf.String()
@@ -52,7 +52,7 @@ func TestNewLoggerLevelFiltering(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	logger := NewLogger(&buf, config.LogConfig{Format: config.LogFormatJSON, Level: slog.LevelWarn})
+	logger := NewLogger(&buf, config.LogConfig{Format: config.LogFormatJSON, Level: slog.LevelWarn}, "api")
 	logger.Info("dropped")
 	logger.Debug("dropped")
 	logger.Warn("kept")

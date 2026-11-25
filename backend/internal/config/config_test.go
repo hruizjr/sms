@@ -1,17 +1,44 @@
 package config
 
 import (
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
 	"time"
 )
 
+// testPassword is a synthetic database password used only by these tests.
+const testPassword = "synthetic-test-password"
+
 // env returns a LookupFunc backed by a map, so tests never read the real process environment.
+// DB_PASSWORD (required, no default) is set to testPassword unless vars sets it explicitly.
 func env(vars map[string]string) LookupFunc {
 	return func(key string) (string, bool) {
-		v, ok := vars[key]
-		return v, ok
+		if v, ok := vars[key]; ok {
+			return v, ok
+		}
+		if key == EnvDBPassword {
+			return testPassword, true
+		}
+		return "", false
+	}
+}
+
+// defaultDatabase is the database configuration produced by the defaults for env.
+func defaultDatabase(sslMode SSLMode) DatabaseConfig {
+	return DatabaseConfig{
+		Host:            DefaultDBHost,
+		Port:            DefaultDBPort,
+		Name:            DefaultDBName,
+		User:            DefaultDBUser,
+		Password:        Secret(testPassword),
+		SSLMode:         sslMode,
+		MaxConns:        DefaultDBMaxConns,
+		MinConns:        DefaultDBMinConns,
+		ConnectTimeout:  DefaultDBConnectTimeout,
+		MaxConnLifetime: DefaultDBMaxConnLifetime,
+		MaxConnIdleTime: DefaultDBMaxConnIdleTime,
 	}
 }
 
@@ -20,7 +47,7 @@ func TestLoadDefaults(t *testing.T) {
 
 	cfg, err := Load(env(nil))
 	if err != nil {
-		t.Fatalf("Load() with no variables returned error: %v", err)
+		t.Fatalf("Load() with only DB_PASSWORD set returned error: %v", err)
 	}
 
 	want := Config{
@@ -34,6 +61,7 @@ func TestLoadDefaults(t *testing.T) {
 		},
 		Metrics:         MetricsConfig{Addr: DefaultMetricsAddr},
 		Log:             LogConfig{Format: LogFormatText, Level: slog.LevelInfo},
+		Database:        defaultDatabase(SSLModeDisable),
 		ShutdownTimeout: DefaultShutdownTimeout,
 	}
 	if cfg != want {
@@ -83,6 +111,7 @@ func TestLoadValidCustomValues(t *testing.T) {
 		},
 		Metrics:         MetricsConfig{Addr: "[::1]:9191"},
 		Log:             LogConfig{Format: LogFormatText, Level: slog.LevelDebug},
+		Database:        defaultDatabase(SSLModeVerifyFull),
 		ShutdownTimeout: 45 * time.Second,
 	}
 	if cfg != want {
@@ -202,6 +231,22 @@ func TestLoadInvalidValues(t *testing.T) {
 		{"header timeout above read timeout", map[string]string{EnvHTTPReadTimeout: "5s", EnvHTTPReadHeaderTimeout: "10s"}, EnvHTTPReadHeaderTimeout},
 		{"log level unknown", map[string]string{EnvLogLevel: "verbose"}, EnvLogLevel},
 		{"log format unknown", map[string]string{EnvLogFormat: "xml"}, EnvLogFormat},
+		{"db password missing", map[string]string{EnvDBPassword: ""}, EnvDBPassword},
+		{"db host with space", map[string]string{EnvDBHost: "db host"}, EnvDBHost},
+		{"db host list", map[string]string{EnvDBHost: "db1,db2"}, EnvDBHost},
+		{"db port not a number", map[string]string{EnvDBPort: "five"}, EnvDBPort},
+		{"db port out of range", map[string]string{EnvDBPort: "70000"}, EnvDBPort},
+		{"db name too long", map[string]string{EnvDBName: strings.Repeat("n", 64)}, EnvDBName},
+		{"db user control character", map[string]string{EnvDBUser: "sms\x00"}, EnvDBUser},
+		{"db sslmode prefer", map[string]string{EnvDBSSLMode: "prefer"}, EnvDBSSLMode},
+		{"db sslmode unknown", map[string]string{EnvDBSSLMode: "on"}, EnvDBSSLMode},
+		{"db sslmode disable in production", map[string]string{EnvAppEnv: "production", EnvDBSSLMode: "disable"}, EnvDBSSLMode},
+		{"db max conns zero", map[string]string{EnvDBMaxConns: "0"}, EnvDBMaxConns},
+		{"db max conns above limit", map[string]string{EnvDBMaxConns: "101"}, EnvDBMaxConns},
+		{"db min conns above max", map[string]string{EnvDBMaxConns: "4", EnvDBMinConns: "5"}, EnvDBMinConns},
+		{"db connect timeout zero", map[string]string{EnvDBConnectTimeout: "0s"}, EnvDBConnectTimeout},
+		{"db max conn lifetime not a duration", map[string]string{EnvDBMaxConnLifetime: "1 hour"}, EnvDBMaxConnLifetime},
+		{"db max conn idle time negative", map[string]string{EnvDBMaxConnIdleTime: "-1m"}, EnvDBMaxConnIdleTime},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -235,5 +280,167 @@ func TestLoadReportsAllErrors(t *testing.T) {
 		if !strings.Contains(err.Error(), key) {
 			t.Errorf("error %q does not mention %s", err, key)
 		}
+	}
+}
+
+func TestLoadDatabaseCustomValues(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := Load(env(map[string]string{
+		EnvDBHost:            "db.internal.example",
+		EnvDBPort:            "6543",
+		EnvDBName:            "sms_dev",
+		EnvDBUser:            "sms_app",
+		EnvDBPassword:        " pass with spaces 'and' \\ backslash ",
+		EnvDBSSLMode:         "VERIFY-CA",
+		EnvDBMaxConns:        "25",
+		EnvDBMinConns:        "2",
+		EnvDBConnectTimeout:  "3s",
+		EnvDBMaxConnLifetime: "45m",
+		EnvDBMaxConnIdleTime: "5m",
+	}))
+	if err != nil {
+		t.Fatalf("Load() returned error: %v", err)
+	}
+	want := DatabaseConfig{
+		Host:            "db.internal.example",
+		Port:            6543,
+		Name:            "sms_dev",
+		User:            "sms_app",
+		Password:        Secret(" pass with spaces 'and' \\ backslash "),
+		SSLMode:         SSLModeVerifyCA,
+		MaxConns:        25,
+		MinConns:        2,
+		ConnectTimeout:  3 * time.Second,
+		MaxConnLifetime: 45 * time.Minute,
+		MaxConnIdleTime: 5 * time.Minute,
+	}
+	if cfg.Database != want {
+		t.Errorf("Database config:\n got %#v\nwant %#v", cfg.Database, want)
+	}
+	if cfg.Database.Password.Reveal() != want.Password.Reveal() {
+		t.Error("password must be read verbatim, including leading and trailing spaces")
+	}
+}
+
+func TestLoadDatabaseSSLModeDefaultsByEnvironment(t *testing.T) {
+	t.Parallel()
+
+	for appEnv, want := range map[string]SSLMode{
+		"development": SSLModeDisable,
+		"test":        SSLModeDisable,
+		"production":  SSLModeVerifyFull,
+	} {
+		t.Run(appEnv, func(t *testing.T) {
+			t.Parallel()
+			cfg, err := Load(env(map[string]string{EnvAppEnv: appEnv}))
+			if err != nil {
+				t.Fatalf("Load() returned error: %v", err)
+			}
+			if cfg.Database.SSLMode != want {
+				t.Errorf("default DB_SSLMODE for %s = %q, want %q", appEnv, cfg.Database.SSLMode, want)
+			}
+		})
+	}
+}
+
+func TestLoadDatabasePasswordNeverInErrors(t *testing.T) {
+	t.Parallel()
+
+	const secret = "synthetic-secret-in-error-test"
+	_, err := Load(env(map[string]string{
+		EnvDBPassword: secret,
+		EnvDBPort:     "not-a-port",
+		EnvDBSSLMode:  "bogus",
+		EnvDBHost:     "bad host",
+	}))
+	if err == nil {
+		t.Fatal("Load() returned nil error")
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Errorf("configuration error reveals the password: %v", err)
+	}
+}
+
+func TestSecretIsRedactedWhenPrinted(t *testing.T) {
+	t.Parallel()
+
+	const secret = "synthetic-secret-print-test"
+	cfg, err := Load(env(map[string]string{EnvDBPassword: secret}))
+	if err != nil {
+		t.Fatalf("Load() returned error: %v", err)
+	}
+
+	var jsonLogs, textLogs strings.Builder
+	slog.New(slog.NewJSONHandler(&jsonLogs, nil)).Info("config", "database", cfg.Database, "password", cfg.Database.Password)
+	slog.New(slog.NewTextHandler(&textLogs, nil)).Info("config", "database", cfg.Database, "password", cfg.Database.Password)
+
+	for name, out := range map[string]string{
+		"%v":        fmt.Sprintf("%v", cfg),
+		"%+v":       fmt.Sprintf("%+v", cfg),
+		"%#v":       fmt.Sprintf("%#v", cfg),
+		"String()":  cfg.Database.Password.String(),
+		"slog json": jsonLogs.String(),
+		"slog text": textLogs.String(),
+	} {
+		if strings.Contains(out, secret) {
+			t.Errorf("%s output reveals the password: %s", name, out)
+		}
+		if !strings.Contains(out, redacted) {
+			t.Errorf("%s output should show %s: %s", name, redacted, out)
+		}
+	}
+	if cfg.Database.Password.Reveal() != secret {
+		t.Error("Reveal() must return the secret value")
+	}
+}
+
+func TestIsLoopbackIP(t *testing.T) {
+	t.Parallel()
+
+	for host, want := range map[string]bool{
+		"127.0.0.1":        true,
+		"127.0.0.2":        true,
+		"::1":              true,
+		"::ffff:127.0.0.1": true,
+		"":                 false,
+		"0.0.0.0":          false,
+		"::":               false,
+		"10.0.0.5":         false,
+		"192.0.2.10":       false,
+		"2001:db8::1":      false,
+		"::ffff:10.0.0.5":  false,
+		"localhost":        false,
+		"db.example.com":   false,
+	} {
+		if got := IsLoopbackIP(host); got != want {
+			t.Errorf("IsLoopbackIP(%q) = %v, want %v", host, got, want)
+		}
+	}
+}
+
+func TestExplicitEnvironment(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		vars   map[string]string
+		want   Environment
+		wantOK bool
+	}{
+		{"missing", map[string]string{}, "", false},
+		{"blank", map[string]string{EnvAppEnv: "  "}, "", false},
+		{"test", map[string]string{EnvAppEnv: "test"}, EnvironmentTest, true},
+		{"normalized", map[string]string{EnvAppEnv: " Development "}, EnvironmentDevelopment, true},
+		{"unknown value returned as is", map[string]string{EnvAppEnv: "staging"}, "staging", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := ExplicitEnvironment(env(tt.vars))
+			if got != tt.want || ok != tt.wantOK {
+				t.Errorf("ExplicitEnvironment() = %q, %v; want %q, %v", got, ok, tt.want, tt.wantOK)
+			}
+		})
 	}
 }

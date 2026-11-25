@@ -1,8 +1,9 @@
 // Command api runs the SMS platform HTTP API (Phase 3 walking skeleton).
 //
 // It serves /healthz and /readyz on the application listener and Prometheus metrics on a
-// separate listener that binds to the loopback interface by default. It shuts down gracefully
-// on SIGINT or SIGTERM.
+// separate, loopback-only listener. /readyz checks PostgreSQL connectivity. The API never runs
+// database migrations; use the migrate command. It shuts down gracefully on SIGINT or SIGTERM,
+// closing the database pool after in-flight requests have finished.
 package main
 
 import (
@@ -13,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/hruizjr/sms/backend/internal/config"
+	"github.com/hruizjr/sms/backend/internal/database"
 	"github.com/hruizjr/sms/backend/internal/httpserver"
 	"github.com/hruizjr/sms/backend/internal/observability"
 )
@@ -30,7 +32,42 @@ func run() error {
 		return err
 	}
 
-	logger := observability.NewLogger(os.Stdout, cfg.Log)
+	logger := observability.NewLogger(os.Stdout, cfg.Log, "api")
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// Log only an explicit, non-sensitive summary of the configuration — never the environment,
+	// the database password, or a connection string.
+	logger.Info("starting api",
+		"env", string(cfg.Env),
+		"log_level", cfg.Log.Level.String(),
+		"log_format", string(cfg.Log.Format),
+		"db_host", cfg.Database.Host,
+		"db_port", cfg.Database.Port,
+		"db_name", cfg.Database.Name,
+		"db_sslmode", string(cfg.Database.SSLMode),
+		"db_max_conns", cfg.Database.MaxConns,
+	)
+
+	db, err := database.Open(ctx, cfg.Database, "sms-api")
+	if err != nil {
+		return err
+	}
+	// Closed after server.Run returns, i.e. after in-flight requests have finished.
+	defer func() {
+		db.Close()
+		logger.Info("database pool closed")
+	}()
+
+	// A database outage at startup is not fatal: the API starts, /readyz reports 503, and the
+	// pool connects once PostgreSQL is reachable.
+	pingCtx, cancel := context.WithTimeout(ctx, cfg.Database.ConnectTimeout)
+	if err := db.Ping(pingCtx); err != nil {
+		logger.Warn("database not reachable at startup; /readyz will report not ready", "error", err.Error())
+	}
+	cancel()
+
 	metrics := observability.NewMetrics()
 	readiness := &httpserver.Readiness{}
 
@@ -38,6 +75,7 @@ func run() error {
 		Logger:    logger,
 		Metrics:   metrics,
 		Readiness: readiness,
+		Database:  db,
 	})
 	server := httpserver.NewServer(httpserver.ServerConfig{
 		Addr:              cfg.HTTP.Addr,
@@ -49,14 +87,5 @@ func run() error {
 		ShutdownTimeout:   cfg.ShutdownTimeout,
 	}, logger, router, metrics.Handler(), readiness)
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	// Log only an explicit, non-sensitive summary of the configuration — never the environment.
-	logger.Info("starting api",
-		"env", string(cfg.Env),
-		"log_level", cfg.Log.Level.String(),
-		"log_format", string(cfg.Log.Format),
-	)
 	return server.Run(ctx)
 }

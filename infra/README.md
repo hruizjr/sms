@@ -7,7 +7,7 @@ Infrastructure **configuration** — not provisioned infrastructure. Nothing her
 | Sub-folder | Purpose |
 | ---------- | ------- |
 | `docker/` | Dockerfiles for each backend executable and the frontend build |
-| `local/` | Docker Compose setup for local development (PostgreSQL first; other services only once approved) |
+| `local/` | Docker Compose setup for local development — **created in Phase 3 Group 2: PostgreSQL only** ([README](local/README.md)); other services only once approved |
 | `observability/` | Prometheus scrape configuration, alert rules, Grafana dashboards as code |
 
 Deployment target (cloud provider, on-premises, Philippine data centre, Kubernetes or not) is an

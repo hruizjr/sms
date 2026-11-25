@@ -7,7 +7,15 @@ belongs in `backend/internal/`, never in `cmd/`.
 ## Executables
 
 Approved for Phase 3 (ADR-0003, accepted 2026-11-25): **`api`** (created in Group 1) and **`migrate`**
-(Group 2) only. The other rows are candidates that need a separately approved task.
+(created in Group 2) only. The other rows are candidates that need a separately approved task.
+
+| Executable | Status | Run (from `backend/`) |
+| ---------- | ------ | --------------------- |
+| `api` | Implemented | `go run ./cmd/api` — serves `/healthz`, `/readyz` (checks PostgreSQL), and metrics on a loopback listener |
+| `migrate` | Implemented | `go run ./cmd/migrate up\|status\|version\|down` — applies the embedded goose migrations; `down` needs an explicit `APP_ENV=development`/`test` and a loopback-IP `DB_HOST`, and is refused otherwise (always in production) |
+
+Both read the same `DB_*` configuration (see [`backend/README.md`](../README.md)). The API never runs
+migrations; `migrate` is always run explicitly.
 
 | Candidate          | Plane         | Responsibility                                                                 |
 | ------------------ | ------------- | ------------------------------------------------------------------------------ |
@@ -15,7 +23,7 @@ Approved for Phase 3 (ADR-0003, accepted 2026-11-25): **`api`** (created in Grou
 | `dispatcher`       | Data plane    | Consumes accepted messages, applies routing and rate limits, hands to provider adapters |
 | `connector-<telco>`| Data plane    | Holds persistent telco sessions (e.g. SMPP binds) for one provider; may merge into `dispatcher` |
 | `scheduler`        | Control plane | Releases scheduled campaigns, runs periodic jobs (expiry, reconciliation)       |
-| `migrate`          | Tooling       | Applies database migrations                                                    |
+| `migrate`          | Tooling       | Applies database migrations (implemented in Group 2)                           |
 
 Important constraint for later design: telcos typically limit how many simultaneous connections
 ("binds") an aggregator may open. That means telco connector processes **cannot simply be scaled
