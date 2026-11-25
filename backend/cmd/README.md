@@ -4,7 +4,10 @@ One sub-folder per **executable** (runtime process). Each `main.go` must stay th
 configuration, construct dependencies, start the process, and handle graceful shutdown. Business logic
 belongs in `backend/internal/`, never in `cmd/`.
 
-## Candidate executables (Proposed — not approved, not created)
+## Executables
+
+Approved for Phase 3 (ADR-0003, accepted 2026-11-25): **`api`** and **`migrate`** only. The other rows are
+candidates that need a separately approved task.
 
 | Candidate          | Plane         | Responsibility                                                                 |
 | ------------------ | ------------- | ------------------------------------------------------------------------------ |

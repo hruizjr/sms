@@ -102,8 +102,8 @@ or **leak one customer's data to another** — so the most important behaviours 
 
 ### 3.6 Security testing
 
-- **Static analysis:** `govulncheck`, `golangci-lint` security linters, dependency audit for npm packages
-  (proposed: `npm audit`/`pnpm audit` in CI).
+- **Static analysis:** `govulncheck`, `golangci-lint` security linters, dependency audit for frontend
+  packages (`pnpm audit` in CI, since pnpm is the accepted package manager — ADR-0013).
 - **Secret scanning:** a pre-commit or CI secret scanner (tool to be chosen) plus GitHub secret scanning
   where available.
 - **Automated security tests:** authorization matrix tests (every role × every endpoint), tenant isolation

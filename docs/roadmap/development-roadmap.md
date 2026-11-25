@@ -11,11 +11,12 @@ Each phase starts only with the owner's explicit approval.
 ## Overview
 
 ```
-Phase 1  Engineering foundation ...................... (this phase)
+Phase 1  Engineering foundation ...................... COMPLETE
    │
 Phase 2  Discovery closure & solution architecture ◀── telco, regulatory, traffic, business inputs
+         (2A preparation package merged; external discovery and 2B ONGOING)
    │
-Phase 3  Walking skeleton (tooling, CI, local stack)   (can start in parallel with late Phase 2)
+Phase 3  Walking skeleton (tooling, CI, local stack)   AUTHORIZED, IN PROGRESS (Group 0 in review)
    │
 Phase 4  Control-plane core: tenants, identity, RBAC, audit
    │
@@ -36,15 +37,19 @@ Phase 11 Scale-out and expansion (more telcos, analytics, broker, features)
 
 ## Phases
 
-### Phase 1 — Engineering foundation *(current)*
+### Phase 1 — Engineering foundation *(complete)*
 **Goal:** repository structure, agent instructions, standards, discovery and risk documents.
+**Status:** Complete — reviewed and merged by the owner (PR #1).
 **Acceptance criteria:**
-- [ ] Monorepo folders with READMEs exist; no application code.
-- [ ] `AGENTS.md` and all Phase 1 documents created.
-- [ ] Owner has reviewed documents and the decisions requiring approval.
+- [x] Monorepo folders with READMEs exist; no application code.
+- [x] `AGENTS.md` and all Phase 1 documents created.
+- [x] Owner has reviewed documents and the decisions requiring approval.
 
 ### Phase 2 — Discovery closure and solution architecture
 **Goal:** replace unknowns with facts and agree the architecture for the MVP.
+**Status:** Ongoing. Phase 2A (discovery preparation package) is merged (PR #2). The actual external
+discovery (telcos, counsel, customers) and Phase 2B (SRS, domain model, system architecture, threat model) are
+**not yet done**; no acceptance criterion below is met.
 **Depends on:** owner and external parties (telcos, counsel, prospective customers).
 **Work:**
 - Collect traffic data (traffic capacity discovery); telco technical answers (checklist); regulatory
@@ -67,15 +72,30 @@ criteria below is tracked in the [Phase 2 exit checklist](../discovery/phase2-ex
 
 ### Phase 3 — Walking skeleton
 **Goal:** a minimal end-to-end technical skeleton with no business features.
-**Depends on:** ADR-0002/0003/0004/0013/0014/0015/0016 accepted (does not depend on telco answers); owner
-actions in git-workflow §0 (create `main`, set default branch, configure protection).
+**Status:** Authorized by the owner on 2026-11-25 and **in progress**. It will be delivered in six groups, each
+reviewed and merged before the next starts
+([decision log §7](../engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25)).
+**Application implementation has not started.**
+
+| Group | Scope | State |
+| ----- | ----- | ----- |
+| 0 | Record owner decisions (documentation only) | Submitted — awaiting owner review and merge (PR #3) |
+| 1 | Go API skeleton, with basic CI | Not started |
+| 2 | PostgreSQL, migrations, local database | Not started |
+| 3 | API contract (OpenAPI) | Not started |
+| 4 | Frontend | Not started |
+| 5 | Local development stack and expanded CI | Not started |
+
+**Depends on:** ADR-0002/0003/0004/0005/0013/0014/0015/0016/0017 — accepted 2026-11-25; owner repository
+actions — done (git-workflow §0).
 **Work:** `go.mod`, `cmd/api` with health/readiness endpoints, config loading, logging, metrics endpoint;
 frontend app(s) with design tokens and app shell; local Docker Compose with PostgreSQL; migration tooling;
 CI (format, lint, test, type check, vulnerability and secret scan); OpenAPI skeleton with type generation.
 **Acceptance criteria:**
 - [ ] A new developer/agent can start the local stack with one documented command.
 - [ ] CI runs on every PR and blocks merging on failure.
-- [ ] Branch protection configured on `main`.
+- [x] Branch protection configured on `main` (owner-confirmed 2026-11-25; required CI checks to be added once
+      workflows exist).
 - [ ] Health endpoint served; frontend shell renders; tokens applied; all tests pass.
 - [ ] RLS evaluation completed and documented (ADR-0010, D-141), before Phase 4.
 

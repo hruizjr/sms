@@ -2,46 +2,28 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — pending owner approval (ADR-0017) | Project owner | 2026-11-24 (current state added) |
+| Approved (ADR-0017 accepted 2026-11-25) | Project owner | 2026-11-25 (repository state updated) |
 
 A deliberately simple, trunk-based workflow for **one human owner and multiple AI agents**.
 
-## 0. Current repository state and required owner actions
+## 0. Repository state
 
-**As of 2026-11-24, the target workflow below is not yet in place.**
+**As of 2026-11-25** (ADR-0017 accepted by the owner):
 
-| Item | Current state |
-| ---- | ------------- |
-| `main` branch | **Does not exist** |
-| Default branch | `claude/ecstatic-gates-ji0o5b` (it became the default because it was the first branch pushed to an empty repository) |
-| Branch protection | **Not configured** |
-| Open documentation PRs | Target `claude/ecstatic-gates-ji0o5b`, because no `main` exists |
+| Item | State |
+| ---- | ----- |
+| `main` branch | Exists; holds the merged Phase 1 and Phase 2A history |
+| Default branch | `main` |
+| Branch protection on `main` | Configured by the owner (owner-confirmed 2026-11-25): pull requests required, zero required approvals, conversation resolution required, force pushes and deletion blocked |
+| Required CI status checks | **Not yet configured** — added by the owner once CI workflows exist (Phase 3, Group 1 onward) |
 
-AI agents MUST NOT create `main`, change the default branch, or change repository settings. These are
-**owner actions**:
+Agents create every task branch from the latest `main` and open Draft pull requests against `main`.
+Agents MUST NOT change the default branch, branch protection, or any other repository setting; these remain
+owner actions. Agents cannot read repository settings, so protection status is recorded here as
+owner-confirmed rather than agent-verified.
 
-1. **Review and merge** any open Phase 1 documentation PRs into `claude/ecstatic-gates-ji0o5b`, so the
-   history to be promoted is complete.
-2. **Create `main`** from that branch's latest commit — either on GitHub (branch selector → type `main` →
-   "Create branch: main from claude/ecstatic-gates-ji0o5b"), or locally:
-
-   ```bash
-   git fetch origin
-   ```
-
-   ```bash
-   git push origin origin/claude/ecstatic-gates-ji0o5b:refs/heads/main
-   ```
-
-3. **Set `main` as the default branch**: repository Settings → General → Default branch (GitHub menu
-   names may change over time).
-4. **Configure branch protection** for `main` as described in §6 (Settings → Rules/Rulesets or Branches).
-5. **Retarget** any still-open PRs to `main` (PR page → Edit → base branch).
-6. Optionally, delete `claude/ecstatic-gates-ji0o5b` once nothing depends on it.
-7. From then on, **every task branch is created from the latest `main`**, and `AGENTS.md` §14 "Current state"
-   and this §0 are updated to reflect it (a small docs task).
-
-Until these actions are done, agents branch from the current default branch and target PRs at it.
+The former branch `claude/ecstatic-gates-ji0o5b` contains only history already merged into `main`; the owner
+may delete it.
 
 ## 1. Branches
 
@@ -115,8 +97,7 @@ Commits must not contain secrets, generated binaries, or unrelated changes.
 
 ## 6. Branch protection settings for `main` (recommended)
 
-Configure in GitHub → Settings → Branches (or Rulesets) once the repository has a `main` branch
-(see §0 — not yet configured):
+Configured in GitHub → Settings → Rules/Rulesets or Branches (see §0 for the current configuration):
 
 | Setting | Recommendation | Why |
 | ------- | -------------- | --- |
