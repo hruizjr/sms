@@ -1,0 +1,906 @@
+openapi: 3.1.1
+info:
+  title: SMS Platform Public API
+  version: 0.1.0-draft
+  summary: Client-facing REST API for submitting A2P SMS messages and reading their status.
+  description: |
+    **Status: draft contract (Phase 3 Group 3). Nothing in this document is implemented yet.**
+    Values marked *provisional* depend on owner decisions listed in
+    `contracts/openapi/README.md` and the discovery register; they may change before `v1` is published.
+
+    ## What a successful response means
+
+    A `202 Accepted` response from `POST /v1/messages` means **only** that the platform validated the
+    request, stored the message, and took responsibility for attempting to process it. It does **not**
+    mean that the message was handed to a mobile network, that a network accepted it, or that it reached
+    the recipient's handset. Those are later, separate milestones reported through the message `status`.
+
+    The platform does **not** promise exactly-once SMS delivery. A network can time out after it has
+    already accepted a message; in that case the platform cannot know whether the message was sent, and
+    reports `submission_uncertain` instead of guessing. Delivery reports from networks can be late,
+    missing, duplicated, or out of order; `unknown` means no final report arrived in time, which is
+    **not** proof that the message was undelivered.
+
+    ## Conventions
+
+    - JSON bodies; field names are `snake_case`.
+    - Timestamps are RFC 3339 in UTC (for example `2026-11-25T08:15:30Z`).
+    - Phone numbers are E.164 (`+` country code and number, no spaces).
+    - Resource identifiers are opaque strings. Do not parse them or rely on their format or ordering.
+    - Errors use RFC 9457 Problem Details (`application/problem+json`) with a stable `type` URI.
+    - Every response carries an `X-Request-ID` header; quote it when contacting support.
+    - Collections use cursor pagination (`limit`, `cursor`, `next_cursor`).
+
+    ## Compatibility
+
+    Within `/v1` the platform will not remove or rename fields, remove enum values, or make optional
+    request fields required. It **may** add optional request fields, response fields, enum values in
+    responses (including new `status` values and `status_reason.code` values), problem types, headers,
+    and endpoints. Clients must ignore unknown response fields and handle unknown enum values gracefully
+    (for example by treating an unknown `status` as in progress and reading `status_category`).
+  contact:
+    name: Platform owner (to be published)
+servers:
+  - url: https://api.example.invalid
+    description: Placeholder. The production host name is not decided yet (discovery register D-145).
+tags:
+  - name: Messages
+    description: Submit SMS messages and read their status.
+security:
+  - api_key: []
+paths:
+  /v1/messages:
+    post:
+      tags: [Messages]
+      operationId: createMessage
+      summary: Accept a message for delivery
+      description: |
+        Accepts one SMS message to one recipient for asynchronous processing.
+
+        **Acceptance is not submission and not delivery.** On success the platform has validated and
+        stored the message and returns it with `status: accepted`. Hand-off to a mobile network and
+        delivery happen later; follow them with `GET /v1/messages/{message_id}`.
+
+        **Idempotency.** The `Idempotency-Key` header is required. If you do not receive a response
+        (timeout, connection reset, `5xx`), retry with the **same key and the same body**. If the
+        original request was accepted, the platform returns the original response again
+        (`Idempotent-Replayed: true`) and does not create a second message or a second charge. A key
+        prevents duplicate operations inside the platform only; it cannot make SMS delivery
+        exactly-once (see `submission_uncertain`).
+
+        **Required permission:** `messages:send`.
+        **Rate limits:** per account and per API key; values are not yet set. Exceeding them returns `429`.
+      x-required-permission: messages:send
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessageCreateRequest'
+            examples:
+              otp:
+                summary: One-time password (synthetic data)
+                value:
+                  to: '+639000000001'
+                  sender_id: EXAMPLECO
+                  body: Your verification code is 000000. It expires in 5 minutes.
+                  client_reference: login-7f3a2c
+      responses:
+        '202':
+          description: |
+            Accepted for processing. The body is the message as it was at acceptance. On an idempotent
+            replay the same status code and body are returned with `Idempotent-Replayed: true`; the
+            replay shows the acceptance-time state, not the current status.
+          headers:
+            Location:
+              description: Path of the created message resource.
+              schema:
+                type: string
+                example: /v1/messages/msg_01JDX3P8Q4ZK9R2V6T0B7N5M1C
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+              examples:
+                accepted:
+                  summary: Newly accepted message
+                  value:
+                    id: msg_01JDX3P8Q4ZK9R2V6T0B7N5M1C
+                    client_reference: login-7f3a2c
+                    to: '+639000000001'
+                    sender_id: EXAMPLECO
+                    status: accepted
+                    status_category: in_progress
+                    status_reason: null
+                    encoding: gsm7
+                    segment_count: 1
+                    accepted_at: '2026-11-25T08:15:30Z'
+                    status_updated_at: '2026-11-25T08:15:30Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          $ref: '#/components/responses/InsufficientCredit'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/IdempotencyRequestInProgress'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/UnprocessableMessage'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    get:
+      tags: [Messages]
+      operationId: listMessages
+      summary: List messages
+      description: |
+        Lists the calling account's messages, newest acceptance first, with cursor pagination.
+        Only messages of the authenticated account are ever returned.
+
+        Use `client_reference` to find messages by your own reference (for example after the
+        idempotency retention period has passed). `client_reference` is not unique: several
+        messages may share one.
+
+        **Required permission:** `messages:read`.
+        **Rate limits:** per account and per API key; values are not yet set.
+      x-required-permission: messages:read
+      parameters:
+        - name: client_reference
+          in: query
+          required: false
+          description: Return only messages with exactly this client reference.
+          schema:
+            $ref: '#/components/schemas/ClientReference'
+        - name: status
+          in: query
+          required: false
+          description: Return only messages currently in this status.
+          schema:
+            $ref: '#/components/schemas/MessageStatus'
+        - name: accepted_after
+          in: query
+          required: false
+          description: Return only messages accepted at or after this time (inclusive).
+          schema:
+            type: string
+            format: date-time
+        - name: accepted_before
+          in: query
+          required: false
+          description: Return only messages accepted before this time (exclusive).
+          schema:
+            type: string
+            format: date-time
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page of messages.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageList'
+              examples:
+                page:
+                  summary: A page with a further page available
+                  value:
+                    data:
+                      - id: msg_01JDX3P8Q4ZK9R2V6T0B7N5M1C
+                        client_reference: login-7f3a2c
+                        to: '+639000000001'
+                        sender_id: EXAMPLECO
+                        status: delivered
+                        status_category: final
+                        status_reason: null
+                        encoding: gsm7
+                        segment_count: 1
+                        accepted_at: '2026-11-25T08:15:30Z'
+                        status_updated_at: '2026-11-25T08:15:41Z'
+                    next_cursor: eyJiIjoiMjAyNi0xMS0yNVQwODoxNTozMFoifQ
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /v1/messages/{message_id}:
+    get:
+      tags: [Messages]
+      operationId: getMessage
+      summary: Get a message and its current status
+      description: |
+        Returns the current state of one message. This is the authoritative way to follow a message
+        after acceptance: its `status` changes as the platform hands it to a network and as delivery
+        reports arrive, including late reports.
+
+        A message that does not exist **or belongs to another account** returns `404`; the response
+        never reveals whether another account's message exists.
+
+        **Required permission:** `messages:read`.
+        **Rate limits:** per account and per API key; values are not yet set.
+      x-required-permission: messages:read
+      parameters:
+        - name: message_id
+          in: path
+          required: true
+          description: The message `id` returned at acceptance.
+          schema:
+            $ref: '#/components/schemas/MessageId'
+      responses:
+        '200':
+          description: The message.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+              examples:
+                delivered:
+                  summary: Delivered (final, reported by the network)
+                  value:
+                    id: msg_01JDX3P8Q4ZK9R2V6T0B7N5M1C
+                    client_reference: login-7f3a2c
+                    to: '+639000000001'
+                    sender_id: EXAMPLECO
+                    status: delivered
+                    status_category: final
+                    status_reason: null
+                    encoding: gsm7
+                    segment_count: 1
+                    accepted_at: '2026-11-25T08:15:30Z'
+                    status_updated_at: '2026-11-25T08:15:41Z'
+                submissionUncertain:
+                  summary: Network hand-off outcome unknown (not automatically resent)
+                  value:
+                    id: msg_01JDX4A1W7HC3M8E2K9F6Q0R5T
+                    client_reference: alert-1042
+                    to: '+639000000002'
+                    sender_id: EXAMPLECO
+                    status: submission_uncertain
+                    status_category: uncertain
+                    status_reason:
+                      code: submission_outcome_unknown
+                      description: >-
+                        The network did not confirm whether it accepted the message. It may already
+                        have been delivered, so it is not resent automatically.
+                    encoding: ucs2
+                    segment_count: 2
+                    accepted_at: '2026-11-25T09:02:11Z'
+                    status_updated_at: '2026-11-25T09:02:42Z'
+                unknown:
+                  summary: No final delivery report received in time (not proof of non-delivery)
+                  value:
+                    id: msg_01JDX5C9N2BD4P7H1S8G3V6W0Y
+                    client_reference: null
+                    to: '+639000000003'
+                    sender_id: EXAMPLECO
+                    status: unknown
+                    status_category: uncertain
+                    status_reason:
+                      code: no_final_report_received
+                      description: >-
+                        The network accepted the message but no final delivery report arrived within
+                        the reporting window. A late report can still update this status.
+                    encoding: gsm7
+                    segment_count: 1
+                    accepted_at: '2026-11-25T10:30:00Z'
+                    status_updated_at: '2026-11-26T10:30:05Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+components:
+  securitySchemes:
+    api_key:
+      type: http
+      scheme: bearer
+      bearerFormat: API key
+      description: |
+        Send your API key as `Authorization: Bearer <api key>` over HTTPS only. Never put a key in a
+        URL or query string.
+
+        - The account (tenant) is always derived from the API key; no request field selects or
+          overrides it.
+        - Keys are random, carry a visible non-secret prefix for identification, are shown once at
+          creation, and are stored by the platform only as hashes.
+        - Each key is granted permissions; every operation states the permission it requires
+          (`x-required-permission`). A valid key without that permission receives `403`.
+        - Revoked, expired, unknown, or malformed keys receive `401`.
+
+        Provisional: the header form, key format, and permission names depend on the API key design
+        (security baseline S-2/S-3; discovery register D-143).
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        A unique value you generate for each **intended operation** (recommended: a random UUID) and
+        reuse unchanged on every retry of that operation.
+
+        - Scope: your account + this operation. The same key sent with any of your account's API keys
+          refers to the same operation; keys never collide across accounts.
+        - The value may be sent as a plain token or as a quoted string (`"..."`, the IETF draft's
+          Structured Field String form); both forms name the same key.
+        - Same key and same request body (compared after JSON parsing, so whitespace and field order do
+          not matter): the original response is replayed.
+        - Same key with a different body: `422` (`idempotency-key-reused`); nothing is processed.
+        - Same key while the original request is still being processed: `409`
+          (`idempotency-request-in-progress`) with `Retry-After`.
+        - Requests rejected by validation (`400`, `422` other than `idempotency-key-reused`), by
+          authentication or authorization (`401`, `403`), for insufficient credit (`402`), or by rate
+          limiting (`429`) are not recorded, so you may correct the problem and retry with the same key.
+        - After the retention period, a key is forgotten and a reused key is treated as a new request.
+          Provisional: the retention period is not yet decided (D-094d) and will be published here.
+
+        Provisional (ADR-0018, D-094a–d): required vs optional, scope, recorded outcomes, retention.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+        pattern: '^(?:[\x21\x23-\x5B\x5D-\x7E]{1,255}|"[\x21\x23-\x5B\x5D-\x7E]{1,253}")$'
+      example: 0c9d4bf1-3b52-4f6e-9a57-3f0b6f2f9b1e
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Maximum number of items to return.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: |
+        Opaque cursor from a previous page's `next_cursor`. Use it with the same filters as the request
+        that produced it. Cursors may expire; an invalid or expired cursor returns `400`.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 512
+  headers:
+    XRequestID:
+      description: |
+        Request identifier for support and troubleshooting. If you send an `X-Request-ID` of 1-128
+        characters from `[A-Za-z0-9._-]`, it is echoed; otherwise the platform generates one.
+      schema:
+        type: string
+        maxLength: 128
+    IdempotentReplayed:
+      description: |
+        Present with the value `true` when this response is a replay of an earlier response for the
+        same `Idempotency-Key`. Absent on the original response. Provisional header name (D-094).
+      schema:
+        type: string
+        enum: ['true']
+    RetryAfter:
+      description: Seconds to wait before retrying.
+      schema:
+        type: integer
+        minimum: 1
+    WWWAuthenticate:
+      description: Authentication challenge, for example `Bearer`.
+      schema:
+        type: string
+  responses:
+    BadRequest:
+      description: |
+        The request is malformed (`malformed-request`), fails validation (`validation-error`, with
+        field-level `errors`), has a missing or invalid `Idempotency-Key`
+        (`idempotency-key-missing`, `idempotency-key-invalid`), or uses an invalid cursor
+        (`validation-error`). Nothing was processed. Fix the request before retrying.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            validationError:
+              summary: Field validation failed
+              value:
+                type: https://api.example.invalid/problems/validation-error
+                title: The request is invalid
+                status: 400
+                detail: One or more fields are invalid.
+                request_id: 9b2f4c1e7d3a5b60
+                errors:
+                  - pointer: /to
+                    code: invalid_phone_number
+                    detail: Must be an E.164 phone number, for example +639000000001.
+            idempotencyKeyMissing:
+              summary: Idempotency-Key header missing
+              value:
+                type: https://api.example.invalid/problems/idempotency-key-missing
+                title: Idempotency-Key header is required
+                status: 400
+                detail: Send an Idempotency-Key header that is unique for this operation.
+                request_id: 9b2f4c1e7d3a5b61
+    Unauthenticated:
+      description: Missing, malformed, unknown, revoked, or expired API key.
+      headers:
+        WWW-Authenticate:
+          $ref: '#/components/headers/WWWAuthenticate'
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/unauthenticated
+            title: Authentication required
+            status: 401
+            detail: Provide a valid API key in the Authorization header.
+            request_id: 9b2f4c1e7d3a5b62
+    Forbidden:
+      description: The API key is valid but lacks the permission this operation requires, or the account is not allowed to use it (for example, suspended).
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/forbidden
+            title: Permission denied
+            status: 403
+            detail: This API key does not have the messages:send permission.
+            request_id: 9b2f4c1e7d3a5b63
+    InsufficientCredit:
+      description: |
+        The account does not have enough available credit to accept this message. Nothing was
+        processed and the idempotency key was not recorded, so the same request can be retried with
+        the same key after a top-up. Provisional (D-094c; credit model ADR-0011/ADR-0019).
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/insufficient-credit
+            title: Insufficient credit
+            status: 402
+            detail: The account does not have enough available credit for this message.
+            request_id: 9b2f4c1e7d3a5b64
+    NotFound:
+      description: The resource does not exist or belongs to another account.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            detail: The requested resource does not exist.
+            request_id: 9b2f4c1e7d3a5b65
+    IdempotencyRequestInProgress:
+      description: |
+        A request with the same `Idempotency-Key` is still being processed. Wait for `Retry-After`
+        seconds, then retry with the same key and body to receive its outcome.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/idempotency-request-in-progress
+            title: A request with this Idempotency-Key is in progress
+            status: 409
+            detail: Retry after the indicated delay with the same key and body.
+            request_id: 9b2f4c1e7d3a5b66
+    PayloadTooLarge:
+      description: The request body exceeds the size limit. Nothing was processed.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/payload-too-large
+            title: Request body too large
+            status: 413
+            detail: The request body exceeds the allowed size.
+            request_id: 9b2f4c1e7d3a5b67
+    UnsupportedMediaType:
+      description: The request body is not `application/json`. Nothing was processed.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/unsupported-media-type
+            title: Unsupported media type
+            status: 415
+            detail: Send the request body as application/json.
+            request_id: 9b2f4c1e7d3a5b68
+    UnprocessableMessage:
+      description: |
+        The request is well-formed but cannot be accepted. Nothing was processed. Problem types:
+
+        - `idempotency-key-reused` — the key was already used for a request with a different body.
+        - `sender-id-not-approved` — `sender_id` is not an approved sender ID of the account.
+        - `destination-not-supported` — the platform does not serve this destination.
+        - `message-too-long` — the body needs more segments than the platform allows.
+        - `recipient-opted-out` — the recipient is on the account's or the platform's suppression
+          list. Suppression is checked again before hand-off, so an accepted message can still end
+          as `rejected` with reason `recipient_opted_out`.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            idempotencyKeyReused:
+              summary: Key reused with a different body
+              value:
+                type: https://api.example.invalid/problems/idempotency-key-reused
+                title: Idempotency-Key reused with a different request
+                status: 422
+                detail: This Idempotency-Key was already used for a different request body.
+                request_id: 9b2f4c1e7d3a5b69
+            senderIdNotApproved:
+              summary: Sender ID not approved
+              value:
+                type: https://api.example.invalid/problems/sender-id-not-approved
+                title: Sender ID not approved
+                status: 422
+                detail: The sender_id is not an approved sender ID for this account.
+                request_id: 9b2f4c1e7d3a5b6a
+    RateLimited:
+      description: Too many requests. Wait for `Retry-After` seconds. For `POST /v1/messages`, retry with the same `Idempotency-Key`.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/rate-limited
+            title: Too many requests
+            status: 429
+            detail: The request rate limit was exceeded.
+            request_id: 9b2f4c1e7d3a5b6b
+    InternalError:
+      description: |
+        Unexpected server error. For `POST /v1/messages` the outcome may be unknown to you: retry with
+        the **same** `Idempotency-Key` and body. If the message was accepted, the original response is
+        replayed; if not, it is processed.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Internal Server Error
+            status: 500
+            detail: An unexpected error occurred.
+            request_id: 9b2f4c1e7d3a5b6c
+    ServiceUnavailable:
+      description: |
+        The service is temporarily unavailable. Retry after `Retry-After` seconds if present; for
+        `POST /v1/messages`, use the same `Idempotency-Key` and body.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Service Unavailable
+            status: 503
+            detail: The service is temporarily unavailable.
+            request_id: 9b2f4c1e7d3a5b6d
+  schemas:
+    MessageId:
+      type: string
+      description: Opaque message identifier assigned at acceptance. It never changes.
+      minLength: 1
+      maxLength: 64
+      pattern: '^[A-Za-z0-9_-]+$'
+      examples: [msg_01JDX3P8Q4ZK9R2V6T0B7N5M1C]
+    PhoneNumber:
+      type: string
+      description: E.164 phone number, `+` followed by the country code and number, no spaces or punctuation.
+      pattern: '^\+[1-9][0-9]{6,14}$'
+      examples: ['+639000000001']
+    ClientReference:
+      type: string
+      description: |
+        Your own reference for the message (for example an order or session identifier), returned
+        unchanged in every representation of the message. It is **not** an idempotency key: it is not
+        checked for uniqueness and does not prevent duplicates. It must not contain personal data,
+        secrets, or message content.
+      minLength: 1
+      maxLength: 64
+      pattern: '^[A-Za-z0-9._:-]+$'
+      examples: [login-7f3a2c]
+    SenderId:
+      type: string
+      description: |
+        The sender name or number shown to the recipient. It must exactly match a sender ID approved
+        for your account. Allowed characters and length per network depend on network registration
+        rules (TODO(telco-confirm): sender ID format and length per network); `maxLength` here is only
+        a structural bound.
+      minLength: 1
+      maxLength: 32
+      examples: [EXAMPLECO]
+    MessageCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [to, sender_id, body]
+      properties:
+        to:
+          $ref: '#/components/schemas/PhoneNumber'
+        sender_id:
+          $ref: '#/components/schemas/SenderId'
+        body:
+          type: string
+          description: |
+            Message text. The platform chooses the encoding (`gsm7` if every character is in the GSM-7
+            alphabet, otherwise `ucs2`) and splits long text into segments; both are reported in the
+            response. Characters outside GSM-7 (for example emoji) switch the whole message to `ucs2`,
+            which roughly halves the characters per segment.
+
+            Provisional: the `maxLength` below is a structural bound; the maximum number of segments
+            per message is not yet decided (D-144, depends on network limits D-105). A body that is
+            within `maxLength` but needs too many segments returns `422 message-too-long`.
+          minLength: 1
+          maxLength: 1600
+        client_reference:
+          $ref: '#/components/schemas/ClientReference'
+    MessageStatus:
+      type: string
+      description: |
+        Customer-visible message status. Provisional set (D-099, ADR-0021). The meaning of each value,
+        and how it maps to the platform's internal lifecycle, is documented in
+        `contracts/openapi/README.md`.
+
+        - `accepted` — accepted by the platform; not yet acknowledged by any network.
+        - `provider_accepted` — a network acknowledged and accepted the message; delivery not yet reported.
+        - `submission_uncertain` — handed to a network but the network's answer was not received
+          (for example a timeout). The message **may already be delivered**. It is not resent
+          automatically; do not resend it yourself unless a duplicate SMS is acceptable.
+        - `delivered` — the network reported delivery to the handset.
+        - `undelivered` — the network reported a final non-delivery (including expiry).
+        - `unknown` — the network accepted the message but no final report arrived within the
+          reporting window. **Not** proof of non-delivery; a late report can still change it.
+        - `rejected` — not sent because the platform or a network refused it (see `status_reason`).
+        - `failed` — not sent because hand-off to a network failed permanently or could not be
+          completed in time (see `status_reason`).
+      enum:
+        - accepted
+        - provider_accepted
+        - submission_uncertain
+        - delivered
+        - undelivered
+        - unknown
+        - rejected
+        - failed
+    StatusCategory:
+      type: string
+      description: |
+        Coarse grouping of `status`, stable even if new status values are added:
+
+        - `in_progress` — the platform is still working on the message (`accepted`, `provider_accepted`).
+        - `uncertain` — the outcome is not known and may still change (`submission_uncertain`, `unknown`).
+        - `final` — a final outcome (`delivered`, `undelivered`, `rejected`, `failed`). A final status
+          is not replaced by in-progress information. Network-reported finals (`delivered`,
+          `undelivered`) are the network's report, not an absolute guarantee.
+      enum: [in_progress, uncertain, final]
+    StatusReason:
+      type: object
+      description: |
+        Why the message is in its current status. Present for `rejected`, `failed`, `undelivered`,
+        `submission_uncertain`, and `unknown`; `null` otherwise. Codes are platform-defined and
+        network-independent; raw network codes are never exposed. New codes may be added.
+      required: [code, description]
+      properties:
+        code:
+          type: string
+          description: |
+            Machine-readable reason. Initial set (provisional, D-099):
+            `recipient_opted_out`, `policy_violation`, `provider_rejected` (with `rejected`);
+            `retries_exhausted`, `expired_before_submission`, `permanent_submission_error` (with `failed`);
+            `provider_reported_undelivered`, `provider_reported_expired` (with `undelivered`);
+            `submission_outcome_unknown` (with `submission_uncertain`);
+            `no_final_report_received` (with `unknown`).
+          maxLength: 64
+          pattern: '^[a-z][a-z0-9_]*$'
+          examples: [no_final_report_received]
+        description:
+          type: string
+          description: Human-readable explanation in English. Do not parse it.
+          maxLength: 500
+    Message:
+      type: object
+      required:
+        - id
+        - client_reference
+        - to
+        - sender_id
+        - status
+        - status_category
+        - status_reason
+        - encoding
+        - segment_count
+        - accepted_at
+        - status_updated_at
+      description: |
+        A message accepted by the platform. The message text is not returned in any response (data
+        minimization). Network-side identifiers are internal and never exposed.
+      properties:
+        id:
+          $ref: '#/components/schemas/MessageId'
+        client_reference:
+          oneOf:
+            - $ref: '#/components/schemas/ClientReference'
+            - type: 'null'
+          description: The `client_reference` sent at acceptance, or `null`.
+        to:
+          $ref: '#/components/schemas/PhoneNumber'
+        sender_id:
+          $ref: '#/components/schemas/SenderId'
+        status:
+          $ref: '#/components/schemas/MessageStatus'
+        status_category:
+          $ref: '#/components/schemas/StatusCategory'
+        status_reason:
+          oneOf:
+            - $ref: '#/components/schemas/StatusReason'
+            - type: 'null'
+        encoding:
+          type: string
+          description: Encoding chosen by the platform from the message text.
+          enum: [gsm7, ucs2]
+        segment_count:
+          type: integer
+          minimum: 1
+          description: |
+            Number of SMS segments calculated by the platform for this message. Charging is per
+            billable segment (proposed); a network may count differently in edge cases (D-117).
+        accepted_at:
+          type: string
+          format: date-time
+          description: When the platform accepted the message (UTC).
+        status_updated_at:
+          type: string
+          format: date-time
+          description: When `status` last changed (UTC).
+    MessageList:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+        next_cursor:
+          description: Cursor for the next page, or `null` when there are no more items.
+          oneOf:
+            - type: string
+              maxLength: 512
+            - type: 'null'
+    Problem:
+      type: object
+      description: |
+        RFC 9457 Problem Details. `type` identifies the problem; `about:blank` is used for generic
+        HTTP errors whose meaning is given by `status` alone. `detail` is safe to show to developers
+        and never contains internal error text. Provisional: the problem type URI base depends on the
+        public domain (D-145).
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+          description: Problem type URI. Stable; compare it, not `title` or `detail`.
+          examples: [https://api.example.invalid/problems/validation-error]
+        title:
+          type: string
+          description: Short human-readable summary of the problem type.
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+          description: HTTP status code.
+        detail:
+          type: string
+          description: Human-readable explanation of this occurrence.
+        instance:
+          type: string
+          format: uri-reference
+          description: URI reference identifying this occurrence, if provided.
+        request_id:
+          type: string
+          maxLength: 128
+          description: The request identifier (same as the `X-Request-ID` response header).
+        errors:
+          type: array
+          description: Field-level validation errors (`validation-error` only).
+          items:
+            $ref: '#/components/schemas/FieldError'
+    FieldError:
+      type: object
+      required: [code, detail]
+      properties:
+        pointer:
+          type: string
+          description: JSON Pointer (RFC 6901) to the invalid body field, for example `/to`.
+        parameter:
+          type: string
+          description: Name of the invalid query, path, or header parameter.
+        code:
+          type: string
+          pattern: '^[a-z][a-z0-9_]*$'
+          description: Machine-readable error code, for example `required`, `invalid_phone_number`, `too_long`.
+        detail:
+          type: string
+          description: Human-readable explanation.
