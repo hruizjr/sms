@@ -292,7 +292,7 @@ Rules:
 - Status colours (delivered, failed, pending) map to semantic tokens and are always paired with text/icon.
 - Spacing and typography use Tailwind's scale; extensions go through tokens.
 - Class lists that become long are a sign a reusable component is needed.
-- Automatic class sorting (e.g. Prettier's Tailwind plugin) is proposed at scaffolding.
+- Class order is sorted automatically by `prettier-plugin-tailwindcss` (adopted in Phase 3 Group 5).
 
 ### API integration
 

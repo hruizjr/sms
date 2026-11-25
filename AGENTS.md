@@ -9,10 +9,10 @@
 | Field | Value |
 | ----- | ----- |
 | Project | Enterprise A2P SMS Platform (Philippines) |
-| Current phase | **Phase 3 — Walking skeleton: authorized and in progress.** Groups 0 (decisions), 1 (Go API skeleton), 2 (PostgreSQL foundation), and 3 (OpenAPI contract for the public messages API) are merged. Group 4 (Go API contract integration: Go types and Chi routes generated from the contract; no endpoint mounted) is submitted for owner review. Groups 5 (frontend) and 6 (local stack, expanded CI) are not started (renumbered by the owner, [decision log §9](docs/engineering/decision-log.md#9-owner-decisions--go-contract-integration-phase-3-group-4-2026-11-25)). See [decision log §7](docs/engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25). |
+| Current phase | **Phase 3 — Walking skeleton: authorized and in progress.** Groups 0 (decisions), 1 (Go API skeleton), 2 (PostgreSQL foundation), and 3 (OpenAPI contract for the public messages API) are merged, as is Group 4 (Go API contract integration: Go types and Chi routes generated from the contract; no endpoint mounted). Group 5 (frontend foundation: client portal shell and shared UI package; no features, no API calls) is submitted for owner review. Group 6 (local stack, expanded CI) is not started (groups renumbered by the owner, [decision log §9](docs/engineering/decision-log.md#9-owner-decisions--go-contract-integration-phase-3-group-4-2026-11-25)). See [decision log §7](docs/engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25). |
 | Authorized scope | **Phase 3 walking skeleton only** (owner approval 2026-11-25). Each implementation group starts only after the previous group is reviewed and merged. Later phases and all other ADRs need separate owner approval. |
 | Decision authority | The project owner (a single human). Agents propose; the owner decides. |
-| Last updated | 2026-11-25 (Phase 3 Group 4: Go code generation from the OpenAPI contract) |
+| Last updated | 2026-11-25 (Phase 3 Group 5: frontend foundation) |
 
 ---
 
@@ -47,9 +47,10 @@ optional; if you believe one must be broken, stop and ask the project owner.
 The repository contains documentation, repository hygiene files, the Go API skeleton in `backend/` (health
 and readiness endpoints, metrics, CI), the PostgreSQL foundation (connection pool, goose migrations without
 business tables, local Docker Compose database, integration tests), the draft OpenAPI contract for the
-public messages API in `contracts/openapi/`, and — once Group 4 is merged — Go types and Chi routes
-generated from that contract in `backend/internal/publicapi/` (no `/v1` endpoint is mounted or
-implemented). The Phase 3 walking skeleton (technical
+public messages API in `contracts/openapi/`, Go types and Chi routes generated from that contract in
+`backend/internal/publicapi/` (no `/v1` endpoint is mounted or implemented), and — once Group 5 is merged —
+the frontend foundation in `frontend/` (client portal shell with one placeholder page, shared UI package,
+no features, no API calls). The Phase 3 walking skeleton (technical
 foundation only) is added one reviewed group at a time. **No business functionality exists or is authorized.**
 
 **Verified facts:** almost none. The business *intends* to become an A2P SMS aggregator. No telco
@@ -267,7 +268,7 @@ Details and gaps: [product brief](docs/product/product-brief.md) and
 ```
 AGENTS.md          This file
 backend/           Go module (cmd/ = executables, internal/ = modules)   — API + database skeleton
-frontend/          React applications                                    — empty
+frontend/          React applications (pnpm workspace)                   — client portal shell + packages/ui (Group 5)
 contracts/         OpenAPI specs, event and webhook schemas              — draft public API v1 (Group 3)
 backend/internal/publicapi/  Go code GENERATED from contracts/openapi/  — never edit by hand (Group 4)
 infra/             Docker, local dev stack, observability config         — local PostgreSQL
@@ -447,7 +448,9 @@ Details: [coding standards](docs/standards/coding-standards.md#frontend).
 
 ### 8.1 Component organization
 - Feature-first structure: `src/features/<feature>/` contains that feature's components, hooks, API
-  calls, and tests. Shared primitives live in `src/components/ui/`; layouts in `src/components/layout/`.
+  calls, and tests. Design tokens and primitives shared across applications live in the shared UI package
+  `frontend/packages/ui` (`@sms/ui`, ADR-0013); components used by one application only stay in that
+  application (`src/components/`, layouts in `src/components/layout/`) (owner decision F8, decision log §10).
 - A feature MUST NOT import another feature's internal files. Share via `components/` or `lib/`.
 - Function components, named exports, one component per file, explicit prop types.
 - UI primitives contain no business logic; business logic lives in hooks or feature modules.
@@ -455,12 +458,15 @@ Details: [coding standards](docs/standards/coding-standards.md#frontend).
 ### 8.2 TypeScript
 - `"strict": true` plus `noUncheckedIndexedAccess`, `noImplicitOverride`, `noFallthroughCasesInSwitch`.
 - No `any` (use `unknown` and narrow). No `@ts-ignore`; `@ts-expect-error` only with a comment.
-- API types are **generated from `contracts/`** (ADR-0015), not hand-written duplicates.
+- API types are **generated from `contracts/`** (ADR-0015), not hand-written duplicates. Frontend type
+  generation is deferred until a session-authenticated portal API contract is approved (owner decision F3,
+  decision log §10); until then the frontend has no API types, no API client, and makes no network calls.
 
 ### 8.3 Tailwind CSS and design tokens
 - Tailwind CSS is the **only** styling system. No CSS-in-JS, Bootstrap, Material UI, or similar.
 - All colours, spacing scale extensions, radii, shadows, and typography are **design tokens** defined
-  once as CSS variables (Tailwind's theme configuration) in `src/styles/`.
+  once as CSS variables (Tailwind's theme configuration) in `frontend/packages/ui/src/theme.css`;
+  Tailwind's default colour palette is switched off.
 - Components use **semantic** tokens (`bg-surface`, `text-muted`, `border-danger`), never raw hex values
   or arbitrary values like `bg-[#1a2b3c]`.
 - Variants (size, intent) are defined in one place per component, not scattered conditionals.

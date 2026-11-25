@@ -1,0 +1,122 @@
+# Frontend CI — Phase 3 Group 5 (client portal and shared UI package).
+#
+# The job names below are the status-check names to require on `main` once this workflow is merged:
+#   "Frontend check" (Linux; intended to become a required status check, owner decision F6)
+#   "Frontend check (Windows)"
+#
+# Security: least-privilege token (read-only contents), actions pinned to full commit SHAs, no
+# secrets used, credentials not persisted after checkout. Tool versions are pinned in `env` and in
+# frontend/package.json ("engines", enforced by engine-strict in frontend/.npmrc); dependencies are
+# installed from the committed lockfile only. No path filters, so the checks always report a status.
+name: Frontend CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "26.13.1"   # decision log §7.1 (Node.js 26 LTS, exact); must match frontend/package.json
+  PNPM_VERSION: "10.34.9"   # decision log §7.1 (pnpm 10, exact); must match frontend/package.json
+
+defaults:
+  run:
+    working-directory: frontend
+
+jobs:
+  linux:
+    name: Frontend check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install pnpm
+        run: npm install --global "pnpm@${PNPM_VERSION}"
+
+      - name: Show tool versions
+        run: |
+          node --version
+          pnpm --version
+
+      - name: Install dependencies (lockfile only)
+        run: pnpm install --frozen-lockfile
+
+      - name: Check formatting (Prettier)
+        run: pnpm run format:check
+
+      - name: Lint (ESLint)
+        run: pnpm run lint
+
+      - name: Type check (TypeScript)
+        run: pnpm run typecheck
+
+      - name: Unit and component tests (Vitest)
+        run: pnpm run test
+
+      - name: Production build and build verification
+        run: pnpm run build
+
+      - name: Security audit (fails on moderate or higher)
+        run: pnpm run audit
+
+  windows:
+    name: Frontend check (Windows)
+    runs-on: windows-2025
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install pnpm
+        run: npm install --global "pnpm@$env:PNPM_VERSION"
+
+      - name: Show tool versions
+        run: |
+          node --version
+          pnpm --version
+
+      - name: Install dependencies (lockfile only)
+        run: pnpm install --frozen-lockfile
+
+      - name: Check formatting (Prettier)
+        run: pnpm run format:check
+
+      - name: Lint (ESLint)
+        run: pnpm run lint
+
+      - name: Type check (TypeScript)
+        run: pnpm run typecheck
+
+      - name: Unit and component tests (Vitest)
+        run: pnpm run test
+
+      - name: Production build and build verification
+        run: pnpm run build

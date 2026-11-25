@@ -1,0 +1,71 @@
+/*
+ * Design tokens for every frontend application (ADR-0013; AGENTS.md §8.3).
+ *
+ * Import after Tailwind in the application stylesheet:
+ *   @import "tailwindcss";
+ *   @import "@sms/ui/theme.css";
+ *
+ * Rules:
+ * - Tailwind's default colour palette is switched off (--color-*: initial), so only the semantic
+ *   colour tokens below exist. Classes such as bg-blue-500 generate no CSS.
+ * - Colours are #rrggbb so that tokens.test.ts can check WCAG 2.2 AA contrast for every pair used
+ *   together: 4.5:1 for text, 3:1 for focus indicators and component boundaries.
+ * - Neutral placeholder values, light theme only (owner decision F7). Branding and dark mode are
+ *   later decisions; a dark theme would redefine these variables without changing components.
+ * - Fonts are the operating system's own (no web fonts, no font downloads).
+ */
+
+/* Scan this package's components for class names (it lives outside the application folder). */
+@source './';
+
+@theme {
+  --color-*: initial;
+
+  /* Backgrounds */
+  --color-surface: #ffffff; /* cards, header, controls */
+  --color-surface-muted: #f3f4f6; /* page background, subtle hover */
+
+  /* Text */
+  --color-text: #111827;
+  --color-text-muted: #4b5563;
+
+  /* Borders: decorative separators, and control boundaries that must reach 3:1 */
+  --color-border: #d1d5db;
+  --color-border-strong: #6b7280;
+
+  /* Actions */
+  --color-primary: #1e3a5f;
+  --color-primary-hover: #2c5282;
+  --color-primary-foreground: #ffffff;
+  --color-danger: #b42318;
+  --color-danger-hover: #912018;
+  --color-danger-foreground: #ffffff;
+
+  /* Status text (always paired with words or an icon, never colour alone) */
+  --color-success: #067647;
+  --color-warning: #b54708;
+  --color-info: #175cd3;
+
+  /* Keyboard focus indicator */
+  --color-focus: #2563eb;
+
+  --font-sans:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+
+  --radius-control: 0.375rem;
+  --radius-card: 0.5rem;
+}
+
+@layer base {
+  html {
+    background-color: var(--color-surface-muted);
+    color: var(--color-text);
+  }
+
+  /* One visible keyboard focus indicator for every focusable element. The 2px offset places the
+     ring on the surrounding background, which it contrasts with at 3:1 or more. */
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+}

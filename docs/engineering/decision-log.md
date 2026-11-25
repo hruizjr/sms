@@ -70,6 +70,8 @@ ADRs remain `Proposed`; the owner's approval is limited to those decisions and t
 **In Phase 3 Group 4 (2026-11-25) the owner approved Go code generation from the OpenAPI contract under
 ADR-0015** (see [§9](#9-owner-decisions--go-contract-integration-phase-3-group-4-2026-11-25)); no ADR status
 changed.
+**In Phase 3 Group 5 (2026-11-25) the owner approved the frontend foundation under ADR-0013** (see
+[§10](#10-owner-decisions--frontend-foundation-phase-3-group-5-2026-11-25)); no ADR status changed.
 
 | ADR | Title | Status |
 | --- | ----- | ------ |
@@ -879,3 +881,108 @@ are MIT, Apache-2.0 or BSD-3-Clause licensed, and locked by checksum in `backend
    required body fields, `additionalProperties: false`, null handling, `Content-Type`) and not
    **authentication or authorization**. Both are required before any `/v1` endpoint serves traffic (D6).
 
+---
+
+## 10. Owner decisions — frontend foundation (Phase 3 Group 5, 2026-11-25)
+
+Recorded from the owner's approval of the Group 5 proposal (decisions F1–F8 and additional requirements).
+**The approval is limited to these decisions.** No ADR status changed. ADR-0013's text is unchanged, and
+these choices implement it. ADR-0013's "implementation-time checks (Group 4)" refer to this group under its
+old number (§7.4).
+
+| ID | Topic | Decision |
+| -- | ----- | -------- |
+| F1 | TypeScript | **6.0.3**. 7.0.2 is not supported by `typescript-eslint` 8.x (peer range below 6.1.0) |
+| F2 | Packages beyond §7.2 | Approved: `@types/react`, `@types/react-dom`, `@testing-library/dom`, `@eslint/js`, `prettier-plugin-tailwindcss`. `@types/node` only if demonstrably necessary: **not added**, because type checking works without it (the build check script is plain JavaScript) |
+| F3 | OpenAPI frontend types | **Deferred.** No `openapi-typescript`, no `lib/api/`, no generation scripts, no generated public API types. The public `/v1` API uses API keys, which must never be used in a browser; the portal needs a separately approved, session-authenticated portal API contract |
+| F4 | Routing | **No router** in Group 5. One view at `/` (ADR-0013) |
+| F5 | Workspace | A separate pnpm workspace in `frontend/` with its own lockfile, independent of `contracts/`; Node.js 26.13.1 and pnpm 10.34.9 (§7.1) |
+| F6 | CI | `.github/workflows/frontend-ci.yml` with jobs **"Frontend check"** (Linux; intended to become a required status check after integration) and **"Frontend check (Windows)"**. `pnpm audit` fails on **moderate or higher** |
+| F7 | Visual placeholder | Neutral placeholder theme, "Client Portal" label, system fonts, light theme only; branding and dark mode are later decisions |
+| F8 | Component location | Shared design tokens and primitives in `frontend/packages/ui`; app-specific components in the application |
+
+**Additional owner requirements.**
+
+1. **Package age policy.** `frontend/pnpm-workspace.yaml` sets `minimumReleaseAge: 10080`, plus
+   `minimumReleaseAgeStrict: true` and `minimumReleaseAgeIgnoreMissingTime: false`. Missing publication times
+   fail instead of bypassing the policy. `frontend/.npmrc` sets `engine-strict` and `save-exact`.
+2. **Navigation.** One page: header, skip link and main content. No empty navigation menu or menu button;
+   navigation is added when more real pages exist.
+3. **Frontend security.** No API calls, authentication, login placeholders, credentials, local or session
+   storage, or other browser persistence. Accidental browser network calls are prevented until a separately
+   approved, session-authenticated portal API contract exists.
+4. **Design and accessibility.**
+   - Semantic colour tokens only; Tailwind's default palette disabled.
+   - WCAG AA contrast tested: 4.5:1 for text, 3:1 for focus indicators and other non-text elements.
+   - Visible keyboard focus, keyboard-operable controls, accessible labels, correct landmarks.
+   - The error boundary tested with a rendering failure, and its scope documented without claiming it
+     catches asynchronous or event-handler errors.
+   - Responsive layout checked at 360, 768 and 1280 px.
+5. **Scope.** No admin portal, routing, data-fetching, form or headless UI libraries, Playwright or E2E
+   infrastructure, backend changes, API clients, SMS sending or MVP functionality.
+
+**How the requirements are met** (details in [`frontend/README.md`](../../frontend/README.md)):
+
+- **Package age.** Verified for pnpm 10.34.9 with a local test registry and against the npm registry:
+  - when versions are resolved, versions younger than 7 days are refused, for direct and transitive packages
+    alike (`ERR_PNPM_NO_MATURE_MATCHING_VERSION`), with no fallback;
+  - metadata without publication times fails (`ERR_PNPM_MISSING_TIME`);
+  - `minimumReleaseAge` alone produces this behaviour. `minimumReleaseAgeStrict` and
+    `minimumReleaseAgeIgnoreMissingTime` are pnpm 11 settings that pnpm 10.34.9 does not read. They are kept,
+    as the owner requested, to keep the policy explicit for a future upgrade.
+
+  **Limitation:** installing from an existing lockfile does not re-check the versions already recorded
+  there. Every one of the 275 package versions in the committed lockfile was checked against the registry
+  and found to be at least 7 days old. A from-scratch resolution with an empty store reproduced the lockfile
+  byte for byte.
+- **Network calls**, prevented in three layers:
+  - ESLint rejects the browser network and storage APIs;
+  - every test runs with those APIs replaced by functions that throw;
+  - the production `index.html` carries a Content Security Policy with `connect-src 'none'`, checked after
+    every build. A browser check of the built page confirmed that `fetch` and `XMLHttpRequest` are refused
+    and that `sendBeacon` requests are blocked.
+
+**Toolchain compatibility (ADR-0013 and §7.1 implementation-time check).** Every approved frontend package
+supports Node.js 26 according to its declared `engines` range. With Node.js 26.13.1 and pnpm 10.34.9,
+installation, lint, type check, tests and the production build passed on Linux, and on Windows in CI.
+
+**Dependencies** (exact versions, all published at least 7 days before installation; licences read from the
+installed packages, 2026-11-25):
+
+| Package | Version | Licence | Used for | Approval |
+| ------- | ------- | ------- | -------- | -------- |
+| `react`, `react-dom` | 19.3.1 | MIT | UI runtime (the only packages in the production bundle, with React's `scheduler`) | §7.2 |
+| `vite` | 8.3.8 | MIT | Development server and build | §7.2 |
+| `@vitejs/plugin-react` | 6.3.0 | MIT | React support in Vite | §7.2 |
+| `tailwindcss`, `@tailwindcss/vite` | 4.3.5 | MIT | Styling | §7.2 |
+| `typescript` | 6.0.3 | Apache-2.0 | Type checking | §7.2; version F1 |
+| `vitest` | 5.1.1 | MIT | Test runner | §7.2 |
+| `jsdom` | 31.0.1 | MIT | Browser environment for tests | §7.2 |
+| `@testing-library/react` | 16.3.3 | MIT | Component tests | §7.2 |
+| `@testing-library/jest-dom` | 7.0.1 | MIT | DOM assertions (8.0.0 was younger than 7 days) | §7.2 |
+| `eslint` | 10.15.0 | MIT | Lint | §7.2 |
+| `typescript-eslint` | 8.73.0 | MIT | TypeScript lint rules (8.74.0 was younger than 7 days) | §7.2 |
+| `eslint-plugin-react-hooks` | 7.1.1 | MIT | React hooks lint rules | §7.2 |
+| `prettier` | 3.10.1 | MIT | Formatting | §7.2 |
+| `@types/react`, `@types/react-dom` | 19.3.0 | MIT | React type definitions (React 19 ships none) | F2 |
+| `@testing-library/dom` | 10.4.2 | MIT | Required peer of `@testing-library/react` | F2 |
+| `@eslint/js` | 10.0.1 | MIT | ESLint's core recommended rules | F2 |
+| `prettier-plugin-tailwindcss` | 0.8.1 | MIT | Tailwind class sorting | F2 |
+
+**Transitive packages.** The lockfile has 275 package versions, including platform-specific binaries; 233
+are installed on Linux.
+
+| Licence | Packages |
+| ------- | -------- |
+| MIT | 185 |
+| Apache-2.0 | 19 |
+| ISC | 11 |
+| BSD-2-Clause | 8 |
+| BlueOak-1.0.0 (permissive) | 4: `minimatch`, `lru-cache`, `graceful-fs`, `@isaacs/nonrecursive-glob-match` |
+| BSD-3-Clause | 3 |
+| MPL-2.0 | 2: `lightningcss` and its binary, Tailwind's CSS processor at build time |
+| CC-BY-4.0 | 1: `caniuse-lite`, browser-support data used at build time |
+
+Only React's packages are shipped to browsers.
+
+`pnpm audit`: no known vulnerabilities (2026-11-25).

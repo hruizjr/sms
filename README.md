@@ -28,7 +28,7 @@ through direct telco connectivity (subject to agreements and regulatory approval
 ├── backend/             Go backend: one module, several runtime processes
 │   ├── cmd/             One folder per executable (API server, workers, ...) — none yet
 │   └── internal/        Private application modules (billing, messaging, ...) — none yet
-├── frontend/            React + TypeScript + Vite + Tailwind CSS web application — not yet scaffolded
+├── frontend/            React + TypeScript + Vite + Tailwind CSS (pnpm workspace) — client portal shell
 ├── contracts/           Shared API contracts (OpenAPI) and event schemas
 ├── infra/               Local development and deployment configuration (Docker, monitoring)
 ├── scripts/             Developer and CI helper scripts

@@ -32,7 +32,7 @@ or **leak one customer's data to another** — so the most important behaviours 
 
 - **Scope:** a function or small group of types, no I/O.
 - **Go:** standard `testing`, table-driven, `t.Parallel()` where safe, run with `-race`.
-- **Frontend:** a Vite-native test runner (Vitest proposed) + Testing Library for components (test
+- **Frontend:** Vitest (adopted in Phase 3 Group 5) + Testing Library for components (test
   behaviour the user sees, not implementation details).
 - **Must cover:** segment and encoding calculation (GSM-7 basic/extended, UCS-2, boundaries 160/161,
   70/71, multi-part), phone normalization, pricing calculation, state transitions, retry classification,
