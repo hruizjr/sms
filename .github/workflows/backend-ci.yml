@@ -1,0 +1,120 @@
+# Backend CI — Phase 3 Group 1 (Go API skeleton).
+#
+# The job names below are the status-check names to require on `main` once this workflow is merged:
+#   "Go test and build", "Go lint", "Go vulnerability check".
+#
+# Security: least-privilege token (read-only contents), actions pinned to full commit SHAs, no
+# secrets used, credentials not persisted after checkout. Tool versions are pinned in `env`.
+name: Backend CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.27.4"           # decision log §7; must match backend/go.mod `toolchain`
+  GOTOOLCHAIN: local             # never download a different toolchain inside CI
+  GOLANGCI_LINT_VERSION: v2.15.0
+  GOVULNCHECK_VERSION: v1.10.0
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  test:
+    name: Go test and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: backend/go.sum
+
+      - name: Show Go version
+        run: go version
+
+      - name: Check formatting (gofmt)
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Verify modules
+        run: |
+          go mod verify
+          go mod tidy -diff
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Unit tests
+        run: go test -count=1 ./...
+
+      - name: Race tests
+        run: go test -race -count=1 ./...
+
+      - name: Build
+        run: go build -trimpath -o bin/api ./cmd/api
+
+  lint:
+    name: Go lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: backend/go.sum
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          # Build the linter with the pinned Go toolchain so it understands the module's Go version.
+          install-mode: goinstall
+          working-directory: backend
+
+  vulncheck:
+    name: Go vulnerability check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: backend/go.sum
+
+      - name: govulncheck
+        run: go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" ./...

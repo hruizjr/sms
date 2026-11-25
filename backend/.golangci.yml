@@ -1,0 +1,25 @@
+# golangci-lint v2 configuration for the backend module.
+# The linter version is pinned in .github/workflows/backend-ci.yml and backend/README.md.
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose   # HTTP response bodies are closed
+    - errorlint   # errors compared and wrapped with errors.Is / errors.As / %w
+    - gosec       # common security issues
+    - misspell
+    - noctx       # outbound network calls carry a context
+    - unconvert
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/hruizjr/sms/backend
