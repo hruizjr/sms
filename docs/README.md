@@ -17,6 +17,7 @@ consistent decisions, so **keeping it accurate is part of every task**.
 | Architecture | [`architecture/messaging-reliability.md`](architecture/messaging-reliability.md) | **Authoritative:** event delivery (outbox, at-least-once), message lifecycle, ambiguous submissions, delivery receipts | Messaging semantics change |
 | Architecture | [`architecture/api-idempotency.md`](architecture/api-idempotency.md) | **Authoritative:** proposed API idempotency contract | Contract decisions are made |
 | Architecture | [`architecture/financial-integrity.md`](architecture/financial-integrity.md) | **Authoritative:** money rules, precision options, rounding, ledger operations | Billing decisions are made |
+| Architecture | [`architecture/gateway-engine-evaluation.md`](architecture/gateway-engine-evaluation.md) | Jasmin gateway evaluation and completed spike: tested Jasmin 0.11.0 deployment rejected for production (owner, 2026-11-25); reference implementation only; Go-owned gateway direction | The gateway architecture decision is taken |
 | Standards | [`standards/coding-standards.md`](standards/coding-standards.md) | Go, React, TypeScript, Tailwind conventions with examples | Conventions change |
 | Standards | [`standards/testing-standards.md`](standards/testing-standards.md) | Testing levels, expectations, tools | Testing approach changes |
 | Security | [`security/security-baseline.md`](security/security-baseline.md) | Security principles and open security work | Threats, controls, or obligations change |
