@@ -4,6 +4,9 @@ version: "2"
 
 run:
   timeout: 5m
+  # Also lint the database integration tests (files with //go:build integration).
+  build-tags:
+    - integration
 
 linters:
   default: standard # errcheck, govet, ineffassign, staticcheck, unused

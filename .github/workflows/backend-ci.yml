@@ -1,10 +1,12 @@
-# Backend CI — Phase 3 Group 1 (Go API skeleton).
+# Backend CI — Phase 3 Group 1 (Go API skeleton) and Group 2 (PostgreSQL foundation).
 #
-# The job names below are the status-check names to require on `main` once this workflow is merged:
+# The job names below are the status-check names required on `main`; do not rename them:
 #   "Go test and build", "Go lint", "Go vulnerability check".
 #
 # Security: least-privilege token (read-only contents), actions pinned to full commit SHAs, no
-# secrets used, credentials not persisted after checkout. Tool versions are pinned in `env`.
+# repository secrets used, credentials not persisted after checkout. Tool versions are pinned in
+# `env`. The PostgreSQL password below is a throwaway value for a service container that exists
+# only for the duration of the job and is reachable only from the runner's loopback interface.
 name: Backend CI
 
 on:
@@ -25,6 +27,8 @@ env:
   GOTOOLCHAIN: local             # never download a different toolchain inside CI
   GOLANGCI_LINT_VERSION: v2.15.0
   GOVULNCHECK_VERSION: v1.10.0
+  # PostgreSQL 18 (ADR-0005); must match infra/local/compose.yaml.
+  POSTGRES_IMAGE: postgres:18.7-trixie
 
 defaults:
   run:
@@ -35,6 +39,30 @@ jobs:
     name: Go test and build
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    services:
+      postgres:
+        # Service images cannot use the workflow-level env; keep in sync with POSTGRES_IMAGE.
+        image: postgres:18.7-trixie
+        env:
+          POSTGRES_DB: sms
+          POSTGRES_USER: sms
+          POSTGRES_PASSWORD: ci-throwaway-not-a-secret
+        ports:
+          - 127.0.0.1:5432:5432
+        # The job's steps start only after this health check passes.
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -p 5432 -U sms -d sms"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      APP_ENV: test
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_NAME: sms
+      DB_USER: sms
+      DB_PASSWORD: ci-throwaway-not-a-secret
+      DB_SSLMODE: disable
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -65,7 +93,9 @@ jobs:
           go mod tidy -diff
 
       - name: go vet
-        run: go vet ./...
+        run: |
+          go vet ./...
+          go vet -tags integration ./...
 
       - name: Unit tests
         run: go test -count=1 ./...
@@ -73,8 +103,48 @@ jobs:
       - name: Race tests
         run: go test -race -count=1 ./...
 
+      - name: Check PostgreSQL service version
+        run: |
+          docker ps --filter "ancestor=${POSTGRES_IMAGE}" --format '{{.Image}} {{.Status}}'
+          version="$(docker exec "$(docker ps -q --filter "ancestor=${POSTGRES_IMAGE}")" \
+            psql -U sms -d sms -Atc 'SHOW server_version')"
+          echo "PostgreSQL server_version: ${version}"
+          case "${version}" in 18.*) ;; *) echo "expected PostgreSQL 18.x"; exit 1 ;; esac
+
+      - name: Integration tests (PostgreSQL, race detector)
+        run: go test -tags integration -race -count=1 ./...
+
       - name: Build
-        run: go build -trimpath -o bin/api ./cmd/api
+        run: |
+          go build -trimpath -o bin/api ./cmd/api
+          go build -trimpath -o bin/migrate ./cmd/migrate
+
+      - name: Migration smoke test (up, status, down, up)
+        run: |
+          set -euo pipefail
+          bin/migrate status
+          bin/migrate up
+          bin/migrate status
+          test "$(bin/migrate version)" != "0"
+          bin/migrate down
+          test "$(bin/migrate version)" = "0"
+          bin/migrate up
+          bin/migrate status
+
+      - name: API smoke test (healthz, readyz, graceful shutdown)
+        run: |
+          set -euo pipefail
+          bin/api > api.log 2>&1 &
+          api_pid=$!
+          for _ in $(seq 1 50); do
+            curl -fsS http://127.0.0.1:8080/healthz > /dev/null 2>&1 && break
+            sleep 0.2
+          done
+          curl -fsS http://127.0.0.1:8080/healthz
+          curl -fsS http://127.0.0.1:8080/readyz
+          kill -TERM "${api_pid}"
+          wait "${api_pid}"
+          cat api.log
 
   lint:
     name: Go lint
