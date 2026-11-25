@@ -9,15 +9,16 @@ Private application modules. Code here can only be imported from within `backend
 2. **A module owns its database tables.** Other modules must call the owning module's exported Go API;
    they must not query its tables directly.
 3. **No grab-bag packages** such as `utils`, `common`, `helpers`, or `misc`.
-4. **Shared technical plumbing** (configuration loading, database pool, logging, HTTP server, metrics)
-   lives under `platform/` and must not contain business rules.
+4. **Shared technical plumbing** lives in one focused package per concern directly under `internal/`
+   and must not contain business rules. There is no `platform/` umbrella (owner decision, Phase 3
+   Group 2). Current packages: `config`, `database` (with `database/dbtest` for integration tests),
+   `migration`, `httpserver`, `middleware`, `observability`.
 5. Dependencies point inward: handlers → services → repositories. Domain types never import HTTP or SQL packages.
 
-## Candidate modules (Proposed — not approved, not created)
+## Candidate business modules (Proposed — not approved, not created)
 
 | Module           | Capability                                                                   |
 | ---------------- | ---------------------------------------------------------------------------- |
-| `platform/`      | Config, logging, DB pool, HTTP server, metrics, clock, ID generation          |
 | `identity/`      | Users, authentication, sessions, MFA, roles and permissions                  |
 | `tenancy/`       | Client accounts (tenants), onboarding status, account settings               |
 | `audit/`         | Append-only audit trail of sensitive actions                                 |

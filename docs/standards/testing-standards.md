@@ -64,7 +64,10 @@ or **leak one customer's data to another** — so the most important behaviours 
   - DLR handling: late (after `UNKNOWN`), missing, duplicate, out-of-order, conflicting, and unmatched
     receipts; no duplicate billing side effects (scenarios DR-1 to DR-10).
   - Migrations: apply cleanly to an empty database and to the previous schema version.
-- Run with `go test -short` excluded or a build tag (decided at scaffolding) so unit tests stay fast.
+- Integration tests carry the `integration` build tag (decided in Phase 3 Group 2): `go test ./...` runs only
+  unit tests and needs no database; `go test -tags integration ./...` adds the integration tests. Each
+  integration test uses its own throwaway database, and the helper refuses to run unless `APP_ENV=test`
+  is set explicitly and `DB_HOST` is a loopback IP address (see `backend/README.md`, "Testing").
 
 ### 3.3 Contract tests
 

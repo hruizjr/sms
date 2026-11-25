@@ -34,9 +34,9 @@ Examples are illustrative only — they are not application code and do not defi
 backend/
 ├── cmd/api/main.go                 // thin: config → wiring → run → shutdown
 └── internal/
-    ├── platform/                    // technical plumbing, no business rules
-    │   ├── config/  database/  httpserver/  logging/  metrics/  clock/
-    └── billing/                     // a business module
+    ├── config/  database/  migration/  httpserver/  middleware/  observability/
+    │                                // technical plumbing: one package per concern, no business rules
+    └── billing/                     // a business module (future)
         ├── billing.go               // exported service API + domain types
         ├── ledger.go                // domain logic
         ├── repository.go            // persistence (SQL), unexported where possible
@@ -44,7 +44,9 @@ backend/
         └── billing_test.go
 ```
 
-As a module grows, sub-packages are acceptable (`billing/ledger`), but avoid deep nesting.
+Technical packages sit directly under `internal/` next to business modules; there is no
+`internal/platform/` umbrella (owner decision, Phase 3 Group 2). As a module grows, sub-packages are
+acceptable (`billing/ledger`), but avoid deep nesting.
 
 ### Interfaces at the consumer
 

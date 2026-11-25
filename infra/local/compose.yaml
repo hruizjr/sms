@@ -1,0 +1,36 @@
+# Local development stack — Phase 3 Group 2: PostgreSQL only.
+#
+# Usage (from the repository root; see infra/local/README.md):
+#   copy infra/local/.env.example to infra/local/.env and set DB_PASSWORD
+#   docker compose -f infra/local/compose.yaml up -d
+#
+# Not for production. The port is published on 127.0.0.1 only, so the database is reachable from
+# this machine but not from the network. Data is kept in the named volume "postgres-data".
+name: sms-local
+
+services:
+  postgres:
+    # PostgreSQL 18 (ADR-0005, decision log §7.1), exact patch and Debian release pinned.
+    image: postgres:18.7-trixie
+    environment:
+      POSTGRES_DB: ${DB_NAME:-sms}
+      POSTGRES_USER: ${DB_USER:-sms}
+      # No default: copy .env.example to .env and choose a local-only password.
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is not set; copy infra/local/.env.example to infra/local/.env}
+    ports:
+      # Loopback only. Never change this to 0.0.0.0 or remove the 127.0.0.1 prefix.
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    volumes:
+      # PostgreSQL 18 images keep data under /var/lib/postgresql/18/docker; mount the parent.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      # TCP check (-h 127.0.0.1): the server used during first-time initialisation listens only on
+      # a Unix socket, so this reports healthy only once the real server accepts TCP connections.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+volumes:
+  postgres-data:

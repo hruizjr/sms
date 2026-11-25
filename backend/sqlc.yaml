@@ -1,0 +1,40 @@
+# sqlc configuration (ADR-0014: pgx/v5 + sqlc). Run from backend/: `sqlc generate`.
+#
+# Schema: sqlc reads the goose migrations in migrations/ (it understands the goose annotations and
+# ignores the Down sections), so the generated code always matches the migrated schema.
+# Queries: hand-written, reviewed SQL in queries/*.sql, one `-- name: <Name> :<one|many|exec|...>`
+# comment per query.
+# Output: the dedicated package internal/database/sqlcgen, which contains only generated code.
+#
+# There are deliberately no queries yet: the walking skeleton has no business tables (decision log
+# §7.3), and sqlc refuses to run without at least one query ("no queries contained in paths"). The
+# first approved business feature adds the first query; see backend/README.md, "sqlc".
+version: "2"
+sql:
+  - engine: postgresql
+    schema: migrations
+    queries: queries
+    gen:
+      go:
+        package: sqlcgen
+        out: internal/database/sqlcgen
+        sql_package: pgx/v5
+        # Small, consumer-defined interfaces are written by hand where they are needed (AGENTS.md §7.1).
+        emit_interface: false
+        # Database rows are not API payloads; transport types are defined separately (ADR-0015).
+        emit_json_tags: false
+        # Nullable columns become Go pointers (*string, *time.Time) rather than pgtype wrappers.
+        emit_pointers_for_null_types: true
+        # Return empty slices, not nil, for :many queries with no rows.
+        emit_empty_slices: true
+        # Generate model structs only for tables that a query uses.
+        omit_unused_structs: true
+        overrides:
+          # Times are time.Time internally (AGENTS.md §7.10); timestamptz columns are stored in UTC.
+          - db_type: timestamptz
+            go_type: time.Time
+          - db_type: timestamptz
+            nullable: true
+            go_type:
+              type: time.Time
+              pointer: true
