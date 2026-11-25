@@ -9,10 +9,10 @@
 | Field | Value |
 | ----- | ----- |
 | Project | Enterprise A2P SMS Platform (Philippines) |
-| Current phase | **Phase 3 — Walking skeleton** (implemented in reviewed groups; see [decision log §7](docs/engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25)) |
+| Current phase | **Phase 3 — Walking skeleton: authorized and in progress.** Group 0 (documentation only: recording the owner's decisions) is submitted for owner review. **Application implementation has not started**; Groups 1–5 are not started. See [decision log §7](docs/engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25). |
 | Authorized scope | **Phase 3 walking skeleton only** (owner approval 2026-11-25). Each implementation group starts only after the previous group is reviewed and merged. Later phases and all other ADRs need separate owner approval. |
 | Decision authority | The project owner (a single human). Agents propose; the owner decides. |
-| Last updated | 2026-11-25 (Phase 3 decisions recorded) |
+| Last updated | 2026-11-25 (Phase 3 Group 0: decisions recorded; status corrected) |
 
 ---
 
@@ -44,9 +44,10 @@ optional; if you believe one must be broken, stop and ask the project owner.
 
 ## 1. Current status and what you may do
 
-The repository contains documentation, folder structure, and repository hygiene files. The Phase 3 walking
-skeleton (technical foundation only) is authorized and is added one reviewed group at a time. **No business
-functionality exists or is authorized.**
+The repository contains documentation, folder structure, and repository hygiene files — **no application
+code yet**. The Phase 3 walking skeleton (technical foundation only) is authorized and will be added one
+reviewed group at a time, starting with Group 1 after Group 0 is merged. **No business functionality exists or
+is authorized.**
 
 **Verified facts:** almost none. The business *intends* to become an A2P SMS aggregator. No telco
 agreement, technical integration, accreditation, regulatory authorization, or traffic volume has been

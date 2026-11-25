@@ -145,8 +145,8 @@ Use the [MVP scope worksheet](mvp-scope-worksheet.md) to classify capabilities.
 | D-094 | Idempotency details (required?, scope, retention, bulk). | API contract. | Recommendations in [API idempotency](../architecture/api-idempotency.md). | Owner decision. | Owner, [Customers](questionnaires/enterprise-customer.md) | P1 | Architecture |
 | D-026 | Proposed: simulator provider before any real telco adapter. | Development without telco access. | Proposed. | Owner approval. | Owner | P1 | Implementation |
 | D-027 | Proposed: admin portal deployed separately. | Security. | Proposed (ADR-0013). | Owner approval (with D-091). | Owner | P1 | Architecture |
-| D-091 | One portal or **two** (client / admin)? | Security vs. simplicity. | Options in ADR-0013. | Owner decision. | Owner | P1 | Architecture |
-| D-140 | Which **headless UI library**, if any? | Accessibility of complex widgets. | Direction in ADR-0013. | Owner decision. | Owner | P1 | Implementation |
+| D-091 | One portal or **two** (client / admin)? | Security vs. simplicity. | **Decided 2026-11-25 (ADR-0013):** one application, `client-portal`, initially, plus `packages/ui`; `admin-portal` added when admin functionality begins. | Owner decision — recorded. | Owner | P1 | Architecture |
+| D-140 | Which **headless UI library**, if any? | Accessibility of complex widgets. | Direction in ADR-0013 (accepted). **Deferred by the owner on 2026-11-25.** | Owner decision when complex widgets are needed. | Owner | P1 | Implementation |
 | D-029 | Proposed: show segments and cost before sending. | Avoids cost surprises. | Proposed. | Owner approval. | Owner | P1 | MVP scope |
 | D-095 | Policy for **ambiguous submissions** (timeouts). | Loss vs. duplicate SMS trade-off. | Options in [messaging reliability §4](../architecture/messaging-reliability.md#4-provider-submission-and-ambiguous-outcomes). Depends on D-115. | Owner decision per traffic type. | Owner | P1 | Architecture |
 | D-096 | Customer label and billing for **uncertain** messages. | Customer trust and margin. | Open. | Owner decision. | Owner | P1 | Architecture |

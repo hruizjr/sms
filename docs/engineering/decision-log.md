@@ -165,8 +165,8 @@ written down to be followed consistently.
 
 **Consequences** — Simple, discoverable structure. CI runs Go and frontend pipelines based on changed paths.
 
-**Operational cost** — Low. **Missing information** — Go module path (e.g. `github.com/hruizjr/sms/backend`)
-to be confirmed at scaffolding.
+**Operational cost** — Low. **Missing information** — None. The Go module path
+`github.com/hruizjr/sms/backend` is accepted (owner decision above).
 
 ---
 
@@ -192,8 +192,9 @@ into a service only with evidence (new ADR).
 **Consequences** — Fast development, fewer moving parts. Boundaries must be enforced in review (and
 possibly by an import-lint rule later).
 
-**Operational cost** — Low to moderate (a few deployables). **Missing information** — Final executable
-list (architecture phase).
+**Operational cost** — Low to moderate (a few deployables). **Missing information** — None for Phase 3: the
+initial executables `cmd/api` and `cmd/migrate` are accepted. Any further executable (e.g. dispatcher,
+telco connectors, scheduler) requires separate owner authorization.
 
 ---
 
@@ -246,7 +247,8 @@ exceeds what a well-tuned PostgreSQL deployment handles.
 **Consequences** — Ledger and tenant isolation can rely on database guarantees.
 
 **Operational cost** — Moderate: backups, replication, upgrades, monitoring (managed service reduces
-this). **Missing information** — Hosting decision; version to pin; HA/DR targets.
+this). **Missing information** — Hosting decision; HA/DR targets. (Version decided: PostgreSQL 18, exact
+latest 18.x patch pinned at implementation; PostgreSQL 19 reviewed before production.)
 
 ---
 
@@ -504,7 +506,7 @@ will differ in protocol, receipt behaviour, encodings, limits, and extra feature
 **Context** — The selected stack is React, TypeScript, Vite, and Tailwind CSS. Two audiences (clients, our
 admins). The owner wants no unnecessary UI or styling libraries.
 
-**Component strategy (proposed direction, from the owner's recommendation)**
+**Component strategy (accepted direction; library choice deferred)**
 - **Tailwind CSS remains the only styling system.**
 - Carefully selected, maintained, accessible **headless** (unstyled) UI primitives **may** be used for
   complex interactive behaviours: dialogs, menus, dropdowns, popovers, comboboxes, and similar. These
@@ -516,20 +518,23 @@ admins). The owner wants no unnecessary UI or styling libraries.
   documented accessibility behaviour (keyboard, focus, screen readers); licence; compatibility with the
   pinned React version and Tailwind; dependency footprint and bundle size; security history; ability to
   adopt per-component.
-- **The library choice is an owner decision (D-140).** No package is added until approved.
+- **The library choice (D-140) is deferred by the owner.** No package is added until separately approved.
 
-**Other decisions**
-| Topic | Options | Recommendation |
-| ----- | ------- | -------------- |
-| App split | One app vs. two apps sharing a `ui` package | Two apps in a small workspace (admin on a separate origin) — **owner decision D-091** |
-| Routing | React Router vs. TanStack Router | Choose at scaffolding from current documentation |
-| Server data | Hand-written hooks vs. TanStack Query | TanStack Query (caching, retries, invalidation are hard to hand-build correctly) |
-| Form validation | Hand-written vs. a schema library (e.g. Zod) + form library | Schema library; shared schemas improve consistency |
-| Package manager | npm vs. pnpm | pnpm (workspace support) — or npm for simplicity |
+**Decisions (accepted 2026-11-25)**
+| Topic | Decision | Alternatives considered, not selected |
+| ----- | -------- | ------------------------------------- |
+| Application structure (D-091) | pnpm workspace with **one application initially, `client-portal`**, and a shared **`packages/ui`**; `admin-portal` is added when admin functionality begins | One application serving both clients and admins with role-based routes (admin code would ship to customer browsers); starting with two applications immediately |
+| Package manager | **pnpm 10**, exact version pinned | npm |
+| Routing | **Deferred to Phase 4**; requires separate owner approval | — (candidates such as React Router or TanStack Router are evaluated then) |
+| Server data fetching | **Deferred to Phase 4**; requires separate owner approval; until then the typed API client is used directly | — (candidates such as TanStack Query are evaluated then) |
+| Form validation | **Deferred to Phase 4**; requires separate owner approval | — (candidates such as a schema library plus a form library are evaluated then) |
+| Headless UI primitives (D-140) | **Deferred** | — (selection criteria above apply when proposed) |
 
-Each library above is a dependency requiring approval under `AGENTS.md` §2 rule 5.
+Any deferred library is a dependency requiring owner approval under `AGENTS.md` §2 rule 5 when it is proposed.
 
-**Operational cost** — Low. **Missing information** — Owner choices (D-091, D-140); current versions at scaffolding.
+**Operational cost** — Low. **Missing information** — None for the Phase 3 scaffold. Later decisions: routing,
+data fetching, and forms (Phase 4); D-140 when complex widgets are needed. Implementation-time checks: exact
+versions and Node.js 26 LTS compatibility (Group 4).
 
 ---
 
@@ -546,9 +551,10 @@ Each library above is a dependency requiring approval under `AGENTS.md` §2 rule
 | B. `pgx` + `sqlc` (type-safe Go generated from SQL) | Plain SQL reviewed as SQL; compile-time type safety; no ORM magic | Code generation step |
 | C. ORM (GORM, ent) | Less SQL | Hidden queries; harder tuning; harder to reason about transactions and locking |
 
-**Migration tool candidates** — `goose`, `golang-migrate`, `atlas`.
+**Migration tool** — **goose** (selected by the owner, 2026-11-25). Alternatives considered, not selected:
+`golang-migrate`, `atlas`.
 
-**Selection criteria for the migration tool**
+**Selection criteria (used to choose goose; confirmed against the pinned version at implementation)**
 - Plain SQL migration files reviewed like code; timestamp-based versions (parallel agents).
 - Each migration in a transaction by default, with an explicit opt-out for statements that cannot run in
   a transaction (e.g. `CREATE INDEX CONCURRENTLY`).
@@ -557,12 +563,12 @@ Each library above is a dependency requiring approval under `AGENTS.md` §2 rule
 - Forward-only production use (down migrations optional, not relied upon).
 - Active maintenance and compatible licence.
 
-**Recommendation** — B for data access; migration tool chosen against the criteria at Phase 3 start. The data
-access layer must support transaction-scoped tenant context if RLS is adopted (ADR-0010), and exact monetary
-types per ADR-0019.
+**Decision** — B for data access (`pgx/v5` + `sqlc`) and goose for migrations. The data access layer must
+support transaction-scoped tenant context if RLS is adopted (ADR-0010), and exact monetary types per ADR-0019.
 
-**Operational cost** — Low. **Missing information** — Tool versions and maintenance status at scaffolding;
-ADR-0010 and ADR-0019 outcomes.
+**Operational cost** — Low. **Missing information** — None for the tool choice. Implementation-time checks:
+exact versions and current maintenance status of `pgx/v5`, `sqlc`, and goose, and confirmation that the pinned
+goose version meets the selection criteria (recorded in the Group 2 PR). ADR-0010 and ADR-0019 remain Proposed.
 
 ---
 
@@ -584,7 +590,9 @@ ADR-0010 and ADR-0019 outcomes.
 Idempotency keys follow ADR-0018; monetary amounts are transmitted as strings with documented scale per
 ADR-0019 (proposed).
 
-**Operational cost** — Low. **Missing information** — Generator tool choices at scaffolding.
+**Operational cost** — Low. **Missing information** — TypeScript type generation (`openapi-typescript`) and
+specification linting (`@redocly/cli`) are approved (decision log §7). Any Go-side code generation or
+request-validation tooling is not chosen and would need owner approval.
 
 ---
 
