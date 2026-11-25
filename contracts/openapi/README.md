@@ -18,7 +18,7 @@ provider adapters ([messaging reliability §5.1](../../docs/architecture/messagi
 
 | In this contract | Not in this contract (and why) |
 | ---------------- | ------------------------------ |
-| `POST /v1/messages` — accept one message to one recipient | **Bulk submission** — excluded from the MVP by owner decision (D-094e, 2026-11-25) |
+| `POST /v1/messages` — accept one message to one recipient | **Bulk sending** (many recipients in one request, through the API or the portal) — deferred to a later release by owner decision (D-094e, MVP-08, MVP-09; 2026-11-25) |
 | `GET /v1/messages/{message_id}` — current status of one message | **Webhooks / status callbacks** — deferred in the candidate MVP (product brief §5); principles in §6 |
 | `GET /v1/messages` — list with cursor pagination and filters | **Cost estimate / prices / balances** — monetary representation is open (ADR-0019) |
 | API key authentication, permissions, problem details, idempotency | **Portal (browser) API**, sender ID management, API key management, scheduling, campaigns, inbound messages — later phases |
@@ -53,7 +53,10 @@ Resolving it is per-provider policy (D-095).
 
 Owner-approved set (D-099, 2026-11-25), including `submission_uncertain` as a separate status
 (D-096, customer-visible part); new values may be added later within `/v1`. The internal states come
-from ADR-0021, which remains Proposed. Every internal state maps to exactly one customer status. Clients should branch on `status_category` for robustness, since new status
+from messaging reliability §3.1. ADR-0021 was accepted on 2026-11-25, **limited to** these eight
+statuses and the initial reason codes; it does not settle the billing treatment of `unknown` and other
+uncertain messages (D-096) or webhook behaviour (D-099), which remain separate open decisions. Every
+internal state maps to exactly one customer status. Clients should branch on `status_category` for robustness, since new status
 values may be added within `/v1`.
 
 | Status | Category | Internal states (ADR-0021) | Meaning for the client |
@@ -79,17 +82,24 @@ Rules that follow from [messaging reliability §5](../../docs/architecture/messa
   codes are never exposed. Mapping provider codes to these reasons happens in provider adapters from
   provider documentation.
 
-## 4. Idempotency (proposed, ADR-0018)
+## 4. Idempotency (ADR-0018)
 
-Summary of [API idempotency](../../docs/architecture/api-idempotency.md) as applied here:
-
-Owner decisions D-094a–e (2026-11-25) are applied; ADR-0018 itself remains Proposed.
+Summary of [API idempotency](../../docs/architecture/api-idempotency.md) as applied here. ADR-0018 was
+accepted by the owner on 2026-11-25, with decisions D-094a–e and the clarifications below.
 
 - `Idempotency-Key` is **required** on `POST /v1/messages` (D-094a); scope is account + operation (D-094b).
-- Fingerprint = the operation plus the parsed JSON body; whitespace and key order do not matter.
-- Same key + same body → original response replayed (`202`, same body and message `id`,
-  `Idempotent-Replayed: true`). The replay shows the **acceptance-time** state; use `GET` for the current status.
-- Same key + different body → `422 idempotency-key-reused`. Same key while in progress → `409` + `Retry-After`.
+- **Comparison:** the operation plus the **normalized request body** (the parsed JSON body; whitespace
+  and key order do not matter). `X-Request-ID` and other tracing or transport headers are **not** part
+  of the comparison.
+- Outcomes for the same account, operation, and key, checked in this order:
+
+  | # | Situation | Response |
+  | - | --------- | -------- |
+  | 1 | Different normalized body (original still processing **or** completed) | `422 idempotency-key-reused`; nothing processed |
+  | 2 | Identical body, original still processing | `409 idempotency-request-in-progress` + `Retry-After` |
+  | 3 | Identical body, original completed | Original `202` response and body replayed, `Idempotent-Replayed: true` |
+
+  The replay shows the **acceptance-time** state; use `GET` for the current status.
 - Not recorded (safe to fix and retry with the same key): `400`, `401`, `403`, `402` (D-094c, D-146), `413`,
   `415`, `422` other than key reuse, `429`, and `5xx` where nothing was committed.
 - **Retention: seven days** (D-094d) after the original request was accepted.
@@ -97,7 +107,7 @@ Owner decisions D-094a–e (2026-11-25) are applied; ADR-0018 itself remains Pro
   request (no fingerprint comparison, no `422`, no replay) and can create a second message, charge, and
   SMS. Clients must not retry with a key older than seven days; they can look up earlier messages with
   `GET /v1/messages?client_reference=...`.
-- Bulk requests: none in the MVP (D-094e).
+- Bulk requests: none; bulk sending is deferred to a later release (D-094e).
 - `client_reference` is a separate, optional label for the client's own correlation. It is **not**
   deduplicated.
 
@@ -121,10 +131,10 @@ decided (D-145).
 | `unauthenticated` | 401 | Missing, malformed, unknown, revoked, or expired API key |
 | `insufficient-credit` | 402 | Not enough available credit to accept the message (D-146) |
 | `forbidden` | 403 | Key lacks the required permission, or the account may not use the operation |
-| `idempotency-request-in-progress` | 409 | Same key still being processed |
+| `idempotency-request-in-progress` | 409 | Same key and identical body; the original is still being processed |
 | `payload-too-large` | 413 | Body exceeds the size limit |
 | `unsupported-media-type` | 415 | Body is not `application/json` |
-| `idempotency-key-reused` | 422 | Same key, different body |
+| `idempotency-key-reused` | 422 | Same key, different normalized body — even while the original is still being processed |
 | `sender-id-not-approved` | 422 | `sender_id` is not approved for the account |
 | `destination-not-supported` | 422 | Destination not served (initially non-Philippine numbers, D-043) |
 | `message-too-long` | 422 | Body needs more segments than product/provider policy allows (D-144) |
@@ -153,8 +163,8 @@ carrying the same status values as §3, and possibly arriving out of order (clie
 
 **Decided by the owner on 2026-11-25** (recorded in the
 [discovery register](../../docs/requirements/discovery-register.md) and the
-[owner discovery workbook](../../docs/discovery/owner-discovery-workbook.md)). No ADR status was changed:
-ADR-0018 and ADR-0021 remain Proposed.
+[owner discovery workbook](../../docs/discovery/owner-discovery-workbook.md)), together with the
+acceptance of ADR-0018 and ADR-0021 in the [decision log](../../docs/engineering/decision-log.md#8-owner-decisions--public-api-contract-2026-11-25).
 
 | ID | Decision | Applied in the specification |
 | -- | -------- | ---------------------------- |
@@ -162,7 +172,7 @@ ADR-0018 and ADR-0021 remain Proposed.
 | D-094b | Key scope: account + operation | `IdempotencyKey` description |
 | D-094c | Insufficient-credit rejections are not recorded | `IdempotencyKey`, `InsufficientCredit` |
 | D-094d | Retention: seven days | `IdempotencyKey` (retention and expiry) |
-| D-094e | Bulk sending excluded from the MVP | No bulk endpoint |
+| D-094e | Bulk sending through the API **and** the portal deferred to a later release (MVP-08, MVP-09) | No bulk endpoint |
 | D-096 (customer-visible part) | `submission_uncertain` is a separate status | `MessageStatus`, §3 |
 | D-099 (status part) | The eight statuses and ten initial reason codes, extensible | `MessageStatus`, `StatusCategory`, `StatusReason`, §3 |
 | D-143 | Bearer API key; permissions `messages:send`, `messages:read` | `api_key` security scheme, `x-required-permission` |
@@ -170,6 +180,8 @@ ADR-0018 and ADR-0021 remain Proposed.
 | D-145 | API domain stays a placeholder for now | `servers`, problem-type URIs (`https://api.example.invalid`) |
 | D-146 | HTTP `402` for insufficient credit | `InsufficientCredit` response |
 | D-147 | Explicit `sender_id` required; no account-level default | `MessageCreateRequest.sender_id` (required), `SenderId` |
+| ADR-0018 | Accepted, including the outcome order (different body → `422` even while processing; identical body → `409` while processing, replay when completed) and body-only comparison | `IdempotencyKey`, `IdempotencyRequestInProgress`, `UnprocessableMessage`, §4 |
+| ADR-0021 | Accepted, limited to the eight statuses and the initial reason-code vocabulary | `MessageStatus`, `StatusReason`, §3 |
 
 **Still provisional or open** (not changed by these decisions):
 
@@ -177,7 +189,8 @@ ADR-0018 and ADR-0021 remain Proposed.
 | ---- | ---------------------------------- |
 | Replay header name `Idempotent-Replayed` | Provisional; name marked "TBD" in [API idempotency §3.5](../../docs/architecture/api-idempotency.md#35-outcomes) and not part of the D-094 decisions |
 | D-145 final domain | Placeholder until decided |
-| D-096 billing treatment of uncertain messages; D-099 webhook semantics | Open; no webhooks or prices in this contract |
+| D-096 billing treatment of `unknown` and other uncertain messages | **Open**, separate decision; not settled by ADR-0021; no prices in this contract |
+| D-099 webhook behaviour | **Open**, separate decision; not settled by ADR-0021; no webhooks in this contract |
 | Maximum segments per message (D-144, D-105) | Product/provider policy; `422 message-too-long` when exceeded |
 | Sender ID format and length per network | `TODO(telco-confirm)` (telco checklist §9) |
 | D-095, D-097, D-098, ADR-0019 | Open; not modelled in this contract |

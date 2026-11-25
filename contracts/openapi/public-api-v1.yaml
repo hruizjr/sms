@@ -73,8 +73,11 @@ paths:
 
         **Idempotency.** The `Idempotency-Key` header is required. If you do not receive a response
         (timeout, connection reset, `5xx`), retry with the **same key and the same body**. If the
-        original request was accepted, the platform returns the original response again
-        (`Idempotent-Replayed: true`) and does not create a second message or a second charge. A key
+        original request has completed, the platform returns the original `202` response again
+        (`Idempotent-Replayed: true`) and does not create a second message or a second charge; if it
+        is still being processed, you receive `409` and retry later. The same key with a different
+        body always returns `422`. Only the normalized request body is compared, never `X-Request-ID`
+        or other tracing or transport headers (see `Idempotency-Key`). A key
         prevents duplicate operations inside the platform only; it cannot make SMS delivery
         exactly-once (see `submission_uncertain`).
 
@@ -387,11 +390,18 @@ components:
           refers to the same operation; keys never collide across accounts.
         - The value may be sent as a plain token or as a quoted string (`"..."`, the IETF draft's
           Structured Field String form); both forms name the same key.
-        - Same key and same request body (compared after JSON parsing, so whitespace and field order do
-          not matter): the original response is replayed.
-        - Same key with a different body: `422` (`idempotency-key-reused`); nothing is processed.
-        - Same key while the original request is still being processed: `409`
-          (`idempotency-request-in-progress`) with `Retry-After`.
+        - **Comparison: the normalized request body only.** A retry is compared with the original by
+          its JSON body after parsing, so whitespace and field order do not matter. `X-Request-ID` and
+          other tracing or transport headers are **not** part of the comparison; a retry may carry a
+          different `X-Request-ID`.
+        - Outcomes for the same account, operation, and key, checked in this order:
+          1. **Different normalized body:** `422` (`idempotency-key-reused`), whether the original
+             request is still being processed or has completed. Nothing is processed.
+          2. **Identical body, original still being processed:** `409`
+             (`idempotency-request-in-progress`) with `Retry-After`. Retry later with the same key and
+             body.
+          3. **Identical body, original completed:** the original `202` response and body are replayed,
+             with `Idempotent-Replayed: true`. No second message or charge is created.
         - Requests rejected by validation (`400`, `422` other than `idempotency-key-reused`), by
           authentication or authorization (`401`, `403`), for insufficient credit (`402`), or by rate
           limiting (`429`) are not recorded, so you may correct the problem and retry with the same key.
@@ -404,9 +414,9 @@ components:
           Do not retry with an old key after seven days; to check whether an earlier message was
           accepted, use `GET /v1/messages?client_reference=...` (or the message `id` if you have it).
 
-        Owner decisions (D-094a–d, 2026-11-25): the key is required; scope is account + operation;
-        validation, authentication, authorization, insufficient-credit, and rate-limit rejections are
-        not recorded; retention is seven days. ADR-0018 itself remains Proposed.
+        ADR-0018, accepted by the owner on 2026-11-25 (with D-094a–e): the key is required; scope is
+        account + operation; validation, authentication, authorization, insufficient-credit, and
+        rate-limit rejections are not recorded; retention is seven days; outcomes as listed above.
       schema:
         type: string
         minLength: 1
@@ -565,8 +575,10 @@ components:
             request_id: 9b2f4c1e7d3a5b65
     IdempotencyRequestInProgress:
       description: |
-        A request with the same `Idempotency-Key` is still being processed. Wait for `Retry-After`
-        seconds, then retry with the same key and body to receive its outcome.
+        A request with the same `Idempotency-Key` **and an identical normalized body** is still being
+        processed. Wait for `Retry-After` seconds, then retry with the same key and body to receive its
+        outcome. (A different body with the same key returns `422 idempotency-key-reused` instead, even
+        while the original is still being processed.)
       headers:
         Retry-After:
           $ref: '#/components/headers/RetryAfter'
@@ -616,7 +628,8 @@ components:
       description: |
         The request is well-formed but cannot be accepted. Nothing was processed. Problem types:
 
-        - `idempotency-key-reused` — the key was already used for a request with a different body.
+        - `idempotency-key-reused` — the key was already used for a request with a different
+          normalized body, whether that request is still being processed or has completed.
         - `sender-id-not-approved` — `sender_id` is not an approved sender ID of the account.
         - `destination-not-supported` — the platform does not serve this destination.
         - `message-too-long` — the body needs more segments than the platform allows.
@@ -765,8 +778,10 @@ components:
       type: string
       description: |
         Customer-visible message status. Owner-approved set (D-099, 2026-11-25), extensible: new values
-        may be added (see Compatibility). It maps the internal states of ADR-0021, which remains
-        Proposed. The meaning of each value,
+        may be added (see Compatibility). ADR-0021 (status model) was accepted on 2026-11-25, limited
+        to these eight statuses and the initial reason codes; it does not settle the billing treatment
+        of uncertain messages (D-096) or webhook behaviour (D-099), which remain open. The meaning of
+        each value,
         and how it maps to the platform's internal lifecycle, is documented in
         `contracts/openapi/README.md`.
 

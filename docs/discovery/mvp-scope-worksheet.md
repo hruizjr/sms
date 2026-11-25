@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — proposed tiers; **one owner decision recorded** (MVP-08, 2026-11-25) | Project owner | 2026-11-25 |
+| Draft — proposed tiers; **owner decisions recorded** for MVP-08 and MVP-09 (2026-11-25) | Project owner | 2026-11-25 |
 
 This worksheet helps the owner decide what launches first (D-089, D-020). Every capability from the
 original product expectations (D-007) is listed and classified:
@@ -27,8 +27,8 @@ it. The owner records the final tier in the "Owner decision" column.
 | MVP-05 | Sender ID request and approval workflow | Client, admin | Essential | |
 | MVP-06 | API keys (create, scope, revoke) | Developer | Essential | |
 | MVP-07 | Send a single message via public API (with idempotency key) | Developer | Essential | |
-| MVP-08 | Send to many recipients via API (batch) | Developer | Essential* | **Excluded from the MVP** (owner, 2026-11-25; D-094e) |
-| MVP-09 | Send from the portal (type/paste recipients or upload a recipient file) | Client user | Essential | |
+| MVP-08 | Send to many recipients via API (batch) | Developer | Essential* | **Deferred to a later release** — not in the MVP (owner, 2026-11-25; D-094e) |
+| MVP-09 | Send from the portal (type/paste recipients or upload a recipient file) | Client user | Essential | **MVP: single-message sending only.** Bulk sending (many recipients, including an uploaded recipient file) **deferred to a later release** (owner, 2026-11-25) |
 | MVP-10 | Message composer with segment count and cost estimate | Client user | Essential | |
 | MVP-11 | Contact book, groups, and segmentation | Client user | Deferrable | |
 | MVP-12 | Campaign scheduling | Client user | Deferrable* | |
@@ -132,6 +132,7 @@ it. The owner records the final tier in the "Owner decision" column.
 - **Acceptance criteria:** partial rejections reported per recipient; no duplicate charges on retry.
 - **Open questions:** do launch customers send campaigns via API or portal (CU-10)?
 - **Owner decision (2026-11-25, PR #7 review):** bulk sending is excluded from the MVP (D-094e). The public API v1 contract has no bulk endpoint.
+- **Owner decision (2026-11-25, final PR #7 review):** bulk sending through the API is **deferred to a later release**. The MVP supports single-message sending only (MVP-07).
 
 ### MVP-09 — Send from the portal
 - **Problem:** non-technical clients need to send without integration.
@@ -141,6 +142,7 @@ it. The owner records the final tier in the "Owner decision" column.
 - **Security:** file upload validation; size and row limits.
 - **Acceptance criteria:** invalid numbers reported before sending; confirmation shows recipients, segments, cost.
 - **Open questions:** maximum file size needed?
+- **Owner decision (2026-11-25, final PR #7 review):** in the MVP, the portal supports **single-message sending** (one recipient per message). Bulk sending through the portal — many recipients, including an uploaded recipient file — is **deferred to a later release**, together with API bulk sending (MVP-08). The capability, acceptance criteria, and file-import items above describe the deferred bulk scope and are kept as history.
 
 ### MVP-10 — Composer with segment and cost estimate
 - **Problem:** encoding surprises (e.g. emoji) can double cost (D-029).

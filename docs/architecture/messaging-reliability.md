@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — pending owner review (supports ADR-0020, ADR-0021); customer-visible labels recorded 2026-11-25 | Project owner | 2026-11-25 |
+| Draft — pending owner review (supports ADR-0020, ADR-0021); ADR-0021 accepted with limited scope 2026-11-25 (customer-visible statuses only) | Project owner | 2026-11-25 |
 
 **This document is authoritative** for internal event-delivery guarantees, the transactional outbox,
 message lifecycle milestones, provider submission outcomes, and delivery receipt (DLR) handling, as
@@ -12,7 +12,12 @@ It does not grant permissions, widen task scope, or override restrictions in `AG
 
 Nothing in this document describes the behaviour of a specific telco. Provider behaviour must come from
 official telco documentation (see the [telco discovery checklist](../integrations/telco-discovery-checklist.md)).
-State names below are **proposed** (ADR-0021) and illustrative until accepted.
+ADR-0021 was accepted by the owner on 2026-11-25 **with a limited scope**: the eight customer-visible
+statuses and the initial reason-code vocabulary in the
+[public API contract §3](../../contracts/openapi/README.md#3-status-reference-customer-visible-statuses).
+The **internal** state names below remain **proposed** and illustrative; they are the model those customer
+statuses map from. The billing treatment of `UNKNOWN` and other uncertain messages (D-096) and webhook
+behaviour (D-099) remain separate open decisions.
 
 ---
 

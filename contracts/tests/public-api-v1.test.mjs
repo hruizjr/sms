@@ -425,21 +425,21 @@ test('the X-Request-ID response header matches what the middleware can return', 
 
 const keyDescription = flat(spec.components.parameters.IdempotencyKey.description);
 
-test('same account, operation, key, and body: the original result is replayed', () => {
+test('same account, operation, key, and body after completion: the original 202 is replayed', () => {
   assert.match(keyDescription, /Scope: your account \+ this operation/);
-  assert.match(keyDescription, /Same key and same request body \(compared after JSON parsing[^)]*\): the original response is replayed/);
+  assert.match(keyDescription, /3\. \*\*Identical body, original completed:\*\* the original `202` response and body are replayed, with `Idempotent-Replayed: true`/);
   const accepted = flat(resolve(createOp().responses['202']).description);
   assert.match(accepted, /On an idempotent replay the same status code and body are returned with `Idempotent-Replayed: true`/);
   assert.match(flat(createOp().description), /does not create a second message or a second charge/);
 });
 
 test('same key with a different body: documented 422 idempotency-key-reused, nothing processed', () => {
-  assert.match(keyDescription, /Same key with a different body: `422` \(`idempotency-key-reused`\); nothing is processed/);
+  assert.match(keyDescription, /1\. \*\*Different normalized body:\*\* `422` \(`idempotency-key-reused`\), whether the original request is still being processed or has completed\. Nothing is processed\./);
   const r = resolve(createOp().responses['422']);
   const ex = r.content['application/problem+json'].examples.idempotencyKeyReused.value;
   assert.equal(ex.status, 422);
   assert.equal(ex.type, 'https://api.example.invalid/problems/idempotency-key-reused');
-  assert.match(readme, /^\| `idempotency-key-reused` \| 422 \| Same key, different body \|$/m);
+  assert.match(readme, /^\| `idempotency-key-reused` \| 422 \| Same key, different normalized body — even while the original is still being processed \|$/m);
 });
 
 test('retention is seven days and the behaviour after expiry is explicit', () => {
@@ -463,4 +463,60 @@ test('every owner decision listed in the contract README is recorded in the regi
     assert.match(regRow, /Owner decision 2026-11-25/, `${id}: discovery register`);
     assert.match(wbRow, /2026-11-25/, `${id}: owner discovery workbook`);
   }
+});
+
+// ---------------------------------------------------------------------------------------------
+// Final owner decisions (2026-11-25): idempotency outcome order, body-only comparison, ADR-0018 and
+// ADR-0021 acceptance, and bulk sending deferred through both channels.
+
+const docText = (path) => readFileSync(fileURLToPath(new URL(path, root)), 'utf8');
+
+test('idempotency outcomes are evaluated in order: different body 422, then 409 in progress, then replay', () => {
+  const steps = [...keyDescription.matchAll(/(\d)\. \*\*([^*]+)\*\*/g)].map((m) => `${m[1]} ${m[2]}`);
+  assert.deepEqual(steps, ['1 Different normalized body:', '2 Identical body, original still being processed:', '3 Identical body, original completed:']);
+  assert.match(keyDescription, /2\. \*\*Identical body, original still being processed:\*\* `409` \(`idempotency-request-in-progress`\) with `Retry-After`/);
+  const inProgress = flat(spec.components.responses.IdempotencyRequestInProgress.description);
+  assert.match(inProgress, /same `Idempotency-Key` \*\*and an identical normalized body\*\* is still being processed/);
+  assert.match(inProgress, /different body with the same key returns `422 idempotency-key-reused` instead, even while the original is still being processed/);
+  const rows = readme.split('\n').filter((l) => /^ {2}\| [123] \|/.test(l)).map((l) => l.trim());
+  assert.deepEqual(rows.map((r) => r.split('|')[3].trim().slice(0, 4)), ['`422', '`409', 'Orig']);
+  const idem = flat(docText('../docs/architecture/api-idempotency.md'));
+  assert.match(idem, /a different fingerprint returns `422` even while the original is still in progress/);
+});
+
+test('only the normalized request body is compared; X-Request-ID and tracing/transport headers are not', () => {
+  assert.match(keyDescription, /\*\*Comparison: the normalized request body only\.\*\*/);
+  assert.match(keyDescription, /`X-Request-ID` and other tracing or transport headers are \*\*not\*\* part of the comparison/);
+  assert.match(flat(createOp().description), /Only the normalized request body is compared, never `X-Request-ID` or other tracing or transport headers/);
+  assert.match(flat(readme), /`X-Request-ID` and other tracing or transport headers are \*\*not\*\* part of the comparison/);
+  assert.match(flat(docText('../docs/architecture/api-idempotency.md')), /`X-Request-ID` and other tracing or transport headers are \*\*not\*\* part of the comparison/);
+});
+
+test('ADR-0018 is accepted, ADR-0021 is accepted with a limited scope, and no other ADR status changed', () => {
+  const log = docText('../docs/engineering/decision-log.md');
+  const index = log.slice(log.indexOf('## 4. Index'), log.indexOf('## 5. Review summary'));
+  const accepted = [...index.matchAll(/^\| (\d{4}) \| [^|]+ \| \*\*Accepted/gm)].map((m) => m[1]);
+  assert.deepEqual(accepted, ['0002', '0003', '0004', '0005', '0013', '0014', '0015', '0016', '0017', '0018', '0021']);
+  assert.match(index, /^\| 0021 \| [^|]+ \| \*\*Accepted — limited scope\*\*/m);
+  const adr21 = flat(log.slice(log.indexOf('### ADR-0021'), log.indexOf('## 7. Owner decisions')));
+  assert.match(adr21, /\*\*Status:\*\* \*\*Accepted — limited scope\*\*/);
+  assert.match(adr21, /does \*\*not\*\* settle, and these remain \*\*separate open decisions\*\*/);
+  assert.match(adr21, /billing treatment of `unknown`\*\*/);
+  assert.match(adr21, /\*\*webhook behaviour\*\* \(D-099, webhook part\)/);
+  const adr18 = flat(log.slice(log.indexOf('### ADR-0018'), log.indexOf('### ADR-0019')));
+  assert.match(adr18, /\*\*Status:\*\* \*\*Accepted\*\* \(by owner, 2026-11-25\)/);
+  assert.match(adr18, /whether the original request is still processing or has completed/);
+});
+
+test('bulk sending is deferred through both channels and absent from the contract', () => {
+  for (const path of Object.keys(spec.paths)) assert.doesNotMatch(path, /bulk|batch/i, path);
+  assert.equal(spec.components.schemas.MessageCreateRequest.properties.to.$ref ?? spec.components.schemas.MessageCreateRequest.properties.to.type, '#/components/schemas/PhoneNumber', 'one recipient per request');
+  const brief = flat(docText('../docs/product/product-brief.md'));
+  assert.match(brief, /Single-message send via the client portal and the public API \(one recipient per message\)/);
+  assert.match(brief, /\*\*Bulk sending\*\* \(many recipients per send\) through the public API and through the client portal, including uploaded recipient files — deferred to a later release/);
+  const worksheet = docText('../docs/discovery/mvp-scope-worksheet.md');
+  assert.match(worksheet, /^\| MVP-08 \|.*\*\*Deferred to a later release\*\*/m);
+  assert.match(worksheet, /^\| MVP-09 \|.*\*\*MVP: single-message sending only\.\*\*.*\*\*deferred to a later release\*\*/m);
+  const register = docText('../docs/requirements/discovery-register.md');
+  assert.match(register.split('\n').find((l) => l.startsWith('| D-089 |')), /bulk sending through both channels \(MVP-08, MVP-09\) is deferred to a later release/);
 });

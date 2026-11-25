@@ -1,22 +1,24 @@
-# API Idempotency Contract (Proposed)
+# API Idempotency Contract
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — proposal for ADR-0018 (still Proposed); owner decisions on D-094a–e recorded 2026-11-25 | Project owner | 2026-11-25 |
+| **Accepted** with ADR-0018 (owner, 2026-11-25), including decisions D-094a–e and the outcome clarifications in §3.5 | Project owner | 2026-11-25 |
 
-**This document is authoritative** for the API idempotency contract, as defined in [`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts). Its content is a
-**proposal** (ADR-0018 is Proposed): this document is the authoritative description of that proposal, not
-an approved decision. Each section states the recommended rule and, where the owner must decide, the
-options. Nothing here is implemented. It does not grant permissions, widen task scope, or override restrictions in `AGENTS.md`. If it genuinely conflicts with another document, stop the affected work, report the conflict, and request owner resolution ([`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts)).
+**This document is authoritative** for the API idempotency contract, as defined in [`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts). ADR-0018 was
+**accepted by the owner on 2026-11-25**; this document is the authoritative description of the accepted
+contract. The option tables and "Decision needed" columns below are kept as the decision history; the
+owner decisions that settled them are listed immediately below. Nothing here is implemented yet. It does not grant permissions, widen task scope, or override restrictions in `AGENTS.md`. If it genuinely conflicts with another document, stop the affected work, report the conflict, and request owner resolution ([`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts)).
 
 ---
 
 **Owner decisions (2026-11-25, PR #7 review; recorded in the discovery register, D-094):**
 (a) the key is **required** on message submission; (b) scope is **tenant (account) + operation**
 (option A, §3.3); (c) business rejections such as insufficient credit are **not recorded**; (d) retention
-is **seven days**; (e) bulk sending is **excluded from the MVP**, so bulk semantics (§3.9) are not needed
-now. The public API contract ([`contracts/openapi/`](../../contracts/openapi/README.md#4-idempotency-proposed-adr-0018))
-applies them. ADR-0018 itself remains Proposed. Where a section below says "Decision", it refers to these.
+is **seven days**; (e) bulk sending through the API and the portal is **deferred to a later release**, so
+bulk semantics (§3.9) are not needed now. With these decisions and the outcome clarifications in §3.4–§3.5,
+the owner **accepted ADR-0018** on 2026-11-25. The public API contract
+([`contracts/openapi/`](../../contracts/openapi/README.md#4-idempotency-adr-0018)) applies them. Where a
+section below says "Decision", it refers to these.
 
 ## 1. Purpose and limits
 
@@ -79,17 +81,23 @@ generates one key per user intent (e.g. when the "Confirm send" dialog opens) an
 - At first use, we store a **fingerprint** (cryptographic hash) of the canonicalized request: operation
   plus the parsed request body (so whitespace or JSON key order does not matter). The exact
   canonicalization is defined with the OpenAPI contract.
-- Headers that do not change meaning (e.g. tracing IDs) are excluded.
+- Headers that do not change meaning are excluded: `X-Request-ID` and other tracing or transport headers
+  are **not** part of the comparison (clarified by the owner, 2026-11-25). The comparison is based on the
+  normalized request body.
 
 ### 3.5 Outcomes
 
 | Situation | Response |
 | --------- | -------- |
 | First request with a new key | Processed normally; the outcome is recorded with the key (see §3.7 for which outcomes are recorded) |
-| Same key, **same** fingerprint, original **completed** | The **original response is replayed**: same status code and body, including the same message IDs. A response header (name TBD, e.g. `Idempotent-Replayed: true`) indicates a replay. The replay reflects the result **at acceptance time**, not the current delivery status; clients query the message resource for current status |
-| Same key, **different** fingerprint | `422 Unprocessable Content`, problem type `idempotency-key-reused`; nothing is processed (the draft recommends 422) |
-| Same key while the original is **still in progress** | `409 Conflict`, problem type `idempotency-request-in-progress`, with `Retry-After` (the draft recommends 409) |
-| Same key after the retention period expired | Treated as a new request (documented to clients) |
+| Same key, **identical** fingerprint, original **completed** | The **original response is replayed**: same status code and body, including the same message IDs. A response header (name TBD, e.g. `Idempotent-Replayed: true`) indicates a replay. The replay reflects the result **at acceptance time**, not the current delivery status; clients query the message resource for current status |
+| Same key, **different** fingerprint — whether the original is **still in progress or completed** | `422 Unprocessable Content`, problem type `idempotency-key-reused`; nothing is processed (the draft recommends 422) |
+| Same key, **identical** fingerprint, original **still in progress** | `409 Conflict`, problem type `idempotency-request-in-progress`, with `Retry-After` (the draft recommends 409) |
+| Same key after the retention period (seven days) expired | Treated as a new request (documented to clients) |
+
+**Order of evaluation (owner clarification, 2026-11-25).** For the same tenant, operation, and key, the
+fingerprint is compared first: a different fingerprint returns `422` even while the original is still in
+progress. Only an identical fingerprint distinguishes "in progress" (`409`) from "completed" (replay).
 
 ### 3.6 Concurrent duplicates
 
@@ -131,6 +139,9 @@ verified volume. **Decision: D-094d.** The chosen period is published in the API
 draft advises).
 
 ### 3.9 Bulk requests
+
+**Owner decision (2026-11-25):** bulk sending through the API and the portal is deferred to a later
+release (D-094e), so this section applies only when bulk sending is scheduled.
 
 One key covers the whole bulk request. Whether a bulk request is all-or-nothing or returns per-recipient
 results (some accepted, some rejected) is an API design decision (**D-094e**); the replay always returns
