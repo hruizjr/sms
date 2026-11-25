@@ -57,17 +57,16 @@ func TestLoadValidCustomValues(t *testing.T) {
 	t.Parallel()
 
 	cfg, err := Load(env(map[string]string{
-		EnvAppEnv:                  "Production",
-		EnvHTTPAddr:                ":8081",
-		EnvHTTPReadTimeout:         "20s",
-		EnvHTTPReadHeaderTimeout:   "2s",
-		EnvHTTPWriteTimeout:        "30s",
-		EnvHTTPIdleTimeout:         "2m",
-		EnvShutdownTimeout:         "45s",
-		EnvMetricsAddr:             "[::1]:9191",
-		EnvMetricsAllowNonLoopback: "false",
-		EnvLogFormat:               "TEXT",
-		EnvLogLevel:                "debug",
+		EnvAppEnv:                "Production",
+		EnvHTTPAddr:              ":8081",
+		EnvHTTPReadTimeout:       "20s",
+		EnvHTTPReadHeaderTimeout: "2s",
+		EnvHTTPWriteTimeout:      "30s",
+		EnvHTTPIdleTimeout:       "2m",
+		EnvShutdownTimeout:       "45s",
+		EnvMetricsAddr:           "[::1]:9191",
+		EnvLogFormat:             "TEXT",
+		EnvLogLevel:              "debug",
 	}))
 	if err != nil {
 		t.Fatalf("Load() returned error: %v", err)
@@ -116,24 +115,65 @@ func TestLoadDefaultLogFormatDependsOnEnvironment(t *testing.T) {
 	}
 }
 
-func TestLoadMetricsNonLoopbackRequiresOptIn(t *testing.T) {
+func TestLoadMetricsAddrAcceptsLoopbackIPs(t *testing.T) {
 	t.Parallel()
 
-	_, err := Load(env(map[string]string{EnvMetricsAddr: "0.0.0.0:9090"}))
-	if err == nil || !strings.Contains(err.Error(), EnvMetricsAllowNonLoopback) {
-		t.Fatalf("non-loopback metrics address without opt-in: want error mentioning %s, got %v",
-			EnvMetricsAllowNonLoopback, err)
+	for _, addr := range []string{
+		"127.0.0.1:9090",          // IPv4 loopback (the default)
+		"127.0.0.2:9090",          // anywhere in 127.0.0.0/8 is loopback
+		"[::1]:9090",              // IPv6 loopback
+		"[::ffff:127.0.0.1]:9090", // IPv4-mapped IPv6 form of 127.0.0.1
+	} {
+		t.Run(addr, func(t *testing.T) {
+			t.Parallel()
+			cfg, err := Load(env(map[string]string{EnvMetricsAddr: addr}))
+			if err != nil {
+				t.Fatalf("Load() with %s=%q returned error: %v", EnvMetricsAddr, addr, err)
+			}
+			if cfg.Metrics.Addr != addr {
+				t.Errorf("Metrics.Addr = %q, want %q", cfg.Metrics.Addr, addr)
+			}
+		})
 	}
+}
 
-	cfg, err := Load(env(map[string]string{
-		EnvMetricsAddr:             "0.0.0.0:9090",
-		EnvMetricsAllowNonLoopback: "true",
-	}))
-	if err != nil {
-		t.Fatalf("non-loopback metrics address with opt-in: unexpected error %v", err)
+func TestLoadMetricsAddrRejectsNonLoopback(t *testing.T) {
+	t.Parallel()
+
+	for _, addr := range []string{
+		":9090",                  // empty host: all interfaces
+		"0.0.0.0:9090",           // IPv4 wildcard
+		"[::]:9090",              // IPv6 wildcard
+		"192.0.2.10:9090",        // non-loopback IPv4 (TEST-NET-1, RFC 5737)
+		"10.0.0.5:9090",          // private IPv4
+		"[2001:db8::1]:9090",     // non-loopback IPv6 (documentation prefix, RFC 3849)
+		"[fe80::1]:9090",         // IPv6 link-local
+		"[::ffff:10.0.0.5]:9090", // IPv4-mapped non-loopback
+		"localhost:9090",         // host names are not resolved during validation, so not accepted
+	} {
+		t.Run(addr, func(t *testing.T) {
+			t.Parallel()
+			cfg, err := Load(env(map[string]string{EnvMetricsAddr: addr}))
+			if err == nil {
+				t.Fatalf("Load() with %s=%q = %+v, want error", EnvMetricsAddr, addr, cfg)
+			}
+			if !strings.Contains(err.Error(), EnvMetricsAddr) || !strings.Contains(err.Error(), "loopback") {
+				t.Errorf("error %q should name %s and require a loopback address", err, EnvMetricsAddr)
+			}
+		})
 	}
-	if !cfg.Metrics.AllowNonLoopback {
-		t.Error("AllowNonLoopback = false, want true")
+}
+
+func TestLoadIgnoresRemovedMetricsOverride(t *testing.T) {
+	t.Parallel()
+
+	// METRICS_ALLOW_NON_LOOPBACK was removed; setting it must not re-enable a public listener.
+	_, err := Load(env(map[string]string{
+		EnvMetricsAddr:               "0.0.0.0:9090",
+		"METRICS_ALLOW_NON_LOOPBACK": "true",
+	}))
+	if err == nil || !strings.Contains(err.Error(), EnvMetricsAddr) {
+		t.Fatalf("0.0.0.0 with the removed override set: want %s error, got %v", EnvMetricsAddr, err)
 	}
 }
 
@@ -162,7 +202,6 @@ func TestLoadInvalidValues(t *testing.T) {
 		{"header timeout above read timeout", map[string]string{EnvHTTPReadTimeout: "5s", EnvHTTPReadHeaderTimeout: "10s"}, EnvHTTPReadHeaderTimeout},
 		{"log level unknown", map[string]string{EnvLogLevel: "verbose"}, EnvLogLevel},
 		{"log format unknown", map[string]string{EnvLogFormat: "xml"}, EnvLogFormat},
-		{"boolean invalid", map[string]string{EnvMetricsAllowNonLoopback: "sometimes"}, EnvMetricsAllowNonLoopback},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

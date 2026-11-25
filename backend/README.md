@@ -36,11 +36,11 @@ client ──▶ application listener (HTTP_ADDR)
                 ├─ SecurityHeaders  nosniff, restrictive CSP, no-referrer, no-store
                 ├─ AccessLog        one structured log line: request_id, method, route, status, duration_ms
                 ├─ Metrics          sms_http_requests_total / sms_http_request_duration_seconds by route pattern
-                ├─ Recover          panic → logged server-side, generic 500 problem to the client
+                ├─ Recover          panic → logged server-side by type only, generic 500 problem to the client
                 ├─ LimitRequestBody 1 MiB maximum
                 └─ handler          /healthz, /readyz; anything else → 404/405 problem (RFC 9457)
 
-Prometheus ──▶ metrics listener (METRICS_ADDR, loopback by default) ──▶ GET /metrics only
+Prometheus ──▶ metrics listener (METRICS_ADDR, loopback only) ──▶ GET /metrics only
 ```
 
 ## Endpoints
@@ -55,6 +55,11 @@ Errors use RFC 9457 problem documents (`application/problem+json`) with type `ab
 HTTP status title, a fixed client-safe detail, and the request ID. Internal error text, panic values,
 and stack traces are never returned. Application-specific problem types come with the OpenAPI contract
 (Group 3).
+
+A recovered panic is logged as one `panic recovered` entry with the request ID, method, route, the
+panic value's Go **type** (`panic_type`), and a stack of function names with `file:line` positions.
+The raw panic value is **never logged**, because it may contain connection strings, credentials,
+tokens, or personal data; the stack omits argument values for the same reason.
 
 ## Configuration
 
@@ -71,13 +76,20 @@ See also [`.env.example`](.env.example).
 | `HTTP_WRITE_TIMEOUT` | `15s` | Positive duration |
 | `HTTP_IDLE_TIMEOUT` | `60s` | Positive duration |
 | `SHUTDOWN_TIMEOUT` | `15s` | Positive duration; graceful-shutdown deadline for in-flight requests |
-| `METRICS_ADDR` | `127.0.0.1:9090` | `host:port`; must be loopback unless `METRICS_ALLOW_NON_LOOPBACK=true`; must not share the application listener |
-| `METRICS_ALLOW_NON_LOOPBACK` | `false` | Explicit opt-in for container deployments; the metrics listener must never be publicly reachable |
+| `METRICS_ADDR` | `127.0.0.1:9090` | `ip:port` with a **loopback IP** (`127.0.0.1`, anything in `127.0.0.0/8`, or `[::1]`); must not share the application listener |
 | `LOG_FORMAT` | `text` in development, otherwise `json` | `text` or `json` |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 
 The process logs only an explicit, non-sensitive startup summary (environment, log level, log format,
 listener addresses) — never the environment wholesale. No secrets are configured yet.
+
+### Metrics exposure
+
+The metrics listener is **loopback-only**. Non-loopback metrics exposure is not supported in this
+phase: wildcard addresses (`:9090`, `0.0.0.0`, `[::]`), any non-loopback IPv4 or IPv6 address, and
+host names (including `localhost`, because validation does not resolve names) are rejected at
+startup. There is no override. Scraping metrics across a container network is a later, separate
+deployment decision.
 
 ## Running locally
 

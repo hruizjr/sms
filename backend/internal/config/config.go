@@ -18,17 +18,16 @@ import (
 //
 //nolint:gosec // G101 false positive: these are environment variable names, not credentials.
 const (
-	EnvAppEnv                  = "APP_ENV"
-	EnvHTTPAddr                = "HTTP_ADDR"
-	EnvHTTPReadTimeout         = "HTTP_READ_TIMEOUT"
-	EnvHTTPReadHeaderTimeout   = "HTTP_READ_HEADER_TIMEOUT"
-	EnvHTTPWriteTimeout        = "HTTP_WRITE_TIMEOUT"
-	EnvHTTPIdleTimeout         = "HTTP_IDLE_TIMEOUT"
-	EnvShutdownTimeout         = "SHUTDOWN_TIMEOUT"
-	EnvMetricsAddr             = "METRICS_ADDR"
-	EnvMetricsAllowNonLoopback = "METRICS_ALLOW_NON_LOOPBACK"
-	EnvLogFormat               = "LOG_FORMAT"
-	EnvLogLevel                = "LOG_LEVEL"
+	EnvAppEnv                = "APP_ENV"
+	EnvHTTPAddr              = "HTTP_ADDR"
+	EnvHTTPReadTimeout       = "HTTP_READ_TIMEOUT"
+	EnvHTTPReadHeaderTimeout = "HTTP_READ_HEADER_TIMEOUT"
+	EnvHTTPWriteTimeout      = "HTTP_WRITE_TIMEOUT"
+	EnvHTTPIdleTimeout       = "HTTP_IDLE_TIMEOUT"
+	EnvShutdownTimeout       = "SHUTDOWN_TIMEOUT"
+	EnvMetricsAddr           = "METRICS_ADDR"
+	EnvLogFormat             = "LOG_FORMAT"
+	EnvLogLevel              = "LOG_LEVEL"
 )
 
 // Environment is the deployment environment the process runs in.
@@ -81,12 +80,11 @@ type HTTPConfig struct {
 }
 
 // MetricsConfig configures the separate, non-public metrics listener.
+//
+// Addr is always a loopback IP address (127.0.0.0/8 or ::1). Non-loopback and wildcard
+// addresses are rejected: exposing metrics beyond the host is not supported in this phase.
 type MetricsConfig struct {
 	Addr string
-	// AllowNonLoopback must be set explicitly before the metrics listener may bind to a
-	// non-loopback address. It exists so that a container deployment can opt in deliberately;
-	// the metrics endpoint must never be exposed publicly.
-	AllowNonLoopback bool
 }
 
 // LogConfig configures structured logging.
@@ -114,8 +112,7 @@ func Load(lookup LookupFunc) (Config, error) {
 			IdleTimeout:       r.duration(EnvHTTPIdleTimeout, DefaultHTTPIdleTimeout),
 		},
 		Metrics: MetricsConfig{
-			Addr:             r.str(EnvMetricsAddr, DefaultMetricsAddr),
-			AllowNonLoopback: r.boolean(EnvMetricsAllowNonLoopback, false),
+			Addr: r.str(EnvMetricsAddr, DefaultMetricsAddr),
 		},
 		ShutdownTimeout: r.duration(EnvShutdownTimeout, DefaultShutdownTimeout),
 	}
@@ -139,9 +136,9 @@ func Load(lookup LookupFunc) (Config, error) {
 	httpHost, httpPort, httpOK := r.address(EnvHTTPAddr, cfg.HTTP.Addr)
 	metricsHost, metricsPort, metricsOK := r.address(EnvMetricsAddr, cfg.Metrics.Addr)
 
-	if metricsOK && !cfg.Metrics.AllowNonLoopback && !isLoopbackHost(metricsHost) {
-		r.fail(EnvMetricsAddr, "must bind to a loopback address (127.0.0.1, ::1, or localhost) unless %s=true; got %q",
-			EnvMetricsAllowNonLoopback, cfg.Metrics.Addr)
+	if metricsOK && !isLoopbackIP(metricsHost) {
+		r.fail(EnvMetricsAddr, "must be a loopback IP address such as 127.0.0.1:9090 or [::1]:9090 "+
+			"(non-loopback metrics exposure is not supported); got %q", cfg.Metrics.Addr)
 	}
 	if httpOK && metricsOK && httpPort == metricsPort &&
 		(httpHost == metricsHost || httpHost == "" || metricsHost == "") {
@@ -194,19 +191,6 @@ func (r *reader) duration(key string, def time.Duration) time.Duration {
 	return d
 }
 
-func (r *reader) boolean(key string, def bool) bool {
-	raw := r.str(key, "")
-	if raw == "" {
-		return def
-	}
-	b, err := strconv.ParseBool(raw)
-	if err != nil {
-		r.fail(key, "must be true or false; got %q", raw)
-		return def
-	}
-	return b
-}
-
 func (r *reader) logLevel(key string, def slog.Level) slog.Level {
 	raw := strings.ToLower(r.str(key, ""))
 	switch raw {
@@ -246,12 +230,12 @@ func (r *reader) address(key, addr string) (host string, port int, ok bool) {
 	return host, port, true
 }
 
-// isLoopbackHost reports whether host refers only to the loopback interface.
-// An empty host means "all interfaces" and is therefore not loopback.
-func isLoopbackHost(host string) bool {
-	if host == "localhost" {
-		return true
-	}
+// isLoopbackIP reports whether host is a loopback IP literal (127.0.0.0/8 or ::1).
+//
+// Host names, including "localhost", are deliberately not accepted: validation does not resolve
+// names, and a name could resolve to a non-loopback address at bind time. An empty host means
+// "all interfaces" and is therefore not loopback.
+func isLoopbackIP(host string) bool {
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
 }
