@@ -259,8 +259,9 @@ default error handlers, which would otherwise return raw Go error text as `text/
 **Dependency updates.** Change the generator version only with owner approval, in `tools/`:
 `go get -tool github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@<version>`, then `go mod tidy`,
 regenerate, and review the diff. `tools/go.mod` also raises `github.com/getkin/kin-openapi` (the
-generator's spec parser) to v0.148.0, the first release fixing GO-2026-6789 and GO-2026-6795; remove that
-line when the generator itself requires a fixed version.
+generator's spec parser) to v0.149.0, the first release fixing GO-2026-6789, GO-2026-6795, GO-2026-6800 and
+GO-2026-6785 (owner decision, PR #8 review); generated output is byte-identical. Remove that line when the
+generator itself requires a fixed version.
 
 ## Running locally
 

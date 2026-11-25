@@ -3,9 +3,11 @@
 // its binaries. Used through `go tool -modfile=…/tools/go.mod <tool>` from go:generate directives.
 //
 // github.com/getkin/kin-openapi (the generator's OpenAPI parser) is raised from v0.142.0, which
-// oapi-codegen v2.8.2 requires, to v0.148.0: the first release fixing GO-2026-6789 and GO-2026-6795
-// (panics on crafted specifications). The generated output is byte-identical with either version.
-// Drop this override when the generator itself requires a fixed version.
+// oapi-codegen v2.8.2 requires, to v0.149.0 (owner decision, PR #8 review): the first release fixing
+// all of GO-2026-6789 (fixed in v0.145.0), GO-2026-6795 (fixed in v0.148.0), and GO-2026-6800 and
+// GO-2026-6785 (fixed in v0.149.0); all are crashes or panics on crafted input. The generated output
+// is byte-identical with v0.142.0, v0.148.0 and v0.149.0. Drop this override when the generator itself
+// requires a fixed version.
 
 module github.com/hruizjr/sms/backend/tools
 
@@ -17,7 +19,7 @@ tool github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen
 
 require (
 	github.com/dprotaso/go-yit v0.0.0-20220510233725-9ba8df137936 // indirect
-	github.com/getkin/kin-openapi v0.148.0 // indirect; security override, see the comment at the top
+	github.com/getkin/kin-openapi v0.149.0 // indirect; security override, see the comment at the top
 	github.com/go-openapi/jsonpointer v0.23.1 // indirect
 	github.com/go-openapi/swag/jsonname v0.26.0 // indirect
 	github.com/oapi-codegen/oapi-codegen/v2 v2.8.2 // indirect
