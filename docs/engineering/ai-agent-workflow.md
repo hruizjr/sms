@@ -51,9 +51,8 @@ For tasks touching hot files, migrations, contracts, billing, security, or provi
 the plan before implementation.
 
 ### Step 4 — Implement (agent)
-- Create a branch from the latest `main` (naming in [git-workflow.md](git-workflow.md)). Until `main`
-  exists, branch from the repository's current default branch
-  ([git-workflow §0](git-workflow.md#0-current-repository-state-and-required-owner-actions)).
+- Create a branch from the latest `main` (naming in [git-workflow.md](git-workflow.md); repository state in
+  [git-workflow §0](git-workflow.md#0-repository-state)).
 - Make only the changes in scope. Commit in logical steps with Conventional Commit messages.
 - Update documentation affected by the change in the same branch.
 - Never touch files outside the declared scope; report needed changes elsewhere instead.

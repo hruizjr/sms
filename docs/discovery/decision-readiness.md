@@ -7,7 +7,9 @@
 This document classifies every Proposed ADR by **what it is waiting for**, so the owner can see which
 decisions are possible now and which must wait for discovery. It complements the review summary in the
 [decision log §5](../engineering/decision-log.md#5-review-summary-2026-11-24); the ADRs themselves remain
-the authority for their content. **All ADRs are still `Proposed`.** Only the owner can accept or reject them.
+the authority for their content. This classification is a snapshot from 2026-11-24; **current statuses are in the
+[decision log index](../engineering/decision-log.md#4-index)** (on 2026-11-25 the owner accepted ADR-0002–0005 and
+0013–0017). Only the owner can accept or reject ADRs.
 
 ## 1. Classification
 

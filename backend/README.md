@@ -1,8 +1,9 @@
 # backend/
 
-The Go backend. **No code exists yet** — this folder is reserved and documented in Phase 1.
+The Go backend. **No code exists yet** — it is created during the Phase 3 walking skeleton, one reviewed
+group at a time (see the [decision log §7](../docs/engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25)).
 
-## Proposed shape (see ADR-0003 and ADR-0009 in the decision log — status: Proposed)
+## Shape (ADR-0002 and ADR-0003 accepted; ADR-0009 still Proposed)
 
 The backend is planned as a **modular monolith**: a single Go module (one `go.mod`) that builds
 **several executables**. Each executable is a separate runtime process that can be deployed and
@@ -10,10 +11,10 @@ scaled independently, but they share code, conventions, and a single build.
 
 ```
 backend/
-├── go.mod                 Created during the scaffolding phase (module path pending approval)
+├── go.mod                 Module github.com/hruizjr/sms/backend, Go 1.27.4 (created in Phase 3)
 ├── cmd/                   One sub-folder per executable — see cmd/README.md
 ├── internal/              Application modules, private to this repository — see internal/README.md
-└── migrations/            Versioned PostgreSQL migrations (created when the DB layer is approved)
+└── migrations/            Versioned PostgreSQL migrations, managed with goose (created in Phase 3)
 ```
 
 Why this shape:
@@ -29,4 +30,5 @@ Why this shape:
 
 Follow [`AGENTS.md`](../AGENTS.md) §7 (Go standards) and
 [`docs/standards/coding-standards.md`](../docs/standards/coding-standards.md).
-Do not create `go.mod`, packages, or migrations until the scaffolding task is approved.
+Create `go.mod`, packages, and migrations only within an approved Phase 3 group task. Walking-skeleton
+migrations contain no business tables.

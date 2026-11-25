@@ -1,30 +1,28 @@
 # frontend/
 
 The web application(s), built with **React + TypeScript (strict) + Vite + Tailwind CSS**.
-**Not yet scaffolded** — no `package.json` or source code exists in Phase 1.
+**Not yet scaffolded** — created in Phase 3, Group 4.
 
-## Open decision: one app or two? (ADR-0013 — Proposed)
+## Structure (ADR-0013 — accepted 2026-11-25)
 
-The product has two very different audiences:
+The product has two audiences: customer businesses (**Client Portal**) and our own staff (**Super Admin
+Portal**, with powerful permissions). The owner decided:
 
-- **Client Portal** — used by customer businesses.
-- **Super Admin Portal** — used by our own staff, with powerful permissions (credits, pricing, providers).
-
-| Option | Pros | Cons |
-| ------ | ---- | ---- |
-| A. One app, role-based routes | Simplest build and deploy | Admin code ships to every customer's browser; one compromise surface |
-| B. Two apps sharing a component package | Admin can live on a separate domain behind extra network controls (e.g. IP allowlist/VPN); smaller attack surface | Slightly more build configuration (a workspace) |
-
-**Recommendation (pending approval): Option B**, introduced as a small npm/pnpm workspace:
+- a pnpm workspace with **one application initially**, `client-portal`, and a shared `packages/ui` package;
+- an `admin-portal` application is added later, when admin functionality begins, so admin code can live on
+  a separate origin;
+- router, data-fetching, and form libraries are deferred to Phase 4; the headless UI library decision
+  (D-140) is deferred.
 
 ```
 frontend/
 ├── apps/
-│   ├── client-portal/
-│   └── admin-portal/
+│   └── client-portal/     (admin-portal added later)
 └── packages/
-    └── ui/            Shared design tokens and components
+    └── ui/                Shared design tokens and components
 ```
+
+Toolchain: React, TypeScript (strict), Vite, Tailwind CSS v4, pnpm 10 (exact version pinned), Node.js 26 LTS.
 
 ## Proposed structure inside each app
 
@@ -39,7 +37,7 @@ src/
 └── styles/            Tailwind entry point and design tokens (CSS variables)
 ```
 
-## Component strategy (ADR-0013 — Proposed)
+## Component strategy (ADR-0013 — accepted 2026-11-25)
 
 Tailwind CSS is the only styling system. Complex interactive widgets (dialogs, menus, dropdowns, popovers,
 comboboxes) may use a maintained, accessible **headless** primitives library — selection is an owner

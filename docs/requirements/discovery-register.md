@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — living document | Project owner | 2026-11-24 (Phase 2A: D-074–D-079, D-118–D-119, D-129–D-131, D-160–D-163 added; no status changed) |
+| Draft — living document | Project owner | 2026-11-25 (owner decisions recorded on D-091 and D-140; no other item changed) |
 
 This register lists everything we know, assume, or still need to find out. **It is the authority on
 what is known.** AI agents must not treat any item as confirmed unless it is in §1 with evidence.
@@ -117,7 +117,7 @@ what is known.** AI agents must not treat any item as confirmed unless it is in 
 | D-088 | Whether to allow reseller/wholesale customers. | Tenant model, regulatory exposure. |
 | D-089 | MVP scope and launch customers. | Roadmap. |
 | D-090 | Budget envelope for infrastructure and operations. | Technology choices. |
-| D-091 | Single vs. separate admin and client portals (ADR-0013). | Security vs. simplicity. |
+| D-091 | Single vs. separate admin and client portals (ADR-0013). | Security vs. simplicity. **Owner decision 2026-11-25 (ADR-0013):** one application, `client-portal`, initially, with shared `packages/ui`; `admin-portal` added when admin functionality begins. |
 | D-092 | **Monetary representation and precision**: currency(ies); precision (decimal places) of actual telco wholesale rates and our retail rates; resulting storage representation and scale (scaled integer vs. exact decimal). | Requires actual rate cards and the pricing model. Centavos may be insufficient. See ADR-0019 and [financial integrity](../architecture/financial-integrity.md). |
 | D-093 | **Rounding rules**: where rounding occurs (per segment, message, campaign, invoice), rounding mode, residue handling, and audit inputs recorded. | Determines estimate/charge consistency and reconciliation with telco invoices. |
 | D-094 | **API idempotency details** (ADR-0018): (a) key required vs. optional; (b) scope per tenant + operation vs. per API credential; (c) whether business rejections (e.g. insufficient credit) are recorded; (d) retention period; (e) bulk request semantics (all-or-nothing vs. per-recipient). | Recommendations in [API idempotency](../architecture/api-idempotency.md). |
@@ -188,6 +188,6 @@ is legal advice. Public sources consulted so far are listed in the
 
 | ID | Decision | Notes |
 | -- | -------- | ----- |
-| D-140 | Selection of a headless accessible UI primitives library (if any) for complex interactions. | Direction proposed in ADR-0013; evaluate maintenance, accessibility, licence, compatibility, footprint. No package added until approved. |
+| D-140 | Selection of a headless accessible UI primitives library (if any) for complex interactions. | Direction in ADR-0013 (accepted 2026-11-25); evaluate maintenance, accessibility, licence, compatibility, footprint. **Owner decision 2026-11-25: deferred.** No package added until approved. |
 | D-141 | Adoption of PostgreSQL Row-Level Security after evaluation. | ADR-0010 lists the evaluation requirements (pooling, transaction-scoped context, roles, performance, tests). |
 | D-142 | Acceptance of each Proposed ADR. | See the review summary in the [decision log](../engineering/decision-log.md#5-review-summary-2026-11-24). |

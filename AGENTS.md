@@ -9,10 +9,10 @@
 | Field | Value |
 | ----- | ----- |
 | Project | Enterprise A2P SMS Platform (Philippines) |
-| Current phase | **Phase 1 — Engineering Foundation (documentation only)** |
-| Next phase authorized? | **No.** Do not start Phase 2 work until the project owner explicitly approves it. |
+| Current phase | **Phase 3 — Walking skeleton** (implemented in reviewed groups; see [decision log §7](docs/engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25)) |
+| Authorized scope | **Phase 3 walking skeleton only** (owner approval 2026-11-25). Each implementation group starts only after the previous group is reviewed and merged. Later phases and all other ADRs need separate owner approval. |
 | Decision authority | The project owner (a single human). Agents propose; the owner decides. |
-| Last updated | 2026-11-24 (Phase 1 documentation remediation) |
+| Last updated | 2026-11-25 (Phase 3 decisions recorded) |
 
 ---
 
@@ -44,7 +44,9 @@ optional; if you believe one must be broken, stop and ask the project owner.
 
 ## 1. Current status and what you may do
 
-The repository contains only documentation, folder structure, and repository hygiene files.
+The repository contains documentation, folder structure, and repository hygiene files. The Phase 3 walking
+skeleton (technical foundation only) is authorized and is added one reviewed group at a time. **No business
+functionality exists or is authorized.**
 
 **Verified facts:** almost none. The business *intends* to become an A2P SMS aggregator. No telco
 agreement, technical integration, accreditation, regulatory authorization, or traffic volume has been
@@ -59,6 +61,12 @@ Until a task explicitly authorizes it, you MUST NOT:
 - add dependencies, `go.mod`, or `package.json`;
 - provision servers, deploy anything, or configure real telco credentials;
 - send any message to any real phone number.
+
+Phase 3 group tasks authorize only what [decision log §7](docs/engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25)
+lists: the approved dependencies, `go.mod` / `package.json`, migrations **without business tables**, CI, and
+local development tooling. Customer authentication, tenant management, RBAC logic, billing, SMS submission,
+SMPP, telco integrations, queues, Kafka, Redis, and ClickHouse remain prohibited. The metrics endpoint must not
+be publicly exposed, and GitHub Actions are pinned to commit SHAs.
 
 ### 1.1 Document authority and conflicts
 
@@ -211,11 +219,11 @@ Details and gaps: [product brief](docs/product/product-brief.md) and
 ### 3.3 Intended architecture (direction, not final)
 
 - **Monorepo** containing frontend, backend, contracts, infrastructure config, and docs.
-- **Modular monolith** in Go: one module, several executables, strict module boundaries (ADR-0003, Proposed).
+- **Modular monolith** in Go: one module, several executables, strict module boundaries (ADR-0003, **Accepted**).
 - **Control plane / data plane separation** — logical from the start, physical (separate processes)
   where justified (ADR-0009, Proposed).
 - **Provider abstraction** — every telco is an adapter behind one interface (ADR-0012, Proposed).
-- **PostgreSQL** as the system of record (ADR-0005, Proposed).
+- **PostgreSQL** as the system of record (ADR-0005, **Accepted**; PostgreSQL 18).
 - Kafka/Redpanda, Redis, ClickHouse are **candidates, deferred** until verified requirements justify them
   (ADR-0006/0007/0008, Proposed).
 
@@ -223,17 +231,19 @@ Details and gaps: [product brief](docs/product/product-brief.md) and
 
 | Area | Preference | Status |
 | ---- | ---------- | ------ |
-| Frontend | React, TypeScript (strict), Vite, Tailwind CSS | Preferred by owner; versions to be pinned at scaffolding |
+| Frontend | React, TypeScript (strict), Vite, Tailwind CSS v4; pnpm 10 (exact version pinned); Node.js 26 LTS | **Accepted** (ADR-0013); one app `client-portal` + `packages/ui`; router, data-fetching, and form libraries deferred to Phase 4 |
 | Styling | Tailwind CSS only; no other styling or CSS frameworks | Owner requirement |
-| Backend language | Go | Preferred by owner |
-| HTTP router | Chi | Under evaluation vs. Go standard library (ADR-0004) |
-| API style | REST + JSON, OpenAPI contracts | Proposed (ADR-0015) |
-| Primary database | PostgreSQL | Proposed (ADR-0005) |
+| Backend language | Go **1.27.4** (pinned locally and in CI) | **Owner decision** (decision log §7) |
+| HTTP router | Chi (`go-chi/chi/v5`) | **Accepted** (ADR-0004) |
+| API style | REST + JSON, OpenAPI contracts | **Accepted** (ADR-0015) |
+| Primary database | PostgreSQL 18 (latest 18.x patch) | **Accepted** (ADR-0005); review PostgreSQL 19 before production |
+| Database access / migrations | `pgx/v5` + `sqlc`; goose | **Accepted** (ADR-0014) |
+| Logging | `log/slog` | **Accepted** (ADR-0016) |
 | Message broker | Kafka or Redpanda | **Deferred** (ADR-0006) |
 | Cache / coordination | Redis | **Deferred** (ADR-0007) |
 | Analytics store | ClickHouse | **Deferred** (ADR-0008) |
 | Containers | Docker | Preferred |
-| Metrics / dashboards | Prometheus / Grafana | Preferred |
+| Metrics / dashboards | Prometheus (`client_golang`) / Grafana | Prometheus client approved for Phase 3 (endpoint not publicly exposed); Grafana preferred, not yet introduced |
 
 ---
 
@@ -387,7 +397,7 @@ Details and examples: [coding standards](docs/standards/coding-standards.md#go).
 - Every variable is documented in an `.env.example` (no real values).
 
 ### 7.8 Database access
-- PostgreSQL driver and query approach per ADR-0014 (proposed: `pgx` + `sqlc`).
+- PostgreSQL driver and query approach per ADR-0014 (accepted: `pgx/v5` + `sqlc`; migrations with goose).
 - SQL lives only in repository code. **Parameterized queries only** — never build SQL with string
   formatting from input.
 - Tenant-scoped repository methods take `tenantID` as an explicit parameter.
@@ -398,7 +408,7 @@ Details and examples: [coding standards](docs/standards/coding-standards.md#go).
 - Standard `testing` package; table-driven tests; `t.Parallel()` where safe; `t.Cleanup` for teardown.
 - Prefer hand-written fakes over generated mocks. Inject clocks and ID generators for determinism.
 - Integration tests use a real PostgreSQL (containerized), not mocks of SQL.
-- Tooling (proposed): `gofmt`, `go vet`, `golangci-lint`, `govulncheck`.
+- Tooling (approved for Phase 3): `gofmt`, `go vet`, `golangci-lint`, `govulncheck`.
 
 ### 7.10 Other rules
 - Money, rates, and credits are **never** `float32`/`float64`. Use the exact representation decided in
@@ -438,16 +448,15 @@ Details: [coding standards](docs/standards/coding-standards.md#frontend).
 - Before creating a component, search `components/ui/` for an existing one. Extend it rather than copy it.
 - New shared components need: typed props, all interactive states (hover, focus, disabled, loading,
   error), keyboard support, and tests.
-- Proposed direction (ADR-0013): complex interactive behaviours (dialogs, menus, dropdowns, popovers,
-  comboboxes) may use a maintained, accessible **headless** primitives library, styled with Tailwind.
-  No pre-styled UI framework. The specific library is an owner decision (D-140); until approved, do not
-  add one.
+- ADR-0013 (accepted): complex interactive behaviours (dialogs, menus, dropdowns, popovers, comboboxes)
+  may later use a maintained, accessible **headless** primitives library, styled with Tailwind. No pre-styled
+  UI framework. The library decision (D-140) is **deferred by the owner**; do not add one.
 
 ### 8.5 API integration
 - All HTTP calls go through the single typed API client in `src/lib/api/`. Components never call `fetch`
   directly.
-- Server data is managed by the data-fetching layer chosen in ADR-0013; do not copy server data into
-  global client state.
+- A data-fetching library is **deferred to Phase 4** (ADR-0013); until then, use the typed API client and do
+  not copy server data into global client state.
 - Handle `401` (session expired) and `403` (forbidden) centrally. Display RFC 9457 problem details
   returned by the server.
 
@@ -487,11 +496,12 @@ Details: [coding standards](docs/standards/coding-standards.md#frontend).
 
 ## 9. API standards
 
-(Proposed in ADR-0015; apply once accepted.)
+(ADR-0015 accepted 2026-11-25. ADR-0018 (idempotency) and ADR-0019 (monetary representation) remain
+Proposed; their items below are marked as proposed.)
 
 - REST over HTTPS, JSON bodies, OpenAPI specification in `contracts/openapi/` as the source of truth.
 - Versioned paths: `/v1/...`. No breaking changes within a published version.
-- JSON field naming: `snake_case` (proposed). Timestamps: RFC 3339 in UTC. Phone numbers: E.164
+- JSON field naming: `snake_case`. Timestamps: RFC 3339 in UTC. Phone numbers: E.164
   (`+639171234567`).
 - Errors: RFC 9457 Problem Details (`application/problem+json`) with a stable machine-readable `type`.
 - Pagination: cursor-based for large collections.
@@ -709,10 +719,9 @@ Authoritative detail: [testing standards](docs/standards/testing-standards.md) (
 
 Full detail: [git workflow](docs/engineering/git-workflow.md).
 
-- **Current state:** `main` does not exist yet and no branch protection is configured; the owner actions
-  to create it are in [git workflow §0](docs/engineering/git-workflow.md#0-current-repository-state-and-required-owner-actions).
-  Until then, branch from the repository's default branch and target PRs at it.
-- **Target state:** `main` is protected. **Never commit or push directly to `main`.** Never force-push shared branches.
+- `main` is the default branch and is protected (owner-confirmed; see
+  [git workflow §0](docs/engineering/git-workflow.md#0-repository-state)). **Never commit or push directly to
+  `main`.** Never force-push shared branches. Create task branches from the latest `main`.
 - One task → one branch → one pull request. Branch names: `<type>/<task-id>-<short-description>`
   (types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`). Tool-assigned branch names (e.g.
   `claude/...`) are acceptable if the PR title carries the task ID.

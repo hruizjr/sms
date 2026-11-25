@@ -67,15 +67,18 @@ criteria below is tracked in the [Phase 2 exit checklist](../discovery/phase2-ex
 
 ### Phase 3 — Walking skeleton
 **Goal:** a minimal end-to-end technical skeleton with no business features.
-**Depends on:** ADR-0002/0003/0004/0013/0014/0015/0016 accepted (does not depend on telco answers); owner
-actions in git-workflow §0 (create `main`, set default branch, configure protection).
+**Status:** In progress — authorized by the owner on 2026-11-25 and delivered in six reviewed groups (0–5);
+see [decision log §7](../engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25).
+**Depends on:** ADR-0002/0003/0004/0005/0013/0014/0015/0016/0017 — accepted 2026-11-25; owner repository
+actions — done (git-workflow §0).
 **Work:** `go.mod`, `cmd/api` with health/readiness endpoints, config loading, logging, metrics endpoint;
 frontend app(s) with design tokens and app shell; local Docker Compose with PostgreSQL; migration tooling;
 CI (format, lint, test, type check, vulnerability and secret scan); OpenAPI skeleton with type generation.
 **Acceptance criteria:**
 - [ ] A new developer/agent can start the local stack with one documented command.
 - [ ] CI runs on every PR and blocks merging on failure.
-- [ ] Branch protection configured on `main`.
+- [x] Branch protection configured on `main` (owner-confirmed 2026-11-25; required CI checks to be added once
+      workflows exist).
 - [ ] Health endpoint served; frontend shell renders; tokens applied; all tests pass.
 - [ ] RLS evaluation completed and documented (ADR-0010, D-141), before Phase 4.
 

@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — all ADRs Proposed | Project owner | 2026-11-24 |
+| Living document — nine ADRs accepted 2026-11-25; others Proposed | Project owner | 2026-11-25 |
 
 ## 1. What an ADR is and why we use them
 
@@ -63,15 +63,16 @@ and keep a one-line entry in the index.
 
 ## 4. Index
 
-**Every ADR is `Proposed`. None has been accepted by the project owner.**
+**On 2026-11-25 the owner accepted ADR-0002, 0003, 0004, 0005, 0013, 0014, 0015, 0016, and 0017.** All other
+ADRs remain `Proposed`; the owner's approval is limited to those decisions and the Phase 3 walking skeleton.
 
 | ADR | Title | Status |
 | --- | ----- | ------ |
 | 0001 | Record architecture decisions as ADRs | Proposed |
-| 0002 | Monorepo layout | Proposed |
-| 0003 | Modular monolith with multiple executables | Proposed |
-| 0004 | HTTP router: Chi vs. standard library | Proposed |
-| 0005 | PostgreSQL as system of record | Proposed |
+| 0002 | Monorepo layout | **Accepted** (owner, 2026-11-25) |
+| 0003 | Modular monolith with multiple executables | **Accepted** (owner, 2026-11-25) |
+| 0004 | HTTP router: Chi vs. standard library | **Accepted** (owner, 2026-11-25) |
+| 0005 | PostgreSQL as system of record | **Accepted** (owner, 2026-11-25) |
 | 0006 | Message broker (Kafka/Redpanda) — defer, with reconsideration criteria | Proposed (revised 2026-11-24) |
 | 0007 | Redis — defer, with reconsideration criteria | Proposed (revised 2026-11-24) |
 | 0008 | ClickHouse — defer, with reconsideration criteria | Proposed (revised 2026-11-24) |
@@ -79,11 +80,11 @@ and keep a one-line entry in the index.
 | 0010 | Multi-tenancy: shared schema with `tenant_id`; RLS as evaluated defense-in-depth | Proposed (revised 2026-11-24) |
 | 0011 | Credit ledger model | Proposed (revised 2026-11-24) |
 | 0012 | Provider abstraction, capabilities, and simulator adapter | Proposed (revised 2026-11-24) |
-| 0013 | Frontend application structure and component strategy | Proposed (revised 2026-11-24) |
-| 0014 | Database access and migration tooling | Proposed (revised 2026-11-24) |
-| 0015 | API contracts: OpenAPI-first | Proposed (revised 2026-11-24) |
-| 0016 | Structured logging with `log/slog` | Proposed |
-| 0017 | Git workflow for one owner + multiple AI agents | Proposed (revised 2026-11-24) |
+| 0013 | Frontend application structure and component strategy | **Accepted** (owner, 2026-11-25) |
+| 0014 | Database access and migration tooling | **Accepted** (owner, 2026-11-25) |
+| 0015 | API contracts: OpenAPI-first | **Accepted** (owner, 2026-11-25) |
+| 0016 | Structured logging with `log/slog` | **Accepted** (owner, 2026-11-25) |
+| 0017 | Git workflow for one owner + multiple AI agents | **Accepted** (owner, 2026-11-25) |
 | 0018 | API idempotency contract | Proposed (new 2026-11-24) |
 | 0019 | Monetary representation, scale, and rounding | Proposed — **open** (new 2026-11-24) |
 | 0020 | Internal event delivery: transactional outbox, at-least-once | Proposed (new 2026-11-24) |
@@ -91,7 +92,8 @@ and keep a one-line entry in the index.
 
 ## 5. Review summary (2026-11-24)
 
-This table is a **reviewer recommendation to help the owner decide**. It does not change any status.
+This table is a **reviewer recommendation to help the owner decide**, as written on 2026-11-24. It does not
+change any status; the index above shows current statuses.
 
 | ADR | Sufficiently defined? | Depends on external (telco / regulatory / commercial) info? | Recommendation | Outstanding conditions |
 | --- | --------------------- | ----------------------------------------------------------- | -------------- | ---------------------- |
@@ -145,8 +147,10 @@ written down to be followed consistently.
 
 ### ADR-0002: Monorepo layout
 
-- **Status:** Proposed · **Date proposed:** 2026-11-24 (owner has already stated a monorepo preference;
+- **Status:** **Accepted** (by owner, 2026-11-25) · **Date proposed:** 2026-11-24 (owner has already stated a monorepo preference;
   this ADR records the specific *layout*)
+
+**Owner decision (2026-11-25):** accepted. Layout as in option A. Go module path: `github.com/hruizjr/sms/backend`.
 
 **Context** — Owner requires one repository for frontend, backend, infrastructure, contracts, and docs.
 
@@ -168,7 +172,9 @@ to be confirmed at scaffolding.
 
 ### ADR-0003: Modular monolith with multiple executables
 
-- **Status:** Proposed · **Date proposed:** 2026-11-24
+- **Status:** **Accepted** (by owner, 2026-11-25) · **Date proposed:** 2026-11-24
+
+**Owner decision (2026-11-25):** accepted. Phase 3 creates only the `cmd/api` and `cmd/migrate` executables; further executables need an approved task.
 
 **Context** — The platform has distinct capabilities (identity, billing, messaging, providers ...) and
 eventually high-volume processing. Team: one owner and AI agents. Traffic: unverified.
@@ -193,7 +199,9 @@ list (architecture phase).
 
 ### ADR-0004: HTTP router — Chi vs. standard library
 
-- **Status:** Proposed · **Date proposed:** 2026-11-24
+- **Status:** **Accepted** (by owner, 2026-11-25) · **Date proposed:** 2026-11-24
+
+**Owner decision (2026-11-25):** accepted. Router: Chi (`github.com/go-chi/chi/v5`), with handlers kept as standard `net/http` handlers.
 
 **Context** — Owner prefers Chi, subject to evaluation. Since Go 1.22 the standard library `net/http`
 `ServeMux` supports HTTP-method matching and path wildcards, which narrows the gap.
@@ -219,7 +227,9 @@ status at scaffolding time.
 
 ### ADR-0005: PostgreSQL as system of record
 
-- **Status:** Proposed · **Date proposed:** 2026-11-24
+- **Status:** **Accepted** (by owner, 2026-11-25) · **Date proposed:** 2026-11-24
+
+**Owner decision (2026-11-25):** accepted. PostgreSQL **18**, using the latest available 18.x patch release at the time of pinning. PostgreSQL 19 compatibility must be reviewed again before production deployment.
 
 **Context** — Need ACID transactions for money and message state, strong constraints, mature tooling.
 
@@ -481,8 +491,15 @@ will differ in protocol, receipt behaviour, encodings, limits, and extra feature
 
 ### ADR-0013: Frontend application structure and component strategy
 
-- **Status:** Proposed · **Date proposed:** 2026-11-24 · **Revised:** 2026-11-24 (component strategy
+- **Status:** **Accepted** (by owner, 2026-11-25) · **Date proposed:** 2026-11-24 · **Revised:** 2026-11-24 (component strategy
   direction proposed by the owner recorded)
+
+**Owner decision (2026-11-25):** accepted with these choices:
+- React, TypeScript (strict), Vite, Tailwind CSS **v4**; pnpm **10** with an exact version pinned.
+- One application initially, `client-portal`, plus a shared UI package, `packages/ui`. An `admin-portal`
+  application is added later, when admin functionality begins (D-091).
+- Router, data-fetching, and form libraries are **deferred to Phase 4** and need separate approval.
+- The headless UI library decision (D-140) is **deferred**.
 
 **Context** — The selected stack is React, TypeScript, Vite, and Tailwind CSS. Two audiences (clients, our
 admins). The owner wants no unnecessary UI or styling libraries.
@@ -518,7 +535,9 @@ Each library above is a dependency requiring approval under `AGENTS.md` §2 rule
 
 ### ADR-0014: Database access and migration tooling
 
-- **Status:** Proposed · **Date proposed:** 2026-11-24 · **Revised:** 2026-11-24 (selection criteria added)
+- **Status:** **Accepted** (by owner, 2026-11-25) · **Date proposed:** 2026-11-24 · **Revised:** 2026-11-24 (selection criteria added)
+
+**Owner decision (2026-11-25):** accepted. Data access: `pgx/v5` with `sqlc`. Migration tool: **goose**. During the Phase 3 walking skeleton, migrations contain no business-specific tables.
 
 **Options considered (data access)**
 | Option | Advantages | Disadvantages |
@@ -549,8 +568,10 @@ ADR-0010 and ADR-0019 outcomes.
 
 ### ADR-0015: API contracts — OpenAPI-first
 
-- **Status:** Proposed · **Date proposed:** 2026-11-24 · **Revised:** 2026-11-24 (idempotency and money
+- **Status:** **Accepted** (by owner, 2026-11-25) · **Date proposed:** 2026-11-24 · **Revised:** 2026-11-24 (idempotency and money
   details delegated to ADR-0018 and ADR-0019)
+
+**Owner decision (2026-11-25):** accepted. OpenAPI specification in `contracts/openapi/` as the source of truth, with TypeScript types generated from it. This does **not** accept ADR-0018 (idempotency) or ADR-0019 (monetary representation), which remain Proposed.
 
 **Options considered**
 | Option | Advantages | Disadvantages |
@@ -569,7 +590,9 @@ ADR-0019 (proposed).
 
 ### ADR-0016: Structured logging with `log/slog`
 
-- **Status:** Proposed · **Date proposed:** 2026-11-24
+- **Status:** **Accepted** (by owner, 2026-11-25) · **Date proposed:** 2026-11-24
+
+**Owner decision (2026-11-25):** accepted. Structured logging with the standard library `log/slog`.
 
 **Options** — A. Standard library `log/slog` · B. zap / zerolog.
 **Recommendation** — A: structured, part of the standard library (no dependency), adequate performance for
@@ -581,12 +604,13 @@ our needs; revisit only if profiling shows logging as a bottleneck.
 
 ### ADR-0017: Git workflow for one owner + multiple AI agents
 
-- **Status:** Proposed · **Date proposed:** 2026-11-24 · **Revised:** 2026-11-24 (current repository state noted)
+- **Status:** **Accepted** (by owner, 2026-11-25) · **Date proposed:** 2026-11-24 · **Revised:** 2026-11-24 (current repository state noted)
 
-**Context** — One human reviewer; several agents possibly working in parallel. **Current state:** the
-repository has no `main` branch yet; `claude/ecstatic-gates-ji0o5b` is the default branch holding the project
-history, and no branch protection is configured. The owner actions required to reach the target workflow
-are listed in [git-workflow.md §0](git-workflow.md#0-current-repository-state-and-required-owner-actions).
+**Owner decision (2026-11-25):** accepted. `main` is the default branch and is protected (owner-confirmed): pull requests required, zero required approvals, conversation resolution required, force pushes and deletion blocked. Required CI status checks are added once workflows exist. Phase 3 is delivered as one Draft PR per implementation group, each reviewed and merged by the owner before the next starts.
+
+**Context** — One human reviewer; several agents possibly working in parallel. At the time of proposal
+(2026-11-24) the repository had no `main` branch and no branch protection; those owner actions were completed
+before acceptance — see [git-workflow.md §0](git-workflow.md#0-repository-state).
 
 **Options considered**
 | Option | Advantages | Disadvantages |
@@ -692,3 +716,49 @@ The customer-visible status set is a mapping decided separately (D-099).
 
 **Operational cost** — Low. **Missing information** — D-095 to D-099; telco receipt behaviour (D-104,
 D-114–D-116).
+
+---
+
+## 7. Owner decisions — Phase 3 walking skeleton (2026-11-25)
+
+The owner approved the Phase 3 recommendations with the adjustments below. **The approval is limited to these
+decisions and the Phase 3 walking skeleton scope.** All other ADRs and later-phase functionality remain
+subject to separate owner approval.
+
+### 7.1 Toolchain
+
+| Item | Decision | Note |
+| ---- | -------- | ---- |
+| Go | **1.27.4** | Pinned exactly; same version locally and in CI. Availability verified before pinning in Group 1; if unavailable, report to the owner — no substitution. |
+| Node.js | **26 LTS** | Adopted after verifying compatibility of the approved frontend dependencies. Exact version pinned; same locally and in CI. |
+| pnpm | **10**, exact version pinned | Same locally and in CI. |
+| PostgreSQL | **18**, latest available 18.x patch | Review PostgreSQL 19 compatibility before production deployment (ADR-0005). |
+
+### 7.2 Dependencies approved for Phase 3
+
+Each dependency is still justified in the pull request that introduces it (`AGENTS.md` §2 rule 5: purpose,
+licence, maintenance status, security record), with exact versions pinned at that time.
+
+| Area | Approved |
+| ---- | -------- |
+| Go libraries | `github.com/go-chi/chi/v5`, `github.com/jackc/pgx/v5`, `github.com/pressly/goose/v3`, `github.com/prometheus/client_golang`. Configuration uses the standard library only. |
+| Go tools | `sqlc`, `golangci-lint`, `govulncheck` |
+| Frontend | `react`, `react-dom`, `vite`, `@vitejs/plugin-react`, `typescript`, `tailwindcss` with `@tailwindcss/vite` (v4), `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `jsdom`, `eslint`, `typescript-eslint`, `eslint-plugin-react-hooks`, `prettier`, `openapi-typescript` |
+| API contract | `@redocly/cli` (OpenAPI linting and validation) |
+| CI | Official `actions/*`, `golangci-lint-action`, `gitleaks-action`, GitHub dependency review — all **pinned to immutable commit SHAs** |
+
+### 7.3 Engineering conditions
+
+1. Basic automated CI is set up starting in **Group 1**; coverage is expanded in **Group 5**.
+2. The Prometheus metrics endpoint is **not publicly exposed**.
+3. GitHub Actions are pinned to immutable commit SHAs.
+4. Database migrations contain **no business-specific tables** during the walking skeleton.
+5. No Kafka, Redis, ClickHouse, SMPP, or actual SMS sending.
+6. No customer authentication, billing, tenant management, or other business functionality.
+
+### 7.4 Implementation workflow
+
+Six groups, one Draft PR each; the owner reviews and merges each group before the next begins:
+Group 0 (record decisions), 1 (Go API skeleton with basic CI), 2 (database), 3 (API contract), 4 (frontend),
+5 (local stack, expanded CI, developer documentation). The PostgreSQL Row-Level Security evaluation
+(ADR-0010, still Proposed) is a separate spike after the skeleton and before Phase 4.
