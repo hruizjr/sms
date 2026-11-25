@@ -130,6 +130,9 @@ jobs:
           test "$(bin/migrate version)" = "0"
           bin/migrate up
           bin/migrate status
+          # Rollback fails closed: without an explicit APP_ENV it must be refused.
+          if env -u APP_ENV bin/migrate down; then echo "migrate down ran without APP_ENV"; exit 1; fi
+          test "$(bin/migrate version)" != "0"
 
       - name: API smoke test (healthz, readyz, graceful shutdown)
         run: |

@@ -31,8 +31,10 @@ Commands:
   up        Apply all pending migrations.
   status    List every migration and whether it is applied.
   version   Print the version of the most recently applied migration (0 if none).
-  down      Roll back the most recently applied migration.
-            Refused when APP_ENV=production: production migrations are forward-only.
+  down      Roll back the most recently applied migration (local development and tests only).
+            Requires APP_ENV set explicitly to development or test, and DB_HOST set to a
+            loopback IP address (127.0.0.1 or ::1). Refused otherwise, including when APP_ENV
+            is missing or production: production migrations are forward-only.
 
 Configuration is read from the same environment variables as the API (DB_HOST, DB_PORT,
 DB_NAME, DB_USER, DB_PASSWORD, DB_SSLMODE, ...). See backend/README.md.
@@ -83,10 +85,11 @@ func run(ctx context.Context, args []string, lookup config.LookupFunc, stdout, s
 		fail("migrate: %v\n", err)
 		return exitError
 	}
-	if command == "down" && cfg.Env == config.EnvironmentProduction {
-		fail("migrate: down is disabled when APP_ENV=production; production migrations are " +
-			"forward-only (AGENTS.md §10.1). Fix a mistake with a new migration.\n")
-		return exitError
+	if command == "down" {
+		if err := checkRollbackAllowed(lookup, cfg.Database); err != nil {
+			fail("migrate: %v\n", err)
+			return exitError
+		}
 	}
 
 	logger := observability.NewLogger(stderr, cfg.Log, "migrate").With("command", command)
@@ -129,6 +132,39 @@ func (o *output) Write(p []byte) (int, error) {
 
 func (o *output) println(a ...any) {
 	_, _ = fmt.Fprintln(o, a...) // the error is kept in o.err and reported by run
+}
+
+// errRollbackRefused is wrapped by every reason checkRollbackAllowed gives.
+var errRollbackRefused = errors.New("down is refused")
+
+// checkRollbackAllowed decides whether `migrate down` may run. It fails closed:
+//
+//   - APP_ENV must be supplied explicitly (the general configuration's "development" default does
+//     not count) and must be development or test. Missing APP_ENV and APP_ENV=production are
+//     refused; production migrations are forward-only (AGENTS.md §10.1).
+//   - DB_HOST must be a loopback IP literal (127.0.0.0/8 or ::1). Host names, including localhost,
+//     and every non-loopback address are refused, so a rollback can only reach a local database.
+//
+// There is deliberately no override flag. up, status, and version are not affected.
+func checkRollbackAllowed(lookup config.LookupFunc, db config.DatabaseConfig) error {
+	appEnv, ok := config.ExplicitEnvironment(lookup)
+	switch {
+	case !ok:
+		return fmt.Errorf("%w: %s is not set; rollback requires %s=development or %s=test to be set explicitly",
+			errRollbackRefused, config.EnvAppEnv, config.EnvAppEnv, config.EnvAppEnv)
+	case appEnv == config.EnvironmentProduction:
+		return fmt.Errorf("%w when %s=production: production migrations are forward-only (AGENTS.md §10.1); "+
+			"fix a mistake with a new migration", errRollbackRefused, config.EnvAppEnv)
+	case appEnv != config.EnvironmentDevelopment && appEnv != config.EnvironmentTest:
+		return fmt.Errorf("%w: %s=%q; rollback requires development or test",
+			errRollbackRefused, config.EnvAppEnv, string(appEnv))
+	}
+	if !config.IsLoopbackIP(db.Host) {
+		return fmt.Errorf("%w: %s=%q is not a loopback IP address; rollback is allowed only against a local "+
+			"database (127.0.0.1 or ::1; host names such as localhost are not accepted)",
+			errRollbackRefused, config.EnvDBHost, db.Host)
+	}
+	return nil
 }
 
 func execute(ctx context.Context, command string, cfg config.DatabaseConfig, stdout *output) error {
