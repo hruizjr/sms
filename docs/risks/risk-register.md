@@ -32,7 +32,7 @@ All risks below are **Open** at the time of writing; no mitigation has been impl
 
 | ID | Risk | Impact | Likelihood | Mitigation | Status |
 | -- | ---- | ------ | ---------- | ---------- | ------ |
-| R-20 | Platform used for smishing or scams (malicious customers or compromised accounts), leading to harm, telco suspension, regulatory action, and reputational damage. | High | High | KYC; sender ID vetting; campaign approval; content and URL policies; velocity limits; kill switch; monitoring. | Open |
+| R-20 | Platform used for smishing or scams (malicious customers or compromised accounts), leading to harm, telco suspension, regulatory action, and reputational damage. | High | High | KYC; sender ID vetting; campaign approval (later release — the MVP has no bulk or campaign sending, MVP-13 deferred 2026-11-25); content and URL policies; velocity limits; kill switch; monitoring. | Open |
 | R-21 | Cross-tenant data leakage. | High | Medium | Tenant isolation in depth (ADR-0010); mandatory cross-tenant tests. | Open |
 | R-22 | Personal data breach (phone numbers, message content, OTPs). | High | Medium | Data minimization; masking in logs; encryption; access control; retention limits; breach response plan. | Open |
 | R-23 | Admin or API key account takeover. | High | Medium | MFA for admins; hashed, scoped, revocable API keys; anomaly alerts; audit logs. | Open |

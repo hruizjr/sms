@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — **no criterion satisfied** | Project owner | 2026-11-24 |
+| Draft — one criterion satisfied (EX-13, 2026-11-25) | Project owner | 2026-11-26 |
 
 This checklist maps each Phase 2 acceptance criterion and work item in the
 [development roadmap](../roadmap/development-roadmap.md) to the evidence or owner approval needed. The
@@ -27,12 +27,12 @@ or an explicit, recorded owner decision.
 | EX-6 | Collect traffic data | As EX-2 | D-004, D-060–D-062 | Not started |
 | EX-7 | Collect telco technical answers | Telco questionnaire answers logged per telco | D-100–D-119 | Not started |
 | EX-8 | Obtain regulatory guidance | As EX-4 | D-120–D-131 | Not started |
-| EX-9 | Business decisions: billing basis, credit model, MVP scope, launch customers | Recorded owner decisions | D-080–D-084, D-089, D-160–D-163 | Not started |
+| EX-9 | Business decisions: billing basis, credit model, MVP scope, launch customers | Recorded owner decisions | D-080–D-084, D-089, D-160–D-163 | In progress — MVP scope partly decided (2026-11-25): bulk sending through API and portal deferred (MVP-08, MVP-09); one recipient per portal send; campaign approval workflow deferred (MVP-13); essential abuse controls confirmed (MVP-01, MVP-05, MVP-29, MVP-30); 2026-11-26: saved contacts/groups (MVP-11) and campaign scheduling (MVP-12) deferred |
 | EX-10 | Write MVP SRS, domain model, system architecture, threat model, RBAC design, data classification and retention schedule (draft) | Documents approved by owner | — (Phase 2B) | Not started |
-| EX-11 | Decide ADRs 0001–0021 | Owner records Accepted / Rejected / amended for each; see [decision readiness](decision-readiness.md) | D-142 | Not started |
+| EX-11 | Decide ADRs 0001–0021 | Owner records Accepted / Rejected / amended for each; see [decision readiness](decision-readiness.md) | D-142 | In progress — accepted on 2026-11-25: 0002–0005, 0013–0018, and 0021 (limited scope); see the [decision log index](../engineering/decision-log.md#4-index) |
 | EX-12 | Decide monetary representation and rounding | ADR-0019 decided; D-092, D-093 resolved | ADR-0019 | Not started |
-| EX-13 | Decide idempotency details | D-094 resolved; ADR-0018 decided | ADR-0018 | Not started |
-| EX-14 | Decide uncertain-outcome and receipt policies | D-095–D-099 resolved; ADR-0021 decided | ADR-0021 | Not started |
+| EX-13 | Decide idempotency details | D-094 resolved; ADR-0018 decided | ADR-0018 | **Satisfied** — D-094a–e decided and ADR-0018 accepted by the owner, 2026-11-25 ([decision log §8](../engineering/decision-log.md#8-owner-decisions--public-api-contract-2026-11-25)) |
+| EX-14 | Decide uncertain-outcome and receipt policies | D-095–D-099 resolved; ADR-0021 decided | ADR-0021 | In progress — ADR-0021 accepted with a limited scope and customer labels decided (2026-11-25); D-095, D-096 (billing), D-097, D-098, D-099 (webhooks) open |
 
 ## 3. Readiness summary
 

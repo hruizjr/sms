@@ -16,7 +16,7 @@ Phase 1  Engineering foundation ...................... COMPLETE
 Phase 2  Discovery closure & solution architecture ◀── telco, regulatory, traffic, business inputs
          (2A preparation package merged; external discovery and 2B ONGOING)
    │
-Phase 3  Walking skeleton (tooling, CI, local stack)   AUTHORIZED, IN PROGRESS (Group 2 in review)
+Phase 3  Walking skeleton (tooling, CI, local stack)   AUTHORIZED, IN PROGRESS (Group 3 in review)
    │
 Phase 4  Control-plane core: tenants, identity, RBAC, audit
    │
@@ -75,14 +75,14 @@ criteria below is tracked in the [Phase 2 exit checklist](../discovery/phase2-ex
 **Status:** Authorized by the owner on 2026-11-25 and **in progress**. It will be delivered in six groups, each
 reviewed and merged before the next starts
 ([decision log §7](../engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25)).
-**Implementation status:** Group 1 (Go API skeleton) is merged; Group 2 (PostgreSQL foundation) is in review.
+**Implementation status:** Groups 1 (Go API skeleton) and 2 (PostgreSQL foundation) are merged; Group 3 (OpenAPI contract) is in review.
 
 | Group | Scope | State |
 | ----- | ----- | ----- |
 | 0 | Record owner decisions (documentation only) | Merged (PR #3) |
 | 1 | Go API skeleton, with basic CI | Merged (PR #4) |
-| 2 | PostgreSQL, migrations, local database | Submitted — awaiting owner review and merge |
-| 3 | API contract (OpenAPI) | Not started |
+| 2 | PostgreSQL, migrations, local database | Merged (PR #5) |
+| 3 | API contract (OpenAPI) | Submitted — awaiting owner review and merge |
 | 4 | Frontend | Not started |
 | 5 | Local development stack and expanded CI | Not started |
 
@@ -129,8 +129,13 @@ CI (format, lint, test, type check, vulnerability and secret scan); OpenAPI skel
 
 ### Phase 7 — Portal features (MVP)
 **Acceptance criteria:**
-- [ ] MVP client portal features (per approved SRS): sending, contacts/imports, campaigns, reports, API keys, balance.
-- [ ] MVP admin features: tenant management, sender ID approval, credit allocation, pricing, campaign approval, monitoring views.
+- [ ] MVP client portal features (per approved SRS): single-recipient sending (one manually entered mobile number per
+      send operation; no pasted lists, recipient files, or group sends), reports, API keys, balance. Bulk sending and
+      campaign sending are deferred to a later release (owner decisions 2026-11-25, MVP-08, MVP-09); saved contacts,
+      contact groups, and campaign scheduling are deferred as well (owner decisions 2026-11-26, MVP-11, MVP-12).
+- [ ] MVP admin features: tenant management and activation, sender ID approval, credit allocation, pricing, abuse
+      controls (velocity limits, alerts, kill switch), audit log, monitoring views. Campaign approval is deferred beyond
+      the MVP (owner decision 2026-11-25, MVP-13).
 - [ ] E2E tests for critical journeys pass; accessibility checks pass.
 
 ### Phase 8 — First real telco integration (test environment)

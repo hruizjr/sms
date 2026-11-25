@@ -9,10 +9,10 @@
 | Field | Value |
 | ----- | ----- |
 | Project | Enterprise A2P SMS Platform (Philippines) |
-| Current phase | **Phase 3 — Walking skeleton: authorized and in progress.** Groups 0 (decisions) and 1 (Go API skeleton) are merged. Group 2 (PostgreSQL foundation: connection pool, migrations, local database, integration tests — no business tables) is submitted for owner review. Groups 3–5 are not started. See [decision log §7](docs/engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25). |
+| Current phase | **Phase 3 — Walking skeleton: authorized and in progress.** Groups 0 (decisions), 1 (Go API skeleton), and 2 (PostgreSQL foundation) are merged. Group 3 (OpenAPI contract for the public messages API — specification, validation, and CI only; nothing implemented) is submitted for owner review. Groups 4–5 are not started. See [decision log §7](docs/engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25). |
 | Authorized scope | **Phase 3 walking skeleton only** (owner approval 2026-11-25). Each implementation group starts only after the previous group is reviewed and merged. Later phases and all other ADRs need separate owner approval. |
 | Decision authority | The project owner (a single human). Agents propose; the owner decides. |
-| Last updated | 2026-11-25 (Phase 3 Group 2 status) |
+| Last updated | 2026-11-25 (Phase 3 Group 3 status; ADR-0018 accepted) |
 
 ---
 
@@ -45,8 +45,10 @@ optional; if you believe one must be broken, stop and ask the project owner.
 ## 1. Current status and what you may do
 
 The repository contains documentation, repository hygiene files, the Go API skeleton in `backend/` (health
-and readiness endpoints, metrics, CI) and — once Group 2 is merged — the PostgreSQL foundation (connection
-pool, goose migrations without business tables, local Docker Compose database, integration tests). The Phase 3 walking skeleton (technical
+and readiness endpoints, metrics, CI), the PostgreSQL foundation (connection pool, goose migrations without
+business tables, local Docker Compose database, integration tests) and — once Group 3 is merged — the draft
+OpenAPI contract for the public messages API in `contracts/openapi/` (specification only; no endpoint is
+implemented). The Phase 3 walking skeleton (technical
 foundation only) is added one reviewed group at a time. **No business functionality exists or is authorized.**
 
 **Verified facts:** almost none. The business *intends* to become an A2P SMS aggregator. No telco
@@ -265,7 +267,7 @@ Details and gaps: [product brief](docs/product/product-brief.md) and
 AGENTS.md          This file
 backend/           Go module (cmd/ = executables, internal/ = modules)   — API + database skeleton
 frontend/          React applications                                    — empty
-contracts/         OpenAPI specs, event and webhook schemas              — empty
+contracts/         OpenAPI specs, event and webhook schemas              — draft public API v1 (Group 3)
 infra/             Docker, local dev stack, observability config         — local PostgreSQL
 scripts/           Helper scripts                                        — empty
 tests/             E2E, load, provider-contract suites                   — empty
@@ -511,8 +513,8 @@ Details: [coding standards](docs/standards/coding-standards.md#frontend).
 
 ## 9. API standards
 
-(ADR-0015 accepted 2026-11-25. ADR-0018 (idempotency) and ADR-0019 (monetary representation) remain
-Proposed; their items below are marked as proposed.)
+(ADR-0015 and ADR-0018 (idempotency) accepted 2026-11-25. ADR-0019 (monetary representation) remains
+Proposed; its item below is marked as proposed.)
 
 - REST over HTTPS, JSON bodies, OpenAPI specification in `contracts/openapi/` as the source of truth.
 - Versioned paths: `/v1/...`. No breaking changes within a published version.
@@ -520,8 +522,8 @@ Proposed; their items below are marked as proposed.)
   (`+639171234567`).
 - Errors: RFC 9457 Problem Details (`application/problem+json`) with a stable machine-readable `type`.
 - Pagination: cursor-based for large collections.
-- Message-submission endpoints MUST support an **idempotency key** supplied by the client, following the
-  proposed contract in [API idempotency](docs/architecture/api-idempotency.md) (ADR-0018).
+- Message-submission endpoints MUST require an **idempotency key** supplied by the client, following the
+  accepted contract in [API idempotency](docs/architecture/api-idempotency.md) (ADR-0018).
 - Monetary amounts are transmitted as strings with documented currency and scale (proposed, ADR-0019).
 - Resource IDs are opaque strings; never expose sequential database IDs.
 - Every endpoint documents: authentication, required permission, rate limit, and error cases.
@@ -614,7 +616,7 @@ The authoritative definitions are in [messaging reliability](docs/architecture/m
 ### 11.2 Idempotency
 - **Consumers:** every consumer is idempotent and documents its duplicate-detection mechanism
   (processed-event record, conditional state transition, or unique business key — messaging reliability §2.4).
-- **API:** message submission accepts a client idempotency key per the proposed contract (ADR-0018). It
+- **API:** message submission requires a client idempotency key per the accepted contract (ADR-0018). It
   prevents duplicate operations **inside our platform**; it does not guarantee a single telco submission.
 - Our internal message ID is created once at acceptance and never changes. Telco message IDs are stored
   as a mapping, never used as our primary identity.

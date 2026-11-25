@@ -1,0 +1,67 @@
+# Contracts CI — Phase 3 Group 3 (OpenAPI contract).
+#
+# The job name below is the status-check name to require on `main` once this workflow is merged:
+#   "OpenAPI contract check".
+#
+# Security: least-privilege token (read-only contents), actions pinned to full commit SHAs, no
+# secrets used, credentials not persisted after checkout. Tool versions are pinned in `env` and in
+# contracts/package.json ("engines", enforced by engine-strict in contracts/.npmrc); dependencies are
+# installed from the committed lockfile only. No path filters, so the check always reports a status.
+name: Contracts CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contracts-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "26.13.1"   # decision log §7.1 (Node.js 26 LTS, exact); must match contracts/package.json
+  PNPM_VERSION: "10.34.9"   # decision log §7.1 (pnpm 10, exact); must match contracts/package.json
+
+defaults:
+  run:
+    working-directory: contracts
+
+jobs:
+  openapi:
+    name: OpenAPI contract check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install pnpm
+        run: npm install --global "pnpm@${PNPM_VERSION}"
+
+      - name: Show tool versions
+        run: |
+          node --version
+          pnpm --version
+
+      - name: Install dependencies (lockfile only)
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint OpenAPI specification (Redocly)
+        run: pnpm run lint
+
+      - name: Bundle OpenAPI specification
+        run: pnpm run bundle
+
+      - name: Run contract tests
+        run: pnpm run test

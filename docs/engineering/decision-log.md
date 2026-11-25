@@ -65,6 +65,8 @@ and keep a one-line entry in the index.
 
 **On 2026-11-25 the owner accepted ADR-0002, 0003, 0004, 0005, 0013, 0014, 0015, 0016, and 0017.** All other
 ADRs remain `Proposed`; the owner's approval is limited to those decisions and the Phase 3 walking skeleton.
+**Later on 2026-11-25 (PR #7 review) the owner also accepted ADR-0018, and ADR-0021 with a limited scope**
+(see [§8](#8-owner-decisions--public-api-contract-2026-11-25)).
 
 | ADR | Title | Status |
 | --- | ----- | ------ |
@@ -85,10 +87,10 @@ ADRs remain `Proposed`; the owner's approval is limited to those decisions and t
 | 0015 | API contracts: OpenAPI-first | **Accepted** (owner, 2026-11-25) |
 | 0016 | Structured logging with `log/slog` | **Accepted** (owner, 2026-11-25) |
 | 0017 | Git workflow for one owner + multiple AI agents | **Accepted** (owner, 2026-11-25) |
-| 0018 | API idempotency contract | Proposed (new 2026-11-24) |
+| 0018 | API idempotency contract | **Accepted** (owner, 2026-11-25) |
 | 0019 | Monetary representation, scale, and rounding | Proposed — **open** (new 2026-11-24) |
 | 0020 | Internal event delivery: transactional outbox, at-least-once | Proposed (new 2026-11-24) |
-| 0021 | Message status model and uncertain outcomes | Proposed (new 2026-11-24) |
+| 0021 | Message status model and uncertain outcomes | **Accepted — limited scope** (owner, 2026-11-25): eight customer-visible statuses and initial reason codes only |
 
 ## 5. Review summary (2026-11-24)
 
@@ -634,7 +636,19 @@ before acceptance — see [git-workflow.md §0](git-workflow.md#0-repository-sta
 
 ### ADR-0018: API idempotency contract
 
-- **Status:** Proposed · **Date proposed:** 2026-11-24
+- **Status:** **Accepted** (by owner, 2026-11-25) · **Date proposed:** 2026-11-24
+
+**Owner decision (2026-11-25, PR #7 review):** accepted, with decisions D-094a–e and these clarifications:
+- The key is **required** on message submission; scope is **tenant (account) + operation**; business
+  rejections such as insufficient credit are **not recorded**; retention is **seven days**; bulk sending
+  is deferred to a later release (D-094e).
+- For the same tenant, operation, and key: a **different normalized request body** returns
+  `422 idempotency-key-reused`, **whether the original request is still processing or has completed**; an
+  **identical body** returns `409 idempotency-request-in-progress` while the original is still processing,
+  and a replay of the original `202` response and body with `Idempotent-Replayed: true` once it has completed.
+- `X-Request-ID` and other tracing or transport headers are **not** part of the comparison; the comparison
+  is based on the normalized request body.
+- The replay header name (`Idempotent-Replayed`) remains provisional.
 
 **Context** — Clients retry requests after timeouts. Without idempotency, a retry can create a second
 message, a second charge, and a second SMS to a real person.
@@ -707,7 +721,17 @@ redelivery window (ADR-0006).
 
 ### ADR-0021: Message status model and uncertain outcomes
 
-- **Status:** Proposed · **Date proposed:** 2026-11-24
+- **Status:** **Accepted — limited scope** (by owner, 2026-11-25) · **Date proposed:** 2026-11-24
+
+**Owner decision (2026-11-25, PR #7 review):** accepted, **limited to** the approved customer-visible status
+model: the eight statuses `accepted`, `provider_accepted`, `submission_uncertain`, `delivered`,
+`undelivered`, `unknown`, `rejected`, `failed`, and the initial reason-code vocabulary (ten codes,
+extensible), as defined in the [public API contract](../../contracts/openapi/README.md#3-status-reference-customer-visible-statuses).
+This acceptance does **not** settle, and these remain **separate open decisions**:
+- the **billing treatment of `unknown`** and other uncertain messages, and the effect of late receipts after
+  a release or refund (D-096);
+- **webhook behaviour** (D-099, webhook part);
+- the ambiguous-submission policy (D-095), segment roll-up (D-097), and conflicting final receipts (D-098).
 
 **Context** — API acceptance, queueing, provider submission, provider acknowledgment, final receipts, and
 customer-visible status are different milestones. Timeouts and missing receipts do not prove
@@ -770,3 +794,26 @@ Six groups, one Draft PR each; the owner reviews and merges each group before th
 Group 0 (record decisions), 1 (Go API skeleton with basic CI), 2 (database), 3 (API contract), 4 (frontend),
 5 (local stack, expanded CI, developer documentation). The PostgreSQL Row-Level Security evaluation
 (ADR-0010, still Proposed) is a separate spike after the skeleton and before Phase 4.
+
+---
+
+## 8. Owner decisions — public API contract (2026-11-25)
+
+Recorded from the owner's review of PR #7 (Phase 3 Group 3, OpenAPI contract). **The approval is limited to
+these decisions**; no other ADR status changed.
+
+| Item | Decision |
+| ---- | -------- |
+| ADR-0018 (API idempotency) | **Accepted**, with D-094a–e and the outcome clarifications recorded in ADR-0018 above |
+| ADR-0021 (status model) | **Accepted — limited** to the eight customer-visible statuses and the initial reason-code vocabulary; D-096 billing of uncertain messages and D-099 webhook behaviour remain open |
+| Bulk sending (D-094e; MVP-08, MVP-09) | Bulk sending through the public API and through the client portal (uploaded recipient file) is **deferred to a later release**; the MVP supports single-message sending through the portal and the public API |
+| Portal recipient scope (MVP-09) | One portal send operation accepts **exactly one recipient**: no pasted recipient lists, recipient-file uploads, contact-group sends, or multi-recipient selection. Separate single-recipient sends remain subject to rate limits and abuse controls |
+| Campaign approval (MVP-13; D-025, D-087) | MVP-13 changed from Essential to **Deferrable**: dedicated campaign-level approval workflows are deferred beyond the MVP (no bulk sending or campaign-sending workflow in the MVP). Essential abuse controls stay in the MVP: admin-controlled tenant onboarding and activation, sender ID approval before use, tenant/API-key velocity limits, abuse alerts and an operational kill switch, and audit logging of administrative and security actions. The approval policy is **not** decided: thresholds, first-campaign policies, and turnaround remain open |
+| Public API contract details | D-143 (Bearer API key; `messages:send`, `messages:read`), D-144 (1,600-character maximum; segment count deferred to product/provider policy), D-145 (domain stays a placeholder), D-146 (`402` for insufficient credit), D-147 (explicit `sender_id`), recorded in the [discovery register](../requirements/discovery-register.md) |
+
+**Further MVP scope decisions (owner, 2026-11-26, PR #7 review).** No ADR status changed.
+
+| Item | Decision |
+| ---- | -------- |
+| Contact book and groups (MVP-11) | **Deferrable**: saved contact management and contact groups are deferred from the MVP. The MVP portal takes a manually entered mobile number for each single-recipient message; customers may submit several separate messages; there is no contact-group sending. Saved contacts may be introduced independently in a later release |
+| Campaign scheduling (MVP-12) | **Deferrable**: campaign scheduling is deferred alongside campaign approval (MVP-13) and bulk sending (MVP-08, MVP-09). This does not permanently rule out a separate scheduled-single-message feature in a future release |

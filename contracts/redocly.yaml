@@ -1,0 +1,41 @@
+# Redocly CLI configuration for the API contracts (contracts/openapi).
+# Approved tool: @redocly/cli (decision log §7.2). Pinned in package.json.
+apis:
+  public-api-v1:
+    root: openapi/public-api-v1.yaml
+
+extends:
+  - recommended-strict
+
+rules:
+  # Every 4xx response must be RFC 9457 problem details (rule name refers to RFC 7807, which RFC 9457 obsoletes).
+  operation-4xx-problem-details-rfc7807: error
+  # Examples must validate against their schemas.
+  no-invalid-media-type-examples:
+    severity: error
+    allowAdditionalProperties: false
+  no-invalid-parameter-examples: error
+  no-invalid-schema-examples: error
+  # Placeholder host until the production domain is decided (D-145); `.invalid` is a reserved TLD.
+  no-server-example.com: error
+  # The specification is proprietary; no licence object is published.
+  info-license: off
+  info-license-strict: off
+  operation-operationId: error
+  operation-summary: error
+  operation-description: error
+  security-defined: error
+  no-unused-components: error
+  tag-description: error
+  component-name-unique: error
+  no-http-verbs-in-paths: error
+  path-segment-plural:
+    severity: error
+    exceptions: [v1] # version prefix
+  paths-kebab-case: off # path parameters use snake_case (message_id), matching JSON field naming
+  response-contains-header:
+    severity: error
+    names:
+      '/.+/': [X-Request-ID]
+  operation-4xx-response: error
+  operation-2xx-response: error
