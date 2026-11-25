@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — living document | Project owner | 2026-11-25 (owner decisions recorded on D-091 and D-140; no other item changed) |
+| Draft — living document | Project owner | 2026-11-25 (D-143–D-145 added for the draft public API contract) |
 
 This register lists everything we know, assume, or still need to find out. **It is the authority on
 what is known.** AI agents must not treat any item as confirmed unless it is in §1 with evidence.
@@ -191,3 +191,6 @@ is legal advice. Public sources consulted so far are listed in the
 | D-140 | Selection of a headless accessible UI primitives library (if any) for complex interactions. | Direction in ADR-0013 (accepted 2026-11-25); evaluate maintenance, accessibility, licence, compatibility, footprint. **Owner decision 2026-11-25: deferred.** No package added until approved. |
 | D-141 | Adoption of PostgreSQL Row-Level Security after evaluation. | ADR-0010 lists the evaluation requirements (pooling, transaction-scoped context, roles, performance, tests). |
 | D-142 | Acceptance of each Proposed ADR. | See the review summary in the [decision log](../engineering/decision-log.md#5-review-summary-2026-11-24). |
+| D-143 | **Public API key presentation and permission names**: `Authorization: Bearer <key>` vs. a custom header such as `X-API-Key`; permission names (`messages:send`, `messages:read` provisional). | Provisional choice in the draft [public API contract](../../contracts/openapi/README.md#7-decisions-for-the-owner); depends on security baseline S-2/S-3. |
+| D-144 | **Maximum message length**: maximum segments per message accepted by the public API. | Draft contract bounds `body` at 1,600 characters and returns `422 message-too-long` above the (undecided) segment limit; depends on network limits (D-105). |
+| D-145 | **Public API and documentation domain**, which also fixes the RFC 9457 problem-type URI base. | Draft contract uses the placeholder `https://api.example.invalid`. |
