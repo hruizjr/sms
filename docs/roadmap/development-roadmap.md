@@ -75,12 +75,12 @@ criteria below is tracked in the [Phase 2 exit checklist](../discovery/phase2-ex
 **Status:** Authorized by the owner on 2026-11-25 and **in progress**. It will be delivered in six groups, each
 reviewed and merged before the next starts
 ([decision log §7](../engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25)).
-**Application implementation has not started.**
+**Implementation status:** Group 1 (Go API skeleton) is the first application code and is in review.
 
 | Group | Scope | State |
 | ----- | ----- | ----- |
-| 0 | Record owner decisions (documentation only) | Submitted — awaiting owner review and merge (PR #3) |
-| 1 | Go API skeleton, with basic CI | Not started |
+| 0 | Record owner decisions (documentation only) | Merged (PR #3) |
+| 1 | Go API skeleton, with basic CI | Submitted — awaiting owner review and merge |
 | 2 | PostgreSQL, migrations, local database | Not started |
 | 3 | API contract (OpenAPI) | Not started |
 | 4 | Frontend | Not started |
