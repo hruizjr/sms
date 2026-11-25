@@ -344,6 +344,78 @@ test('exactly-once delivery is only ever mentioned to deny it', () => {
 
 test('a 202 is documented as acceptance only, not submission or delivery', () => {
   const d = (spec.info.description + createOp().description).replace(/\s+/g, ' ');
-  assert.match(d, /does \*\*not\*\* mean that the message was handed to a mobile network/);
+  assert.match(d, /does \*\*not\*\* mean that the message was handed to a provider, that a provider or the recipient.s mobile network accepted it, or that it reached the recipient.s handset/);
   assert.match(d, /Acceptance is not submission and not delivery/);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Provider semantics (owner review of PR #7): "provider" is our immediate upstream SMS provider;
+// its acknowledgment is not necessarily acceptance by the recipient's mobile network, and delivery
+// outcomes are provider-reported, not independently verified.
+
+const flat = (text) => text.replace(/\s+/g, ' ');
+const statusDescription = flat(spec.components.schemas.MessageStatus.description);
+const statusItem = (status) => statusDescription.split(' - ').find((item) => item.startsWith(`\`${status}\``)) ?? '';
+const readmeRow = (status) => readme.split('\n').find((l) => l.startsWith(`| \`${status}\` |`)) ?? '';
+
+test('provider_accepted means the immediate upstream provider acknowledged, not the destination network', () => {
+  for (const [where, text] of [['MessageStatus', statusItem('provider_accepted')], ['README', readmeRow('provider_accepted')]]) {
+    assert.match(text, /immediate upstream SMS provider acknowledged/, `${where}: who acknowledged`);
+    assert.match(text, /not\*{0,2} necessarily .*recipient's mobile network/i, `${where}: not necessarily the mobile network`);
+  }
+  assert.match(flat(spec.info.description), /\*\*Provider\*\* means the platform's immediate upstream SMS provider/);
+  assert.match(flat(readme), /\*\*Provider\*\* means the platform's \*\*immediate upstream SMS provider\*\*/);
+});
+
+test('delivered and undelivered are provider-reported outcomes, not independently verified facts', () => {
+  for (const status of ['delivered', 'undelivered']) {
+    for (const [where, text] of [['MessageStatus', statusItem(status)], ['README', readmeRow(status)]]) {
+      assert.match(text, /provider-reported delivery outcome/i, `${where} ${status}: provider-reported`);
+      assert.match(text, /not (an )?independently verified/i, `${where} ${status}: not independently verified`);
+    }
+  }
+  assert.match(flat(spec.components.schemas.StatusCategory.description), /Provider-reported finals .* not an independently verified fact/);
+});
+
+test('acknowledgments and reports are never attributed to "the network"', () => {
+  const sentences = allText(spec).map(flat).join(' ').split(/(?<=[.;])\s/);
+  const hit = sentences.find((s) => /\b(a|any|the) network\b/i.test(s));
+  assert.equal(hit, undefined, `ambiguous network wording: ${hit}`);
+});
+
+// ---------------------------------------------------------------------------------------------
+// X-Request-ID (owner review of PR #7): the contract must match the Group 1 middleware
+// (backend/internal/middleware/requestid.go), which reuses a valid client value and otherwise
+// generates one, without rejecting the request.
+
+const middlewareSource = readFileSync(fileURLToPath(new URL('../backend/internal/middleware/requestid.go', root)), 'utf8');
+
+test('the Group 1 middleware still behaves as the contract describes', () => {
+  assert.match(middlewareSource, /const RequestIDHeader = "X-Request-ID"/);
+  assert.match(middlewareSource, /const maxRequestIDLength = 128/);
+  assert.match(middlewareSource, /case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '\.', c == '_', c == '-':/);
+  assert.match(middlewareSource, /if !validRequestID\(id\) \{\s*id = generate\(\)/, 'invalid values are replaced, not rejected');
+});
+
+test('every operation documents the optional X-Request-ID request header', () => {
+  const param = spec.components.parameters.RequestId;
+  assert.equal(param.name, 'X-Request-ID');
+  assert.equal(param.in, 'header');
+  assert.equal(param.required, false);
+  // Invalid values are ignored, not rejected, so the parameter schema must not constrain them.
+  assert.deepEqual(param.schema, { type: 'string' });
+  assert.match(flat(param.description), /1-128 characters, all from `\[A-Za-z0-9\._-\]`/);
+  assert.match(flat(param.description), /\*\*ignored, not rejected\*\*/);
+  for (const { op, id } of operations()) {
+    assert.ok((op.parameters ?? []).some((p) => p.$ref === '#/components/parameters/RequestId'), `${id}: X-Request-ID parameter`);
+  }
+});
+
+test('the X-Request-ID response header matches what the middleware can return', () => {
+  const header = spec.components.headers.XRequestID;
+  assert.equal(header.schema.pattern, '^[A-Za-z0-9._-]{1,128}$');
+  const re = new RegExp(header.schema.pattern);
+  for (const ok of ['a', 'client-req-7f3a2c', '0123456789abcdef0123456789abcdef', 'x'.repeat(128)]) assert.ok(re.test(ok), ok);
+  for (const bad of ['', 'x'.repeat(129), 'a b', 'a/b', 'é']) assert.ok(!re.test(bad), JSON.stringify(bad));
+  assert.doesNotMatch(flat(header.description), /echo/i, 'no unconditional echo promise');
 });

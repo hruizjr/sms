@@ -12,14 +12,22 @@ info:
 
     A `202 Accepted` response from `POST /v1/messages` means **only** that the platform validated the
     request, stored the message, and took responsibility for attempting to process it. It does **not**
-    mean that the message was handed to a mobile network, that a network accepted it, or that it reached
-    the recipient's handset. Those are later, separate milestones reported through the message `status`.
+    mean that the message was handed to a provider, that a provider or the recipient's mobile network
+    accepted it, or that it reached the recipient's handset. Those are later, separate milestones
+    reported through the message `status`.
 
-    The platform does **not** promise exactly-once SMS delivery. A network can time out after it has
+    **Provider** means the platform's immediate upstream SMS provider: the party the platform hands a
+    message to. Depending on routing, that may be a mobile network operator or an intermediary
+    connectivity provider. A provider's acknowledgment (`provider_accepted`) therefore does not
+    necessarily mean that the recipient's mobile network has accepted the message. Delivery outcomes
+    (`delivered`, `undelivered`) are **reported by the provider**; the platform relays them and cannot
+    independently verify them.
+
+    The platform does **not** promise exactly-once SMS delivery. A provider can time out after it has
     already accepted a message; in that case the platform cannot know whether the message was sent, and
-    reports `submission_uncertain` instead of guessing. Delivery reports from networks can be late,
-    missing, duplicated, or out of order; `unknown` means no final report arrived in time, which is
-    **not** proof that the message was undelivered.
+    reports `submission_uncertain` instead of guessing. Delivery reports from providers can be late,
+    missing, duplicated, conflicting, or out of order; `unknown` means no final report arrived in time,
+    which is **not** proof that the message was undelivered.
 
     ## Conventions
 
@@ -28,7 +36,8 @@ info:
     - Phone numbers are E.164 (`+` country code and number, no spaces).
     - Resource identifiers are opaque strings. Do not parse them or rely on their format or ordering.
     - Errors use RFC 9457 Problem Details (`application/problem+json`) with a stable `type` URI.
-    - Every response carries an `X-Request-ID` header; quote it when contacting support.
+    - Every response carries an `X-Request-ID` header; quote it when contacting support. You may send
+      your own `X-Request-ID` (optional request header) for correlation; see its description.
     - Collections use cursor pagination (`limit`, `cursor`, `next_cursor`).
 
     ## Compatibility
@@ -58,8 +67,8 @@ paths:
         Accepts one SMS message to one recipient for asynchronous processing.
 
         **Acceptance is not submission and not delivery.** On success the platform has validated and
-        stored the message and returns it with `status: accepted`. Hand-off to a mobile network and
-        delivery happen later; follow them with `GET /v1/messages/{message_id}`.
+        stored the message and returns it with `status: accepted`. Hand-off to the upstream SMS
+        provider, the provider's acknowledgment, and the provider-reported delivery outcome happen later; follow them with `GET /v1/messages/{message_id}`.
 
         **Idempotency.** The `Idempotency-Key` header is required. If you do not receive a response
         (timeout, connection reset, `5xx`), retry with the **same key and the same body**. If the
@@ -73,6 +82,7 @@ paths:
       x-required-permission: messages:send
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/RequestId'
       requestBody:
         required: true
         content:
@@ -188,6 +198,7 @@ paths:
             format: date-time
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/RequestId'
       responses:
         '200':
           description: One page of messages.
@@ -234,8 +245,8 @@ paths:
       summary: Get a message and its current status
       description: |
         Returns the current state of one message. This is the authoritative way to follow a message
-        after acceptance: its `status` changes as the platform hands it to a network and as delivery
-        reports arrive, including late reports.
+        after acceptance: its `status` changes as the platform hands it to the upstream SMS provider and
+        as the provider's acknowledgment and delivery reports arrive, including late reports.
 
         A message that does not exist **or belongs to another account** returns `404`; the response
         never reveals whether another account's message exists.
@@ -250,6 +261,7 @@ paths:
           description: The message `id` returned at acceptance.
           schema:
             $ref: '#/components/schemas/MessageId'
+        - $ref: '#/components/parameters/RequestId'
       responses:
         '200':
           description: The message.
@@ -262,7 +274,7 @@ paths:
                 $ref: '#/components/schemas/Message'
               examples:
                 delivered:
-                  summary: Delivered (final, reported by the network)
+                  summary: Delivered (final, as reported by the provider; not independently verified)
                   value:
                     id: msg_01JDX3P8Q4ZK9R2V6T0B7N5M1C
                     client_reference: login-7f3a2c
@@ -276,7 +288,7 @@ paths:
                     accepted_at: '2026-11-25T08:15:30Z'
                     status_updated_at: '2026-11-25T08:15:41Z'
                 submissionUncertain:
-                  summary: Network hand-off outcome unknown (not automatically resent)
+                  summary: Provider hand-off outcome unknown (not automatically resent)
                   value:
                     id: msg_01JDX4A1W7HC3M8E2K9F6Q0R5T
                     client_reference: alert-1042
@@ -287,7 +299,7 @@ paths:
                     status_reason:
                       code: submission_outcome_unknown
                       description: >-
-                        The network did not confirm whether it accepted the message. It may already
+                        The provider did not confirm whether it accepted the message. It may already
                         have been delivered, so it is not resent automatically.
                     encoding: ucs2
                     segment_count: 2
@@ -305,7 +317,7 @@ paths:
                     status_reason:
                       code: no_final_report_received
                       description: >-
-                        The network accepted the message but no final delivery report arrived within
+                        The provider accepted the message but no final delivery report arrived within
                         the reporting window. A late report can still update this status.
                     encoding: gsm7
                     segment_count: 1
@@ -346,6 +358,21 @@ components:
         Provisional: the header form, key format, and permission names depend on the API key design
         (security baseline S-2/S-3; discovery register D-143).
   parameters:
+    RequestId:
+      name: X-Request-ID
+      in: header
+      required: false
+      description: |
+        Optional identifier you choose to correlate this request with your own logs. If the value is 1-128
+        characters, all from `[A-Za-z0-9._-]`, the platform uses it as this request's identifier and
+        returns it unchanged in the `X-Request-ID` response header and in `request_id` of problem
+        details. Any other value (empty, too long, or with other characters) is **ignored, not
+        rejected**: the request is processed normally and the platform generates a new identifier. The
+        identifier is for troubleshooting only; it has no effect on processing and is unrelated to
+        `Idempotency-Key`. It need not be unique, and it must not contain personal data or secrets.
+      schema:
+        type: string
+      example: client-req-7f3a2c
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -400,11 +427,14 @@ components:
   headers:
     XRequestID:
       description: |
-        Request identifier for support and troubleshooting. If you send an `X-Request-ID` of 1-128
-        characters from `[A-Za-z0-9._-]`, it is echoed; otherwise the platform generates one.
+        Request identifier for support and troubleshooting, also returned as `request_id` in problem
+        details. It is the valid `X-Request-ID` you sent (see the `X-Request-ID` request parameter), or
+        otherwise an identifier generated by the platform.
       schema:
         type: string
+        minLength: 1
         maxLength: 128
+        pattern: '^[A-Za-z0-9._-]{1,128}$'
     IdempotentReplayed:
       description: |
         Present with the value `true` when this response is a replay of an earlier response for the
@@ -724,17 +754,22 @@ components:
         and how it maps to the platform's internal lifecycle, is documented in
         `contracts/openapi/README.md`.
 
-        - `accepted` — accepted by the platform; not yet acknowledged by any network.
-        - `provider_accepted` — a network acknowledged and accepted the message; delivery not yet reported.
-        - `submission_uncertain` — handed to a network but the network's answer was not received
+        - `accepted` — accepted by the platform; not yet acknowledged by any provider.
+        - `provider_accepted` — the platform's immediate upstream SMS provider acknowledged and accepted
+          the message. This does **not** necessarily mean that the recipient's mobile network has
+          accepted it, and it is not a delivery report.
+        - `submission_uncertain` — handed to the provider but the provider's answer was not received
           (for example a timeout). The message **may already be delivered**. It is not resent
           automatically; do not resend it yourself unless a duplicate SMS is acceptable.
-        - `delivered` — the network reported delivery to the handset.
-        - `undelivered` — the network reported a final non-delivery (including expiry).
-        - `unknown` — the network accepted the message but no final report arrived within the
+        - `delivered` — provider-reported delivery outcome: the provider reported delivery to the
+          handset. This is the provider's report, not an independently verified fact.
+        - `undelivered` — provider-reported delivery outcome: the provider reported a final
+          non-delivery (including expiry). This is the provider's report, not an independently
+          verified fact.
+        - `unknown` — the provider accepted the message but no final report arrived within the
           reporting window. **Not** proof of non-delivery; a late report can still change it.
-        - `rejected` — not sent because the platform or a network refused it (see `status_reason`).
-        - `failed` — not sent because hand-off to a network failed permanently or could not be
+        - `rejected` — not sent because the platform or the provider refused it (see `status_reason`).
+        - `failed` — not sent because hand-off to the provider failed permanently or could not be
           completed in time (see `status_reason`).
       enum:
         - accepted
@@ -753,15 +788,15 @@ components:
         - `in_progress` — the platform is still working on the message (`accepted`, `provider_accepted`).
         - `uncertain` — the outcome is not known and may still change (`submission_uncertain`, `unknown`).
         - `final` — a final outcome (`delivered`, `undelivered`, `rejected`, `failed`). A final status
-          is not replaced by in-progress information. Network-reported finals (`delivered`,
-          `undelivered`) are the network's report, not an absolute guarantee.
+          is not replaced by in-progress information. Provider-reported finals (`delivered`,
+          `undelivered`) are the provider's report, not an independently verified fact.
       enum: [in_progress, uncertain, final]
     StatusReason:
       type: object
       description: |
         Why the message is in its current status. Present for `rejected`, `failed`, `undelivered`,
         `submission_uncertain`, and `unknown`; `null` otherwise. Codes are platform-defined and
-        network-independent; raw network codes are never exposed. New codes may be added.
+        provider-independent; raw provider codes are never exposed. New codes may be added.
       required: [code, description]
       properties:
         code:
@@ -796,7 +831,7 @@ components:
         - status_updated_at
       description: |
         A message accepted by the platform. The message text is not returned in any response (data
-        minimization). Network-side identifiers are internal and never exposed.
+        minimization). Provider-side identifiers (such as a provider's message ID) are internal and never exposed.
       properties:
         id:
           $ref: '#/components/schemas/MessageId'
@@ -826,7 +861,7 @@ components:
           minimum: 1
           description: |
             Number of SMS segments calculated by the platform for this message. Charging is per
-            billable segment (proposed); a network may count differently in edge cases (D-117).
+            billable segment (proposed); a provider may count differently in edge cases (D-117).
         accepted_at:
           type: string
           format: date-time

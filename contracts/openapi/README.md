@@ -10,8 +10,8 @@ specification and this guide are checked against each other by the contract test
 (`contracts/tests/`), so the tables in §3 and §5 must stay in this exact format.
 
 This contract defines **our own** client-facing API. It is independent of any SMS gateway, protocol,
-network, or library: no network protocol terms, network message IDs, raw network status codes, or
-gateway-specific behaviour appear in it. Network behaviour is translated into our status model inside
+provider, network, or library: no protocol terms, provider message IDs, raw provider status codes, or
+gateway-specific behaviour appear in it. Provider behaviour is translated into our status model inside
 provider adapters ([messaging reliability §5.1](../../docs/architecture/messaging-reliability.md#51-adapter-boundary)).
 
 ## 1. Scope
@@ -26,19 +26,25 @@ provider adapters ([messaging reliability §5.1](../../docs/architecture/messagi
 
 ## 2. Acceptance is not submission, and not delivery
 
+**Provider** means the platform's **immediate upstream SMS provider**: the party the platform hands a
+message to. Depending on routing (D-118), that may be a mobile network operator or an intermediary
+connectivity provider. So a provider's acknowledgment is **not necessarily** acceptance by the
+recipient's mobile network, and delivery outcomes are the provider's **reports**, which the platform
+relays but cannot independently verify.
+
 The API reports milestones from [messaging reliability §3](../../docs/architecture/messaging-reliability.md#3-message-lifecycle-milestones)
 separately. A client must never treat an earlier milestone as proof of a later one.
 
 | Client sees | Milestone | Proves | Does **not** prove |
 | ----------- | --------- | ------ | ------------------ |
-| `202 Accepted` + `status: accepted` | M1 (and later M2, M3 internally) | The platform validated, stored, and owns the message | That any network has seen it |
-| `status: provider_accepted` | M4 | A network acknowledged and accepted the message | That the handset received it |
-| `status: delivered` / `undelivered` | M5 | The network's final report | Absolute truth; reports can be late, duplicated, conflicting, or wrong |
-| `status: submission_uncertain` | M3 without M4 | Hand-off was attempted; the answer was lost | Either success or failure |
-| `status: unknown` | M4 without M5 in the window | No final report arrived in time | Non-delivery |
+| `202 Accepted` + `status: accepted` | M1 (and later M2, M3 internally) | The platform validated, stored, and owns the message | That any provider or network has seen it |
+| `status: provider_accepted` | M4 | Our immediate upstream SMS provider acknowledged and accepted the message | That the recipient's mobile network accepted it, or that the handset received it |
+| `status: delivered` / `undelivered` | M5 | The provider's final report (a provider-reported outcome) | An independently verified fact; reports can be late, duplicated, conflicting, or wrong |
+| `status: submission_uncertain` | M3 without M4 | Hand-off to the provider was attempted; the provider's answer was not received | Either success or failure |
+| `status: unknown` | M4 without M5 in the window | No final report from the provider arrived in time | Non-delivery |
 
 **No exactly-once promise.** The idempotency key prevents duplicate *operations inside our platform*
-(one message record, one credit reservation per key). It cannot prevent a duplicate SMS when a network
+(one message record, one credit reservation per key). It cannot prevent a duplicate SMS when a provider
 times out after accepting a message; that case is reported as `submission_uncertain` and is **not**
 resent automatically ([messaging reliability §4](../../docs/architecture/messaging-reliability.md#4-provider-submission-and-ambiguous-outcomes)).
 Resolving it is per-provider policy (D-095).
@@ -51,26 +57,26 @@ values may be added within `/v1`.
 
 | Status | Category | Internal states (ADR-0021) | Meaning for the client |
 | ------ | -------- | -------------------------- | ---------------------- |
-| `accepted` | `in_progress` | ACCEPTED, QUEUED, SUBMITTING | Accepted by the platform; no network has acknowledged it yet. |
-| `provider_accepted` | `in_progress` | SUBMITTED | A network acknowledged and accepted it; awaiting a delivery report. |
-| `submission_uncertain` | `uncertain` | SUBMIT_UNCERTAIN | Hand-off outcome unknown; it **may already be delivered**. Not resent automatically. Resending it yourself may create a duplicate SMS. |
-| `delivered` | `final` | DELIVERED | The network reported delivery. |
-| `undelivered` | `final` | UNDELIVERED | The network reported a final non-delivery, including expiry. |
-| `unknown` | `uncertain` | UNKNOWN | No final report within the reporting window. **Not** proof of non-delivery; a late report can still change it. |
-| `rejected` | `final` | REJECTED | Refused by the platform after acceptance (e.g. opt-out found before hand-off) or explicitly refused by a network. |
-| `failed` | `final` | FAILED | Could not be handed off: permanent hand-off error, retries exhausted, or too old to send. |
+| `accepted` | `in_progress` | ACCEPTED, QUEUED, SUBMITTING | Accepted by the platform; no provider has acknowledged it yet. |
+| `provider_accepted` | `in_progress` | SUBMITTED | Our immediate upstream SMS provider acknowledged and accepted it. Not necessarily accepted by the recipient's mobile network; awaiting a delivery report. |
+| `submission_uncertain` | `uncertain` | SUBMIT_UNCERTAIN | Outcome of the hand-off to the provider unknown; it **may already be delivered**. Not resent automatically. Resending it yourself may create a duplicate SMS. |
+| `delivered` | `final` | DELIVERED | Provider-reported delivery outcome: the provider reported delivery. Not independently verified. |
+| `undelivered` | `final` | UNDELIVERED | Provider-reported delivery outcome: the provider reported a final non-delivery, including expiry. Not independently verified. |
+| `unknown` | `uncertain` | UNKNOWN | No final report from the provider within the reporting window. **Not** proof of non-delivery; a late report can still change it. |
+| `rejected` | `final` | REJECTED | Refused by the platform after acceptance (e.g. opt-out found before hand-off) or explicitly refused by the provider. |
+| `failed` | `final` | FAILED | Could not be handed off to the provider: permanent hand-off error, retries exhausted, or too old to send. |
 
 Rules that follow from [messaging reliability §5](../../docs/architecture/messaging-reliability.md#5-delivery-receipt-dlr-handling):
 
 - Statuses change by **precedence, not arrival order**. A `final` status is never replaced by an
-  `in_progress` one. `submission_uncertain` and `unknown` can be replaced by a later network report.
-- Duplicate network reports do not change status twice and never cause duplicate charges.
-- If a network sends conflicting final reports, the current status is kept and flagged for
+  `in_progress` one. `submission_uncertain` and `unknown` can be replaced by a later provider report.
+- Duplicate provider reports do not change status twice and never cause duplicate charges.
+- If a provider sends conflicting final reports, the current status is kept and flagged for
   reconciliation; the resolution policy is open (D-098).
 - How per-segment reports roll up into one message status is open (D-097).
-- `status_reason.code` gives the platform-defined reason (initial set in the specification); raw network
-  codes are never exposed. Mapping network codes to these reasons happens in provider adapters from
-  network documentation.
+- `status_reason.code` gives the platform-defined reason (initial set in the specification); raw provider
+  codes are never exposed. Mapping provider codes to these reasons happens in provider adapters from
+  provider documentation.
 
 ## 4. Idempotency (proposed, ADR-0018)
 
@@ -120,6 +126,12 @@ decided (D-145).
 
 `404`, `405`, `500`, and `503` use `about:blank`. A message of another account always returns `404`.
 
+**Request identifier.** Every operation accepts an optional `X-Request-ID` request header and every
+response returns `X-Request-ID` (also `request_id` in problem details). This matches the Group 1
+middleware (`backend/internal/middleware/requestid.go`): a supplied value of 1-128 characters from
+`[A-Za-z0-9._-]` is reused; any other value is ignored (not rejected) and a new identifier is
+generated.
+
 ## 6. Webhooks (not in this contract)
 
 Webhooks are deferred in the candidate MVP. When they are added (as a separate, owner-approved
@@ -167,7 +179,7 @@ pnpm run check   # redocly lint + bundle + contract tests
 - `pnpm run bundle` — writes the single-file bundle to `build/` (git-ignored).
 - `pnpm run test` — project rules (`tests/public-api-v1.test.mjs`): `/v1` paths, authentication and
   permission on every operation, problem details on every error, `snake_case`, required
-  `Idempotency-Key`, `202` for acceptance, no message text or network identifiers in responses, the
+  `Idempotency-Key`, `202` for acceptance, no message text or provider identifiers in responses, the
   status table above matches the specification, no gateway or protocol terms, and no exactly-once claim.
 
 CI runs the same commands (`.github/workflows/contracts-ci.yml`, job **OpenAPI contract check**).
