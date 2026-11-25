@@ -3,6 +3,7 @@ package httpserver
 import (
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -18,6 +19,11 @@ type RouterDeps struct {
 	Logger    *slog.Logger
 	Metrics   middleware.RequestObserver
 	Readiness *Readiness
+	// Database is pinged by /readyz. It is required.
+	Database Pinger
+	// ReadinessTimeout bounds the database ping made by /readyz; zero uses
+	// DefaultReadinessTimeout.
+	ReadinessTimeout time.Duration
 	// NewRequestID generates request IDs; nil uses middleware.NewRandomID.
 	NewRequestID middleware.IDGenerator
 }
@@ -33,6 +39,14 @@ func NewRouter(deps RouterDeps) http.Handler {
 
 // newRouter lets tests mount extra routes behind the production middleware chain.
 func newRouter(deps RouterDeps, extra func(chi.Router)) http.Handler {
+	if deps.Database == nil {
+		panic("httpserver: RouterDeps.Database is required") // programmer error at startup
+	}
+	timeout := deps.ReadinessTimeout
+	if timeout <= 0 {
+		timeout = DefaultReadinessTimeout
+	}
+
 	r := chi.NewRouter()
 	r.Use(
 		middleware.RequestID(deps.NewRequestID),
@@ -46,7 +60,12 @@ func newRouter(deps RouterDeps, extra func(chi.Router)) http.Handler {
 	r.MethodNotAllowed(methodNotAllowed)
 
 	r.Get("/healthz", healthz)
-	r.Get("/readyz", readyz(deps.Readiness))
+	r.Method(http.MethodGet, "/readyz", &readinessCheck{
+		readiness: deps.Readiness,
+		database:  deps.Database,
+		timeout:   timeout,
+		logger:    deps.Logger,
+	})
 
 	if extra != nil {
 		extra(r)

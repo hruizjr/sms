@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -43,6 +44,20 @@ func testLogger(w io.Writer) *slog.Logger {
 	return slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
 
+// fakePinger is a hand-written Pinger for unit tests. ping, when set, decides the result.
+type fakePinger struct {
+	calls atomic.Int32
+	ping  func(ctx context.Context) error
+}
+
+func (f *fakePinger) Ping(ctx context.Context) error {
+	f.calls.Add(1)
+	if f.ping == nil {
+		return nil
+	}
+	return f.ping(ctx)
+}
+
 func testDeps(ready bool) (RouterDeps, *safeBuffer) {
 	var buf safeBuffer
 	readiness := &Readiness{}
@@ -51,6 +66,7 @@ func testDeps(ready bool) (RouterDeps, *safeBuffer) {
 		Logger:       testLogger(&buf),
 		Metrics:      observability.NewMetrics(),
 		Readiness:    readiness,
+		Database:     &fakePinger{},
 		NewRequestID: func() string { return "req-test" },
 	}, &buf
 }
@@ -206,7 +222,7 @@ func startServer(t *testing.T, app http.Handler, shutdownTimeout time.Duration) 
 	metrics := observability.NewMetrics()
 	readiness = &Readiness{}
 	if app == nil {
-		app = NewRouter(RouterDeps{Logger: logger, Metrics: metrics, Readiness: readiness})
+		app = NewRouter(RouterDeps{Logger: logger, Metrics: metrics, Readiness: readiness, Database: &fakePinger{}})
 	}
 	srv := NewServer(ServerConfig{
 		ReadTimeout: 5 * time.Second, ReadHeaderTimeout: 5 * time.Second,
