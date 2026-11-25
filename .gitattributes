@@ -13,5 +13,6 @@
 *.woff binary
 *.woff2 binary
 
-# Generated files (to be added when code generation is introduced) should be
-# marked `linguist-generated=true` so they are collapsed in pull request diffs.
+# Generated files: collapsed in pull request diffs. Never edit them by hand; regenerate
+# (backend/README.md, "OpenAPI code generation").
+backend/internal/publicapi/*.gen.go linguist-generated=true

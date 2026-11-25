@@ -1,0 +1,10 @@
+# oapi-codegen configuration for the public API v1 (owner decisions D2-D3, Phase 3 Group 4).
+# Input: contracts/openapi/public-api-v1.yaml (passed by the go:generate directive in generate.go).
+# Output: data types (models), Chi routes and parameter binding (chi-server), and the typed
+# request/response interface (strict-server). Regenerate from backend/: go generate ./internal/publicapi/...
+package: publicapi
+generate:
+  models: true
+  chi-server: true
+  strict-server: true
+output: publicapi.gen.go

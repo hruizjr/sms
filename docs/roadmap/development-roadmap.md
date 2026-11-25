@@ -16,7 +16,7 @@ Phase 1  Engineering foundation ...................... COMPLETE
 Phase 2  Discovery closure & solution architecture ◀── telco, regulatory, traffic, business inputs
          (2A preparation package merged; external discovery and 2B ONGOING)
    │
-Phase 3  Walking skeleton (tooling, CI, local stack)   AUTHORIZED, IN PROGRESS (Group 3 in review)
+Phase 3  Walking skeleton (tooling, CI, local stack)   AUTHORIZED, IN PROGRESS (Group 4 in review)
    │
 Phase 4  Control-plane core: tenants, identity, RBAC, audit
    │
@@ -72,19 +72,21 @@ criteria below is tracked in the [Phase 2 exit checklist](../discovery/phase2-ex
 
 ### Phase 3 — Walking skeleton
 **Goal:** a minimal end-to-end technical skeleton with no business features.
-**Status:** Authorized by the owner on 2026-11-25 and **in progress**. It will be delivered in six groups, each
+**Status:** Authorized by the owner on 2026-11-25 and **in progress**. It will be delivered in seven groups (six
+until the owner's renumbering of 2026-11-25, [decision log §9](../engineering/decision-log.md#9-owner-decisions--go-contract-integration-phase-3-group-4-2026-11-25)), each
 reviewed and merged before the next starts
 ([decision log §7](../engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25)).
-**Implementation status:** Groups 1 (Go API skeleton) and 2 (PostgreSQL foundation) are merged; Group 3 (OpenAPI contract) is in review.
+**Implementation status:** Groups 1 (Go API skeleton), 2 (PostgreSQL foundation) and 3 (OpenAPI contract) are merged; Group 4 (Go API contract integration) is in review.
 
 | Group | Scope | State |
 | ----- | ----- | ----- |
 | 0 | Record owner decisions (documentation only) | Merged (PR #3) |
 | 1 | Go API skeleton, with basic CI | Merged (PR #4) |
 | 2 | PostgreSQL, migrations, local database | Merged (PR #5) |
-| 3 | API contract (OpenAPI) | Submitted — awaiting owner review and merge |
-| 4 | Frontend | Not started |
-| 5 | Local development stack and expanded CI | Not started |
+| 3 | API contract (OpenAPI) | Merged (PR #7) |
+| 4 | Go API contract integration: Go types and Chi routes generated from the contract (oapi-codegen), reproducible generation and CI checks; no endpoint mounted | Submitted — awaiting owner review and merge |
+| 5 | Frontend (Group 4 before the renumbering) | Not started |
+| 6 | Local development stack and expanded CI (Group 5 before the renumbering) | Not started |
 
 **Depends on:** ADR-0002/0003/0004/0005/0013/0014/0015/0016/0017 — accepted 2026-11-25; owner repository
 actions — done (git-workflow §0).

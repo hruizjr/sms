@@ -67,6 +67,9 @@ and keep a one-line entry in the index.
 ADRs remain `Proposed`; the owner's approval is limited to those decisions and the Phase 3 walking skeleton.
 **Later on 2026-11-25 (PR #7 review) the owner also accepted ADR-0018, and ADR-0021 with a limited scope**
 (see [§8](#8-owner-decisions--public-api-contract-2026-11-25)).
+**In Phase 3 Group 4 (2026-11-25) the owner approved Go code generation from the OpenAPI contract under
+ADR-0015** (see [§9](#9-owner-decisions--go-contract-integration-phase-3-group-4-2026-11-25)); no ADR status
+changed.
 
 | ADR | Title | Status |
 | --- | ----- | ------ |
@@ -776,12 +779,13 @@ licence, maintenance status, security record), with exact versions pinned at tha
 | Go libraries | `github.com/go-chi/chi/v5`, `github.com/jackc/pgx/v5`, `github.com/pressly/goose/v3`, `github.com/prometheus/client_golang`. Configuration uses the standard library only. |
 | Go tools | `sqlc`, `golangci-lint`, `govulncheck` |
 | Frontend | `react`, `react-dom`, `vite`, `@vitejs/plugin-react`, `typescript`, `tailwindcss` with `@tailwindcss/vite` (v4), `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `jsdom`, `eslint`, `typescript-eslint`, `eslint-plugin-react-hooks`, `prettier`, `openapi-typescript` |
-| API contract | `@redocly/cli` (OpenAPI linting and validation) |
+| API contract | `@redocly/cli` (OpenAPI linting and validation). Go code generation from the contract (added 2026-11-25, Group 4): `oapi-codegen` v2.8.2 (tool) and `github.com/oapi-codegen/runtime` v1.9.0 (library), see §9 |
 | CI | Official `actions/*`, `golangci-lint-action`, `gitleaks-action`, GitHub dependency review — all **pinned to immutable commit SHAs** |
 
 ### 7.3 Engineering conditions
 
-1. Basic automated CI is set up starting in **Group 1**; coverage is expanded in **Group 5**.
+1. Basic automated CI is set up starting in **Group 1**; coverage is expanded in **Group 6** (numbered
+   Group 5 before the renumbering in §9).
 2. The Prometheus metrics endpoint is **not publicly exposed**.
 3. GitHub Actions are pinned to immutable commit SHAs.
 4. Database migrations contain **no business-specific tables** during the walking skeleton.
@@ -794,6 +798,12 @@ Six groups, one Draft PR each; the owner reviews and merges each group before th
 Group 0 (record decisions), 1 (Go API skeleton with basic CI), 2 (database), 3 (API contract), 4 (frontend),
 5 (local stack, expanded CI, developer documentation). The PostgreSQL Row-Level Security evaluation
 (ADR-0010, still Proposed) is a separate spike after the skeleton and before Phase 4.
+
+**Renumbered by the owner on 2026-11-25 (§9, decision D1): seven groups.** Group 4 is now **Go API contract
+integration and generated types**; the frontend becomes **Group 5**, and the local stack, expanded CI and
+developer documentation become **Group 6**. Earlier records that say "Group 4 (frontend)" or "Group 5"
+(for example ADR-0013's implementation-time checks) refer to those groups under their old numbers; they are
+kept unchanged as written.
 
 ---
 
@@ -817,3 +827,55 @@ these decisions**; no other ADR status changed.
 | ---- | -------- |
 | Contact book and groups (MVP-11) | **Deferrable**: saved contact management and contact groups are deferred from the MVP. The MVP portal takes a manually entered mobile number for each single-recipient message; customers may submit several separate messages; there is no contact-group sending. Saved contacts may be introduced independently in a later release |
 | Campaign scheduling (MVP-12) | **Deferrable**: campaign scheduling is deferred alongside campaign approval (MVP-13) and bulk sending (MVP-08, MVP-09). This does not permanently rule out a separate scheduled-single-message feature in a future release |
+
+---
+
+## 9. Owner decisions — Go contract integration (Phase 3 Group 4, 2026-11-25)
+
+Recorded from the owner's approval of the Group 4 proposal (decisions D1–D7). They implement
+**ADR-0015 (API contracts — OpenAPI-first)** on the Go side. ADR-0015's text, rationale and status
+(**Accepted**) are unchanged. Its note that "any Go-side code generation or request-validation tooling is not
+chosen and would need owner approval" is answered for **code generation** by D2–D3 below. **Request
+validation stays unchosen** (D6). No other ADR changed.
+
+| # | Topic | Decision |
+| - | ----- | -------- |
+| D1 | Group numbering | Phase 3 has **seven** groups: Group 4 is Go API contract integration and generated types; the frontend becomes Group 5; local stack, expanded CI and developer documentation become Group 6 (§7.4) |
+| D2 | Go code generator | **`oapi-codegen` v2** (`github.com/oapi-codegen/oapi-codegen/v2`), pinned at **v2.8.2**, as a development tool. Generated code uses **`github.com/oapi-codegen/runtime` v1.9.0** at run time. Alternative considered, not selected: `ogen` (its own router instead of Chi, `go-faster/jx` and OpenTelemetry at run time, less documented OpenAPI 3.1 support) |
+| D3 | Generated output | Models, Chi server routes with parameter binding, and the strict (typed request/response) server interface, in the package `backend/internal/publicapi`, generated from the unmodified `contracts/openapi/public-api-v1.yaml` |
+| D4 | Production routes | `/v1/*` is **not mounted** in the production router during Group 4; existing production responses are unchanged. The generated routes are mounted only in tests until the first endpoint is implemented |
+| D5 | Pinning the generator | A **separate tools module**, `backend/tools/go.mod` (Go `tool` directive, checksums in `tools/go.sum`), so the generator's dependencies stay out of the API module and its binaries |
+| D6 | Request validation and authentication | **Deferred** to the first endpoint implementation. Generated parameter binding is not full OpenAPI request validation |
+| D7 | OpenAPI 3.1 fallback | Verify generation against the real specification first, and stop and report if it falls short |
+
+**Version policy.** Releases younger than seven days were not used, consistent with the npm
+`minimum-release-age` in `contracts/.npmrc`. oapi-codegen v2.9.0 (2026-11-21) and runtime v1.9.1
+(2026-11-20) were therefore not selected. Runtime v1.9.0 was preferred over v1.8.0 because v1.8.0 also pulls
+the Gin, Echo and Iris web frameworks into the module graph.
+
+**Dependencies added** (licences checked in the downloaded sources, 2026-11-25):
+
+| Module | Version | Licence | Where | Why |
+| ------ | ------- | ------- | ----- | --- |
+| `github.com/oapi-codegen/oapi-codegen/v2` | v2.8.2 | Apache-2.0 | `backend/tools` only (never linked into a binary) | Generator (D2) |
+| `github.com/oapi-codegen/runtime` | v1.9.0 | Apache-2.0 | `backend/go.mod` (direct) | Parameter binding and JSON body decoding used by the generated code |
+| `github.com/apapsch/go-jsonmerge/v2` | v2.0.0 | MIT | `backend/go.mod` (indirect, via runtime) | — |
+| `github.com/google/uuid` | v1.6.0 | BSD-3-Clause | `backend/go.mod` (indirect, via runtime) | — |
+| `github.com/getkin/kin-openapi` | **v0.149.0** (security override; owner decision, PR #8 review) | MIT | `backend/tools` only | oapi-codegen v2.8.2 requires v0.142.0, which is affected by GO-2026-6789 (fixed in v0.145.0) and GO-2026-6795 (fixed in v0.148.0); govulncheck reports both as reachable in the generator. Versions before v0.149.0 are also affected by GO-2026-6800 and GO-2026-6785 (both fixed in v0.149.0). All four are crashes or panics on crafted input. v0.149.0 (released 2026-08-28) is the first release fixing all four. The generated output is byte-identical with v0.142.0, v0.148.0 and v0.149.0. This raises a transitive dependency of the approved tool. It does not change the tool, the output, or anything linked into the API |
+
+The tools module's other transitive dependencies (YAML and JSON-path parsers, `golang.org/x/{mod,sync,text,tools}`)
+are MIT, Apache-2.0 or BSD-3-Clause licensed, and locked by checksum in `backend/tools/go.sum`.
+
+**Engineering conditions.**
+
+1. Generated code (`backend/internal/publicapi/*.gen.go`) is **never edited by hand**. Every change comes
+   from the specification or the generator configuration, through `go generate ./internal/publicapi/...`
+   run from `backend/`.
+2. CI regenerates the code on Linux and on Windows. It fails when the committed code is stale or
+   hand-edited, when generation creates uncommitted files, or when two runs differ.
+3. `govulncheck` scans both Go modules: the API module and the tools module.
+4. Generated **parameter binding** (type parsing of path, query and header values, a required
+   `Idempotency-Key`, JSON decoding) is not **request validation** (patterns, lengths, ranges, enums,
+   required body fields, `additionalProperties: false`, null handling, `Content-Type`) and not
+   **authentication or authorization**. Both are required before any `/v1` endpoint serves traffic (D6).
+

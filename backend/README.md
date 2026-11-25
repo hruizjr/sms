@@ -4,10 +4,12 @@ The Go backend: one Go module (`github.com/hruizjr/sms/backend`) that builds two
 `migrate` (ADR-0002, ADR-0003). Phase 3 is built in reviewed groups
 ([decision log §7](../docs/engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25)).
 
-**Current state — Groups 1 and 2:** an HTTP API with configuration, structured logging, `/healthz`,
+**Current state — Groups 1, 2 and 4:** an HTTP API with configuration, structured logging, `/healthz`,
 `/readyz` (which checks PostgreSQL), Prometheus metrics on a separate loopback-only listener, graceful
-shutdown, a PostgreSQL connection pool, goose migrations, sqlc configuration, unit and integration tests,
-and CI. There are **no business tables, no business functionality, and no SMS sending**.
+shutdown, a PostgreSQL connection pool, goose migrations, sqlc configuration, Go types and Chi routes
+generated from the public API contract (not mounted in production; see
+[OpenAPI code generation](#openapi-code-generation-public-api-v1)), unit and integration tests, and CI.
+There are **no business tables, no business functionality, no `/v1` endpoints, and no SMS sending**.
 
 ## Layout
 
@@ -17,6 +19,7 @@ backend/
 ├── .golangci.yml               Linter configuration (golangci-lint v2)
 ├── .env.example                Every configuration variable, with defaults
 ├── sqlc.yaml                   sqlc configuration (pgx/v5); no queries yet
+├── tools/                      Separate Go module that version-locks code generators (oapi-codegen)
 ├── cmd/
 │   ├── api/main.go             HTTP API: load config → open pool → serve → shut down → close pool
 │   └── migrate/main.go         Migrations: up | status | version | down
@@ -27,7 +30,9 @@ backend/
     ├── database/               PostgreSQL pool (pgxpool): Open, Ping, InTx, Close
     │   └── dbtest/             Integration-test helper: throwaway databases (build tag "integration")
     ├── migration/              goose runner: advisory lock, one transaction per migration
-    ├── httpserver/             Router, /healthz and /readyz, problem responses, listeners, shutdown
+    ├── httpserver/             Router, /healthz and /readyz, problem responses, listeners, shutdown;
+    │                           mountPublicAPI (generated /v1 routes; not called by the production router)
+    ├── publicapi/              GENERATED from contracts/openapi/public-api-v1.yaml — never edit by hand
     ├── middleware/             Request ID, access log, metrics, panic recovery, security headers, body limit
     └── observability/          slog logger and Prometheus metrics registry
 ```
@@ -81,8 +86,9 @@ report `503` when the pool is exhausted.
 
 Errors use RFC 9457 problem documents (`application/problem+json`) with type `about:blank`, the
 HTTP status title, a fixed client-safe detail, and the request ID. Internal error text, panic values,
-database errors, and stack traces are never returned. Application-specific problem types come with the
-OpenAPI contract (Group 3).
+database errors, and stack traces are never returned. The public API's own problem types
+(`https://api.example.invalid/problems/<slug>`, contract §5) are used only by the generated `/v1` layer,
+which is not mounted in production yet.
 
 A recovered panic is logged as one `panic recovered` entry with the request ID, method, route, the
 panic value's Go **type** (`panic_type`), and a stack of function names with `file:line` positions.
@@ -196,6 +202,66 @@ docker run --rm -v "${PWD}:/src" -w /src sqlc/sqlc:1.31.1 generate     # from ba
 ```bash
 go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1                  # Linux/macOS with a C compiler
 ```
+
+## OpenAPI code generation (public API v1)
+
+The public API contract [`contracts/openapi/public-api-v1.yaml`](../contracts/openapi/public-api-v1.yaml)
+is the source of truth (ADR-0015). Go types and Chi routes are **generated** from it by
+[oapi-codegen](https://github.com/oapi-codegen/oapi-codegen) into the package
+[`internal/publicapi`](internal/publicapi/) (owner decisions D1–D7, Phase 3 Group 4;
+[decision log §9](../docs/engineering/decision-log.md#9-owner-decisions--go-contract-integration-phase-3-group-4-2026-11-25)).
+
+| File | Role |
+| ---- | ---- |
+| `internal/publicapi/publicapi.gen.go` | **Generated. Never edit by hand.** Models, Chi routes with parameter binding, and the typed ("strict") request/response interface |
+| `internal/publicapi/oapi-codegen.yaml` | Generator configuration (`models`, `chi-server`, `strict-server`) |
+| `internal/publicapi/generate.go` | The `go:generate` directive |
+| `internal/publicapi/publicapi_test.go` | Hand-written tests of the generated types |
+| `tools/go.mod`, `tools/go.sum` | A separate module that locks oapi-codegen **v2.8.2** and all its dependencies by checksum, so they never enter the API module or the `api` binary |
+
+The generated code needs one library at run time: `github.com/oapi-codegen/runtime` **v1.9.0** (in `go.mod`).
+
+**Regenerate** after any change to the specification or the configuration, from `backend/`. The same
+command works in Linux and macOS shells and in Windows PowerShell or `cmd` (it uses only the Go tool and
+forward-slash relative paths):
+
+```bash
+go generate ./internal/publicapi/...
+```
+
+Then run `go test ./...` and commit the regenerated file together with the change that caused it. Never
+fix generated code by editing it: change the specification (through its own review) or the configuration.
+CI regenerates the code twice and fails if the result differs from the committed file or between runs
+(step "Check generated code is up to date" in the **Go test and build** job; also run on Windows in the
+**Go generate check (Windows)** job).
+
+**What is generated, and what is not.** The generated layer routes requests, **binds** path, query and
+header parameters to their declared Go types (a value that cannot be parsed, such as `limit=ten`, gives a
+`400 validation-error`), reports a missing `Idempotency-Key` (`400 idempotency-key-missing`), and decodes
+JSON bodies (invalid JSON gives `400 malformed-request`). It does **not** perform full OpenAPI request
+validation — patterns, lengths, ranges, enum membership, required body fields, `additionalProperties:
+false`, rejecting `null` where the contract does not allow it, `Content-Type` — and it does **not**
+authenticate or authorize. Both are deferred to the first endpoint implementation (owner decision D6).
+`TestPublicAPIBindingIsNotValidation` documents exactly which invalid requests still reach a handler.
+
+**Absent, null, and value.** Response fields that the contract makes required and nullable
+(`Message.client_reference`, `Message.status_reason`, `MessageList.next_cursor`) are Go pointers without
+`omitempty`: they are always present, `null` when nil. Optional fields (`MessageCreateRequest.client_reference`,
+optional `Problem` members, query parameters) are pointers with `omitempty`: absent is `nil`, never a zero
+value. Go's JSON decoder also turns an explicit `null` into `nil`; rejecting `null` where the contract
+forbids it is part of the deferred validation.
+
+**Not mounted in production.** `httpserver.NewRouter` does not register any `/v1` route, so `/v1/*` still
+returns the existing `404` problem (owner decision D4). `httpserver.mountPublicAPI` is the integration
+point for the first endpoint implementation; today only tests call it. It always replaces the generator's
+default error handlers, which would otherwise return raw Go error text as `text/plain`.
+
+**Dependency updates.** Change the generator version only with owner approval, in `tools/`:
+`go get -tool github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@<version>`, then `go mod tidy`,
+regenerate, and review the diff. `tools/go.mod` also raises `github.com/getkin/kin-openapi` (the
+generator's spec parser) to v0.149.0, the first release fixing GO-2026-6789, GO-2026-6795, GO-2026-6800 and
+GO-2026-6785 (owner decision, PR #8 review); generated output is byte-identical. Remove that line when the
+generator itself requires a fixed version.
 
 ## Running locally
 

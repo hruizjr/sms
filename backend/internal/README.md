@@ -12,7 +12,8 @@ Private application modules. Code here can only be imported from within `backend
 4. **Shared technical plumbing** lives in one focused package per concern directly under `internal/`
    and must not contain business rules. There is no `platform/` umbrella (owner decision, Phase 3
    Group 2). Current packages: `config`, `database` (with `database/dbtest` for integration tests),
-   `migration`, `httpserver`, `middleware`, `observability`.
+   `migration`, `httpserver`, `middleware`, `observability`, and `publicapi` (code generated from the
+   public API contract only; never edited by hand — see `backend/README.md`).
 5. Dependencies point inward: handlers → services → repositories. Domain types never import HTTP or SQL packages.
 
 ## Candidate business modules (Proposed — not approved, not created)

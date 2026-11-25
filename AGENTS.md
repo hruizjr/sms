@@ -9,10 +9,10 @@
 | Field | Value |
 | ----- | ----- |
 | Project | Enterprise A2P SMS Platform (Philippines) |
-| Current phase | **Phase 3 — Walking skeleton: authorized and in progress.** Groups 0 (decisions), 1 (Go API skeleton), and 2 (PostgreSQL foundation) are merged. Group 3 (OpenAPI contract for the public messages API — specification, validation, and CI only; nothing implemented) is submitted for owner review. Groups 4–5 are not started. See [decision log §7](docs/engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25). |
+| Current phase | **Phase 3 — Walking skeleton: authorized and in progress.** Groups 0 (decisions), 1 (Go API skeleton), 2 (PostgreSQL foundation), and 3 (OpenAPI contract for the public messages API) are merged. Group 4 (Go API contract integration: Go types and Chi routes generated from the contract; no endpoint mounted) is submitted for owner review. Groups 5 (frontend) and 6 (local stack, expanded CI) are not started (renumbered by the owner, [decision log §9](docs/engineering/decision-log.md#9-owner-decisions--go-contract-integration-phase-3-group-4-2026-11-25)). See [decision log §7](docs/engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25). |
 | Authorized scope | **Phase 3 walking skeleton only** (owner approval 2026-11-25). Each implementation group starts only after the previous group is reviewed and merged. Later phases and all other ADRs need separate owner approval. |
 | Decision authority | The project owner (a single human). Agents propose; the owner decides. |
-| Last updated | 2026-11-25 (Phase 3 Group 3 status; ADR-0018 accepted) |
+| Last updated | 2026-11-25 (Phase 3 Group 4: Go code generation from the OpenAPI contract) |
 
 ---
 
@@ -46,8 +46,9 @@ optional; if you believe one must be broken, stop and ask the project owner.
 
 The repository contains documentation, repository hygiene files, the Go API skeleton in `backend/` (health
 and readiness endpoints, metrics, CI), the PostgreSQL foundation (connection pool, goose migrations without
-business tables, local Docker Compose database, integration tests) and — once Group 3 is merged — the draft
-OpenAPI contract for the public messages API in `contracts/openapi/` (specification only; no endpoint is
+business tables, local Docker Compose database, integration tests), the draft OpenAPI contract for the
+public messages API in `contracts/openapi/`, and — once Group 4 is merged — Go types and Chi routes
+generated from that contract in `backend/internal/publicapi/` (no `/v1` endpoint is mounted or
 implemented). The Phase 3 walking skeleton (technical
 foundation only) is added one reviewed group at a time. **No business functionality exists or is authorized.**
 
@@ -268,6 +269,7 @@ AGENTS.md          This file
 backend/           Go module (cmd/ = executables, internal/ = modules)   — API + database skeleton
 frontend/          React applications                                    — empty
 contracts/         OpenAPI specs, event and webhook schemas              — draft public API v1 (Group 3)
+backend/internal/publicapi/  Go code GENERATED from contracts/openapi/  — never edit by hand (Group 4)
 infra/             Docker, local dev stack, observability config         — local PostgreSQL
 scripts/           Helper scripts                                        — empty
 tests/             E2E, load, provider-contract suites                   — empty
@@ -356,6 +358,10 @@ Details and examples: [coding standards](docs/standards/coding-standards.md#go).
   Technical packages contain no business rules.
 - `main.go` is thin: load config → build dependencies → run → shut down gracefully.
 - Package names are short, lowercase, singular, without underscores (`billing`, not `billing_service`).
+- **Generated code MUST NOT be edited by hand** (`backend/internal/publicapi/*.gen.go`, and sqlc output in
+  `internal/database/sqlcgen` once it exists). Change the source (specification, SQL, or generator
+  configuration) and regenerate; CI fails on stale or hand-edited generated code
+  ([decision log §9](docs/engineering/decision-log.md#9-owner-decisions--go-contract-integration-phase-3-group-4-2026-11-25)).
 - MUST NOT create `utils`, `common`, `helpers`, `misc`, or `pkg/` (unless code is genuinely meant for
   external import, which requires an ADR).
 - Define interfaces **where they are consumed**, keep them small, and return concrete types.
@@ -517,6 +523,9 @@ Details: [coding standards](docs/standards/coding-standards.md#frontend).
 Proposed; its item below is marked as proposed.)
 
 - REST over HTTPS, JSON bodies, OpenAPI specification in `contracts/openapi/` as the source of truth.
+  Go types and routes are generated from it (`backend/internal/publicapi`, oapi-codegen); never hand-write
+  duplicates of contract types. Generated parameter binding is **not** request validation or
+  authentication: both MUST be added before any `/v1` endpoint serves traffic (decision log §9, D6).
 - Versioned paths: `/v1/...`. No breaking changes within a published version.
 - JSON field naming: `snake_case`. Timestamps: RFC 3339 in UTC. Phone numbers: E.164
   (`+639171234567`).
