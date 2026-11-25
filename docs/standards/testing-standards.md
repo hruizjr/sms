@@ -66,7 +66,8 @@ or **leak one customer's data to another** — so the most important behaviours 
   - Migrations: apply cleanly to an empty database and to the previous schema version.
 - Integration tests carry the `integration` build tag (decided in Phase 3 Group 2): `go test ./...` runs only
   unit tests and needs no database; `go test -tags integration ./...` adds the integration tests. Each
-  integration test uses its own throwaway database (see `backend/README.md`, "Testing").
+  integration test uses its own throwaway database, and the helper refuses to run unless `APP_ENV=test`
+  is set explicitly and `DB_HOST` is a loopback IP address (see `backend/README.md`, "Testing").
 
 ### 3.3 Contract tests
 

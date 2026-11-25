@@ -12,7 +12,7 @@ Approved for Phase 3 (ADR-0003, accepted 2026-11-25): **`api`** (created in Grou
 | Executable | Status | Run (from `backend/`) |
 | ---------- | ------ | --------------------- |
 | `api` | Implemented | `go run ./cmd/api` — serves `/healthz`, `/readyz` (checks PostgreSQL), and metrics on a loopback listener |
-| `migrate` | Implemented | `go run ./cmd/migrate up\|status\|version\|down` — applies the embedded goose migrations; `down` is refused in production |
+| `migrate` | Implemented | `go run ./cmd/migrate up\|status\|version\|down` — applies the embedded goose migrations; `down` needs an explicit `APP_ENV=development`/`test` and a loopback-IP `DB_HOST`, and is refused otherwise (always in production) |
 
 Both read the same `DB_*` configuration (see [`backend/README.md`](../README.md)). The API never runs
 migrations; `migrate` is always run explicitly.

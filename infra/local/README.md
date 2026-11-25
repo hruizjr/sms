@@ -113,6 +113,14 @@ After a full reset, apply migrations again.
 
 The backend integration tests connect to this server but **never modify your `sms` database**. Each test
 creates its own database named `sms_test_<random>` and drops it when the test finishes, even if it fails.
+They run only with `APP_ENV=test` and `DB_HOST` set to a loopback IP (`127.0.0.1`), and refuse to start
+otherwise (see [`backend/README.md`](../../backend/README.md), "Testing"):
+
+```powershell
+$env:APP_ENV = "test"; $env:DB_HOST = "127.0.0.1"
+cd backend; go test -tags integration ./...
+```
+
 If a test process is killed, a leftover database can be removed safely (it only ever contains test data):
 
 ```powershell

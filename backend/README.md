@@ -146,8 +146,17 @@ Migrations use [goose](https://github.com/pressly/goose) v3 (ADR-0014) and live 
 - **Version table:** goose records applied versions in `goose_db_version` — the only table in the
   database during the walking skeleton.
 - **Never automatic:** the API does not migrate on startup. Run `migrate` explicitly.
-- **Forward-only in production:** `migrate down` is refused when `APP_ENV=production` (AGENTS.md §10.1);
-  fix a mistake with a new migration. `down` exists for local development and tests.
+- **Rollback fails closed:** `migrate down` runs only when **both** hold, and is refused otherwise
+  before any connection is made (there is no override flag):
+  - `APP_ENV` is set **explicitly** to `development` or `test`. A missing `APP_ENV` is refused (the
+    general configuration would otherwise default it to `development`), and `APP_ENV=production` is
+    refused: production migrations are forward-only (AGENTS.md §10.1); fix a mistake with a new
+    migration.
+  - `DB_HOST` is a **loopback IP address** (`127.0.0.1`, anything in `127.0.0.0/8`, or `::1`). Host
+    names, including `localhost`, and every non-loopback address are refused, so a rollback can only
+    reach a local database.
+
+  `up`, `status`, and `version` are not affected by these rules.
 
 The only migration today is `20261125041208_baseline.sql`. It contains **no SQL**: goose refuses to run
 without at least one migration, and `go:embed` needs at least one file. Applying it creates only goose's
@@ -160,7 +169,7 @@ Commands (run from `backend/` with the `DB_*` variables set; see "Running locall
 | `go run ./cmd/migrate up` | Apply all pending migrations, print each result and the new version. |
 | `go run ./cmd/migrate status` | List every migration with `applied`/`pending` and its time. |
 | `go run ./cmd/migrate version` | Print the current version (`0` if none applied). |
-| `go run ./cmd/migrate down` | **Rollback:** undo the most recent migration (development and test only). Run it repeatedly to go further back. |
+| `go run ./cmd/migrate down` | **Rollback:** undo the most recent migration. Requires an explicit `APP_ENV=development` or `test` and a loopback-IP `DB_HOST` (see above). Run it repeatedly to go further back. |
 
 Exit codes: `0` success, `1` failure (message on stderr), `2` usage error.
 
@@ -223,9 +232,12 @@ Get-Content infra/local/.env | Where-Object { $_ -match '^\s*[A-Z_][A-Z0-9_]*=' 
     Set-Item -Path "Env:$($name.Trim())" -Value $value
 }
 $env:DB_HOST = "127.0.0.1"
+$env:APP_ENV = "development"
 ```
 
-The variables last until you close the window. Other settings (`DB_SSLMODE`, pool sizes, …) use their
+The variables last until you close the window. Setting `APP_ENV` explicitly matters: `migrate down`
+(step 9) is refused without it. Use the IP address `127.0.0.1`, not `localhost`: rollback and the
+integration tests accept only a loopback IP. Other settings (`DB_SSLMODE`, pool sizes, …) use their
 defaults; see "Configuration".
 
 **4. Run migrations:**
@@ -255,10 +267,13 @@ With PostgreSQL stopped (step 8), `/readyz` returns `503`:
 try { Invoke-RestMethod http://127.0.0.1:8080/readyz } catch { $_.Exception.Response.StatusCode.value__ }
 ```
 
-**7. Run the integration tests** (needs steps 1–3 in this window; from `backend/`):
+**7. Run the integration tests** (needs steps 1–3 in this window; from `backend/`). They require
+`APP_ENV=test` and refuse to run otherwise:
 
 ```powershell
+$env:APP_ENV = "test"
 go test -tags integration ./...
+$env:APP_ENV = "development"    # back to development for running the API and migrate down
 ```
 
 **8. Stop PostgreSQL** (keeps your data; from the repository root):
@@ -267,7 +282,8 @@ go test -tags integration ./...
 docker compose -f infra/local/compose.yaml stop
 ```
 
-**9. Reset the local database.** To re-run migrations without deleting the database:
+**9. Reset the local database.** To re-run migrations without deleting the database (needs
+`APP_ENV=development` and `DB_HOST=127.0.0.1` from step 3; otherwise `down` is refused):
 
 ```powershell
 go run ./cmd/migrate down       # repeat until "database version: 0"
@@ -307,15 +323,24 @@ curl -s http://127.0.0.1:9090/metrics | grep sms_http
 | Kind | Command (from `backend/`) | Needs PostgreSQL? |
 | ---- | ------------------------- | ----------------- |
 | Unit tests | `go test ./...` | No |
-| Unit + integration tests | `go test -tags integration ./...` | Yes (`DB_*` variables set) |
+| Unit + integration tests | `APP_ENV=test go test -tags integration ./...` | Yes (`APP_ENV=test`, loopback `DB_HOST`, `DB_*` set) |
 
 - **Unit tests** use fakes and in-memory listeners only; they never read the process environment or need
   Docker.
 - **Integration tests** are the files ending in `_integration_test.go`, compiled only with the
   `integration` build tag. They connect with the `DB_*` variables, but **never use or modify `DB_NAME`
   itself**: every test creates its own empty database `sms_test_<random>` and drops it in cleanup, even
-  when the test fails. Your local `sms` database and its data are never touched. If the variables are
-  missing, the tests fail with instructions (they are not silently skipped).
+  when the test fails. Your local `sms` database and its data are never touched.
+- **Safeguards (fail closed).** Because the tests create and drop databases, `internal/database/dbtest`
+  refuses to start unless **all** of these hold, and fails the test with a setup message (never
+  containing the password):
+  - `APP_ENV=test` is set explicitly — missing, `development`, `production`, or any other value is refused;
+  - the `DB_*` configuration is valid (for example, `DB_PASSWORD` is set);
+  - `DB_HOST` is a **loopback IP address** (`127.0.0.1` or `::1`) — host names, including `localhost`,
+    and non-loopback addresses are refused.
+
+  Only generated `sms_test_<16 hex>` names are ever created or dropped, and never the configured
+  `DB_NAME`, even if it starts with `sms_test_`. The tests are not silently skipped when the setup is wrong.
 - Integration tests cover: connecting and pinging (PostgreSQL 18 verified), wrong password and missing
   database errors (without leaking the password), pool limits and closing, transaction commit and
   rollback, migrations (up, status, down, idempotency, failure rollback, the advisory lock, no business
@@ -332,7 +357,7 @@ gofmt -l .                                   # must print nothing
 go vet ./... && go vet -tags integration ./...
 go test ./...
 go test -race ./...                          # needs a C compiler (cgo); on Windows, run in CI or WSL
-go test -tags integration -race ./...        # needs PostgreSQL and the DB_* variables
+APP_ENV=test go test -tags integration -race ./...   # needs local PostgreSQL and the DB_* variables
 go build -o bin/api ./cmd/api && go build -o bin/migrate ./cmd/migrate
 go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 run ./...
 go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
@@ -341,6 +366,16 @@ go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
 `govulncheck` analyses the standard library of the `go` found on your `PATH`, so run it with Go 1.27.4
 itself on `PATH` (as CI does). If your `PATH` points to an older Go that only delegates to 1.27.4,
 govulncheck reports type errors in the standard library rather than results.
+
+## Known follow-ups (not part of Group 2)
+
+- **sqlc:** generate code and add a `sqlc diff` CI check once the first real query exists.
+- **Windows:** the owner validates the PowerShell steps above with Docker Desktop.
+- **Readiness logging:** review the access-log severity of `/readyz` 503 responses (currently `ERROR`,
+  per the Group 1 rule for status ≥ 500).
+- **Database roles:** before any production business schema, separate the migration role (DDL) from the
+  runtime role used by the API (DML only, least privilege). Today both executables use the same
+  `DB_USER`.
 
 ## Rules
 

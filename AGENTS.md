@@ -348,7 +348,10 @@ Details and examples: [coding standards](docs/standards/coding-standards.md#go).
 
 ### 7.1 Package organization
 - One Go module in `backend/`. Executables in `backend/cmd/<name>/`; application code in
-  `backend/internal/<module>/`; shared technical plumbing in `backend/internal/platform/`.
+  `backend/internal/<module>/`. Shared technical plumbing is one focused package per concern, directly
+  under `backend/internal/` (`config`, `database`, `migration`, `httpserver`, `middleware`,
+  `observability`); there is no `internal/platform/` umbrella (owner decision, Phase 3 Group 2).
+  Technical packages contain no business rules.
 - `main.go` is thin: load config → build dependencies → run → shut down gracefully.
 - Package names are short, lowercase, singular, without underscores (`billing`, not `billing_service`).
 - MUST NOT create `utils`, `common`, `helpers`, `misc`, or `pkg/` (unless code is genuinely meant for
