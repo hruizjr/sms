@@ -419,3 +419,48 @@ test('the X-Request-ID response header matches what the middleware can return', 
   for (const bad of ['', 'x'.repeat(129), 'a b', 'a/b', 'é']) assert.ok(!re.test(bad), JSON.stringify(bad));
   assert.doesNotMatch(flat(header.description), /echo/i, 'no unconditional echo promise');
 });
+
+// ---------------------------------------------------------------------------------------------
+// Idempotency behaviour (owner check before merge) and owner decisions of 2026-11-25.
+
+const keyDescription = flat(spec.components.parameters.IdempotencyKey.description);
+
+test('same account, operation, key, and body: the original result is replayed', () => {
+  assert.match(keyDescription, /Scope: your account \+ this operation/);
+  assert.match(keyDescription, /Same key and same request body \(compared after JSON parsing[^)]*\): the original response is replayed/);
+  const accepted = flat(resolve(createOp().responses['202']).description);
+  assert.match(accepted, /On an idempotent replay the same status code and body are returned with `Idempotent-Replayed: true`/);
+  assert.match(flat(createOp().description), /does not create a second message or a second charge/);
+});
+
+test('same key with a different body: documented 422 idempotency-key-reused, nothing processed', () => {
+  assert.match(keyDescription, /Same key with a different body: `422` \(`idempotency-key-reused`\); nothing is processed/);
+  const r = resolve(createOp().responses['422']);
+  const ex = r.content['application/problem+json'].examples.idempotencyKeyReused.value;
+  assert.equal(ex.status, 422);
+  assert.equal(ex.type, 'https://api.example.invalid/problems/idempotency-key-reused');
+  assert.match(readme, /^\| `idempotency-key-reused` \| 422 \| Same key, different body \|$/m);
+});
+
+test('retention is seven days and the behaviour after expiry is explicit', () => {
+  assert.match(keyDescription, /\*\*Retention: seven days\.\*\* A recorded key is kept for seven days \(168 hours\) after the original request was accepted/);
+  assert.match(keyDescription, /processed as a \*\*new\*\* request: it is not compared with the earlier body \(no `422`\), no earlier response is replayed, and it can create a second message, a second charge, and a second SMS/);
+  assert.match(keyDescription, /Do not retry with an old key after seven days/);
+  assert.doesNotMatch(keyDescription, /not yet decided|Provisional/i);
+  assert.match(readme, /\*\*Retention: seven days\*\* \(D-094d\)/);
+  assert.match(readme, /\*\*After retention expires\*\* the key is forgotten/);
+});
+
+test('every owner decision listed in the contract README is recorded in the register and the workbook', () => {
+  const register = readFileSync(fileURLToPath(new URL('../docs/requirements/discovery-register.md', root)), 'utf8');
+  const workbook = readFileSync(fileURLToPath(new URL('../docs/discovery/owner-discovery-workbook.md', root)), 'utf8');
+  const section = readme.slice(readme.indexOf('## 7. Owner decisions'), readme.indexOf('**Still provisional or open**'));
+  const ids = [...new Set([...section.matchAll(/^\| (D-\d{3})/gm)].map((m) => m[1]))];
+  assert.deepEqual(ids, ['D-094', 'D-096', 'D-099', 'D-143', 'D-144', 'D-145', 'D-146', 'D-147']);
+  for (const id of ids) {
+    const regRow = register.split('\n').find((l) => l.startsWith(`| ${id} |`)) ?? '';
+    const wbRow = workbook.split('\n').find((l) => l.startsWith(`| ${id} |`)) ?? '';
+    assert.match(regRow, /Owner decision 2026-11-25/, `${id}: discovery register`);
+    assert.match(wbRow, /2026-11-25/, `${id}: owner discovery workbook`);
+  }
+});

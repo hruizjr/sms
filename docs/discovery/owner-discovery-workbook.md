@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — Phase 2A; no item has been resolved by this workbook | Project owner | 2026-11-24 |
+| Draft — Phase 2A; no item has been resolved by this workbook (owner decisions of 2026-11-25 on the public API contract are noted below and recorded in the discovery register) | Project owner | 2026-11-25 |
 
 This workbook lists **every open item** in the [discovery register](../requirements/discovery-register.md),
 grouped by workstream, in plain language. For each item it says why it matters, what we know today, what
@@ -141,16 +141,21 @@ Use the [MVP scope worksheet](mvp-scope-worksheet.md) to classify capabilities.
 | D-025 | Proposed: approval for large campaigns or new tenants. | As D-087. | Proposed. | Owner approval. | Owner | P1 | MVP scope |
 | D-022 | Proposed: sender IDs approved before use. | Impersonation risk. | Proposed. | Owner approval; telco process (D-103). | Owner | P1 | MVP scope |
 | D-021 | Proposed: MFA mandatory for Super Admins. | Admins control money and routing. | Proposed. | Owner approval. | Owner | P1 | Implementation |
-| D-023 | Proposed: idempotency keys on message submission. | Prevents duplicate operations. | Proposed (ADR-0018). | Owner approval. | Owner | P1 | Architecture |
-| D-094 | Idempotency details (required?, scope, retention, bulk). | API contract. | Recommendations in [API idempotency](../architecture/api-idempotency.md). | Owner decision. | Owner, [Customers](questionnaires/enterprise-customer.md) | P1 | Architecture |
+| D-023 | Proposed: idempotency keys on message submission. | Prevents duplicate operations. | **Decided 2026-11-25 (PR #7 review):** approved; key required (D-094a). ADR-0018 remains Proposed. | Owner decision — recorded. | Owner | P1 | Architecture |
+| D-094 | Idempotency details (required?, scope, retention, bulk). | API contract. | **Decided 2026-11-25 (PR #7 review):** required; scope account + operation; insufficient-credit rejections not recorded; retention seven days; bulk sending excluded from the MVP. ADR-0018 remains Proposed. | Owner decision — recorded. | Owner, [Customers](questionnaires/enterprise-customer.md) | P1 | Architecture |
+| D-143 | How API keys are sent, and permission names. | Public API contract. | **Decided 2026-11-25 (PR #7 review):** `Authorization: Bearer <key>`; permissions `messages:send`, `messages:read`. | Owner decision — recorded. | Owner | P1 | Architecture |
+| D-144 | Maximum message length and segment count. | Public API contract; cost surprises. | **Decided 2026-11-25 (PR #7 review):** API maximum 1,600 characters. **Segment count deferred** to product/provider policy (depends on D-105). | Segment count: owner/product policy once provider limits are known. | Owner, [Telcos](questionnaires/telco-core.md) | P1 | Implementation |
+| D-145 | Public API and documentation **domain**. | Public API contract; problem-type URIs. | **Owner decision 2026-11-25 (PR #7 review):** keep the placeholder for now. | Owner decision when the domain is chosen. | Owner | P2 | Launch |
+| D-146 | HTTP status for insufficient credit. | Public API contract. | **Decided 2026-11-25 (PR #7 review):** `402`. | Owner decision — recorded. | Owner | P1 | Implementation |
+| D-147 | Explicit sender ID in every request, or an account default? | Public API contract; sender ID control. | **Decided 2026-11-25 (PR #7 review):** explicit `sender_id` required; no account-level default. | Owner decision — recorded. | Owner | P1 | Implementation |
 | D-026 | Proposed: simulator provider before any real telco adapter. | Development without telco access. | Proposed. | Owner approval. | Owner | P1 | Implementation |
 | D-027 | Proposed: admin portal deployed separately. | Security. | Proposed (ADR-0013). | Owner approval (with D-091). | Owner | P1 | Architecture |
 | D-091 | One portal or **two** (client / admin)? | Security vs. simplicity. | **Decided 2026-11-25 (ADR-0013):** one application, `client-portal`, initially, plus `packages/ui`; `admin-portal` added when admin functionality begins. | Owner decision — recorded. | Owner | P1 | Architecture |
 | D-140 | Which **headless UI library**, if any? | Accessibility of complex widgets. | Direction in ADR-0013 (accepted). **Deferred by the owner on 2026-11-25.** | Owner decision when complex widgets are needed. | Owner | P1 | Implementation |
 | D-029 | Proposed: show segments and cost before sending. | Avoids cost surprises. | Proposed. | Owner approval. | Owner | P1 | MVP scope |
 | D-095 | Policy for **ambiguous submissions** (timeouts). | Loss vs. duplicate SMS trade-off. | Options in [messaging reliability §4](../architecture/messaging-reliability.md#4-provider-submission-and-ambiguous-outcomes). Depends on D-115. | Owner decision per traffic type. | Owner | P1 | Architecture |
-| D-096 | Customer label and billing for **uncertain** messages. | Customer trust and margin. | Open. | Owner decision. | Owner | P1 | Architecture |
-| D-099 | **Customer-visible statuses** and webhook semantics. | Public API contract. | Open. | Owner decision. | Owner, [Customers](questionnaires/enterprise-customer.md) | P1 | Architecture |
+| D-096 | Customer label and billing for **uncertain** messages. | Customer trust and margin. | **Label decided 2026-11-25 (PR #7 review):** `submission_uncertain` is a separate status (and `unknown` is shown as `unknown`). **Billing still open.** | Owner decision on billing treatment. | Owner | P1 | Architecture |
+| D-099 | **Customer-visible statuses** and webhook semantics. | Public API contract. | **Statuses decided 2026-11-25 (PR #7 review):** eight statuses and ten initial reason codes, extensible (public API contract §3). **Webhook semantics still open.** ADR-0021 remains Proposed. | Owner decision on webhook semantics when webhooks are scheduled. | Owner, [Customers](questionnaires/enterprise-customer.md) | P1 | Architecture |
 | D-097 | Multi-segment receipt roll-up and partial billing. | Billing correctness. | Depends on D-104. | Owner decision after telco specs. | Owner | P2 | Implementation |
 | D-098 | Conflicting final receipts policy. | Reconciliation. | Open. | Owner decision. | Owner | P2 | Implementation |
 | D-065 | Required **integrations** (payments, accounting, CRM). | Scope. | Unknown. | Customer and owner needs. | Owner, [Customers](questionnaires/enterprise-customer.md) | P2 | MVP scope |

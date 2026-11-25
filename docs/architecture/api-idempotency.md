@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — decision-ready proposal for ADR-0018; owner decisions pending (D-094) | Project owner | 2026-11-24 |
+| Draft — proposal for ADR-0018 (still Proposed); owner decisions on D-094a–e recorded 2026-11-25 | Project owner | 2026-11-25 |
 
 **This document is authoritative** for the API idempotency contract, as defined in [`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts). Its content is a
 **proposal** (ADR-0018 is Proposed): this document is the authoritative description of that proposal, not
@@ -10,6 +10,13 @@ an approved decision. Each section states the recommended rule and, where the ow
 options. Nothing here is implemented. It does not grant permissions, widen task scope, or override restrictions in `AGENTS.md`. If it genuinely conflicts with another document, stop the affected work, report the conflict, and request owner resolution ([`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts)).
 
 ---
+
+**Owner decisions (2026-11-25, PR #7 review; recorded in the discovery register, D-094):**
+(a) the key is **required** on message submission; (b) scope is **tenant (account) + operation**
+(option A, §3.3); (c) business rejections such as insufficient credit are **not recorded**; (d) retention
+is **seven days**; (e) bulk sending is **excluded from the MVP**, so bulk semantics (§3.9) are not needed
+now. The public API contract ([`contracts/openapi/`](../../contracts/openapi/README.md#4-idempotency-proposed-adr-0018))
+applies them. ADR-0018 itself remains Proposed. Where a section below says "Decision", it refers to these.
 
 ## 1. Purpose and limits
 

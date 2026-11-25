@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft contract — Phase 3 Group 3; **not implemented**; provisional items pending owner decisions (§7) | Project owner | 2026-11-25 |
+| Draft contract — Phase 3 Group 3; **not implemented**; owner decisions of 2026-11-25 applied; remaining provisional items in §7 | Project owner | 2026-11-25 |
 
 The machine-readable source of truth is [`public-api-v1.yaml`](public-api-v1.yaml) (OpenAPI 3.1,
 ADR-0015). This guide explains the semantics behind it for reviewers and future implementers. The
@@ -18,7 +18,7 @@ provider adapters ([messaging reliability §5.1](../../docs/architecture/messagi
 
 | In this contract | Not in this contract (and why) |
 | ---------------- | ------------------------------ |
-| `POST /v1/messages` — accept one message to one recipient | **Bulk submission** — all-or-nothing vs per-recipient semantics is open (D-094e) |
+| `POST /v1/messages` — accept one message to one recipient | **Bulk submission** — excluded from the MVP by owner decision (D-094e, 2026-11-25) |
 | `GET /v1/messages/{message_id}` — current status of one message | **Webhooks / status callbacks** — deferred in the candidate MVP (product brief §5); principles in §6 |
 | `GET /v1/messages` — list with cursor pagination and filters | **Cost estimate / prices / balances** — monetary representation is open (ADR-0019) |
 | API key authentication, permissions, problem details, idempotency | **Portal (browser) API**, sender ID management, API key management, scheduling, campaigns, inbound messages — later phases |
@@ -51,8 +51,9 @@ Resolving it is per-provider policy (D-095).
 
 ## 3. Status reference (customer-visible statuses)
 
-Provisional set (D-099; internal states from ADR-0021, both Proposed). Every internal state maps to
-exactly one customer status. Clients should branch on `status_category` for robustness, since new status
+Owner-approved set (D-099, 2026-11-25), including `submission_uncertain` as a separate status
+(D-096, customer-visible part); new values may be added later within `/v1`. The internal states come
+from ADR-0021, which remains Proposed. Every internal state maps to exactly one customer status. Clients should branch on `status_category` for robustness, since new status
 values may be added within `/v1`.
 
 | Status | Category | Internal states (ADR-0021) | Meaning for the client |
@@ -82,15 +83,21 @@ Rules that follow from [messaging reliability §5](../../docs/architecture/messa
 
 Summary of [API idempotency](../../docs/architecture/api-idempotency.md) as applied here:
 
+Owner decisions D-094a–e (2026-11-25) are applied; ADR-0018 itself remains Proposed.
+
 - `Idempotency-Key` is **required** on `POST /v1/messages` (D-094a); scope is account + operation (D-094b).
 - Fingerprint = the operation plus the parsed JSON body; whitespace and key order do not matter.
 - Same key + same body → original response replayed (`202`, same body and message `id`,
   `Idempotent-Replayed: true`). The replay shows the **acceptance-time** state; use `GET` for the current status.
 - Same key + different body → `422 idempotency-key-reused`. Same key while in progress → `409` + `Retry-After`.
-- Not recorded (safe to fix and retry with the same key): `400`, `401`, `403`, `402` (D-094c), `413`,
+- Not recorded (safe to fix and retry with the same key): `400`, `401`, `403`, `402` (D-094c, D-146), `413`,
   `415`, `422` other than key reuse, `429`, and `5xx` where nothing was committed.
-- Retention: not yet decided (D-094d); recommendation is at least 24 hours. It will be published in
-  the specification once decided.
+- **Retention: seven days** (D-094d) after the original request was accepted.
+- **After retention expires** the key is forgotten: a request reusing it is processed as a **new**
+  request (no fingerprint comparison, no `422`, no replay) and can create a second message, charge, and
+  SMS. Clients must not retry with a key older than seven days; they can look up earlier messages with
+  `GET /v1/messages?client_reference=...`.
+- Bulk requests: none in the MVP (D-094e).
 - `client_reference` is a separate, optional label for the client's own correlation. It is **not**
   deduplicated.
 
@@ -112,7 +119,7 @@ decided (D-145).
 | `idempotency-key-missing` | 400 | `Idempotency-Key` header missing |
 | `idempotency-key-invalid` | 400 | `Idempotency-Key` value malformed |
 | `unauthenticated` | 401 | Missing, malformed, unknown, revoked, or expired API key |
-| `insufficient-credit` | 402 | Not enough available credit to accept the message (provisional) |
+| `insufficient-credit` | 402 | Not enough available credit to accept the message (D-146) |
 | `forbidden` | 403 | Key lacks the required permission, or the account may not use the operation |
 | `idempotency-request-in-progress` | 409 | Same key still being processed |
 | `payload-too-large` | 413 | Body exceeds the size limit |
@@ -120,7 +127,7 @@ decided (D-145).
 | `idempotency-key-reused` | 422 | Same key, different body |
 | `sender-id-not-approved` | 422 | `sender_id` is not approved for the account |
 | `destination-not-supported` | 422 | Destination not served (initially non-Philippine numbers, D-043) |
-| `message-too-long` | 422 | Body needs more segments than allowed (D-144) |
+| `message-too-long` | 422 | Body needs more segments than product/provider policy allows (D-144) |
 | `recipient-opted-out` | 422 | Recipient is on a suppression list |
 | `rate-limited` | 429 | Rate limit exceeded; see `Retry-After` |
 
@@ -142,28 +149,38 @@ signed with HMAC and a timestamp, sent only to URLs validated against SSRF
 carrying the same status values as §3, and possibly arriving out of order (clients use
 `status_updated_at` and `GET` as the authority).
 
-## 7. Decisions for the owner
+## 7. Owner decisions and remaining provisional items
 
-Every value below is written into the specification as **provisional** and marked so. Changing any of
-them before `v1` is published is cheap; after publication most are breaking changes.
+**Decided by the owner on 2026-11-25** (recorded in the
+[discovery register](../../docs/requirements/discovery-register.md) and the
+[owner discovery workbook](../../docs/discovery/owner-discovery-workbook.md)). No ADR status was changed:
+ADR-0018 and ADR-0021 remain Proposed.
 
-| ID | Decision | Provisional choice in the spec | Alternatives |
-| -- | -------- | ------------------------------ | ------------ |
-| D-094a | Idempotency key required or optional | Required | Optional (lower integration friction; a later switch to required is breaking) |
-| D-094b | Key scope | Account (tenant) + operation | Per API key + operation; per account across operations |
-| D-094c | Record business rejections (insufficient credit) | Not recorded; retry after top-up succeeds | Record and replay the rejection |
-| D-094d | Key retention | Not stated; ≥ 24 h recommended | 24 h / 72 h / 7 days |
-| D-094e | Bulk semantics | Bulk endpoint omitted | All-or-nothing; per-recipient results |
-| D-096 / D-099 | Show `SUBMIT_UNCERTAIN` to customers | Separate status `submission_uncertain` | Fold into `unknown`; show as `accepted` (hides risk; not recommended) |
-| D-099 | Customer-visible status set and names | 8 statuses + `status_category` (§3) | Expose internal states 1:1; coarser set (e.g. pending/delivered/failed — loses the uncertain distinction) |
-| D-099 | Initial `status_reason` codes | 10 platform-defined codes (spec `StatusReason`) | Fewer, broader codes; add codes when adapters are built |
-| D-143 | API key presentation and permission names | `Authorization: Bearer <key>`; `messages:send`, `messages:read` | `X-API-Key` header; other permission model (security baseline S-2/S-3) |
-| D-144 | Maximum message length | `body` ≤ 1,600 characters (structural); max segments undecided → `422 message-too-long` | A fixed segment limit (e.g. 6 or 10), once network limits (D-105) are known |
-| D-145 | Public API domain and problem-type URI base | Placeholder `https://api.example.invalid` | Final API and documentation domains |
-| — | Insufficient credit status code | `402` | `422` or `409` with the same problem type |
+| ID | Decision | Applied in the specification |
+| -- | -------- | ---------------------------- |
+| D-094a | Idempotency key required | `Idempotency-Key` required on `POST /v1/messages` |
+| D-094b | Key scope: account + operation | `IdempotencyKey` description |
+| D-094c | Insufficient-credit rejections are not recorded | `IdempotencyKey`, `InsufficientCredit` |
+| D-094d | Retention: seven days | `IdempotencyKey` (retention and expiry) |
+| D-094e | Bulk sending excluded from the MVP | No bulk endpoint |
+| D-096 (customer-visible part) | `submission_uncertain` is a separate status | `MessageStatus`, §3 |
+| D-099 (status part) | The eight statuses and ten initial reason codes, extensible | `MessageStatus`, `StatusCategory`, `StatusReason`, §3 |
+| D-143 | Bearer API key; permissions `messages:send`, `messages:read` | `api_key` security scheme, `x-required-permission` |
+| D-144 | Maximum API message length 1,600 characters; maximum segment count deferred to product/provider policy | `MessageCreateRequest.body` |
+| D-145 | API domain stays a placeholder for now | `servers`, problem-type URIs (`https://api.example.invalid`) |
+| D-146 | HTTP `402` for insufficient credit | `InsufficientCredit` response |
+| D-147 | Explicit `sender_id` required; no account-level default | `MessageCreateRequest.sender_id` (required), `SenderId` |
 
-Unchanged and still open: D-095 (ambiguous submission policy), D-097 (segment roll-up), D-098
-(conflicting finals), ADR-0019 (money; no amounts in this contract).
+**Still provisional or open** (not changed by these decisions):
+
+| Item | Current state in the specification |
+| ---- | ---------------------------------- |
+| Replay header name `Idempotent-Replayed` | Provisional; name marked "TBD" in [API idempotency §3.5](../../docs/architecture/api-idempotency.md#35-outcomes) and not part of the D-094 decisions |
+| D-145 final domain | Placeholder until decided |
+| D-096 billing treatment of uncertain messages; D-099 webhook semantics | Open; no webhooks or prices in this contract |
+| Maximum segments per message (D-144, D-105) | Product/provider policy; `422 message-too-long` when exceeded |
+| Sender ID format and length per network | `TODO(telco-confirm)` (telco checklist §9) |
+| D-095, D-097, D-098, ADR-0019 | Open; not modelled in this contract |
 
 ## 8. Validation
 

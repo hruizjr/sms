@@ -5,8 +5,9 @@ info:
   summary: Client-facing REST API for submitting A2P SMS messages and reading their status.
   description: |
     **Status: draft contract (Phase 3 Group 3). Nothing in this document is implemented yet.**
-    Values marked *provisional* depend on owner decisions listed in
-    `contracts/openapi/README.md` and the discovery register; they may change before `v1` is published.
+    Owner decisions recorded on 2026-11-25 are applied. Values still marked *provisional* depend on
+    open owner decisions listed in `contracts/openapi/README.md` §7 and the discovery register; they may
+    change before `v1` is published.
 
     ## What a successful response means
 
@@ -355,8 +356,9 @@ components:
           (`x-required-permission`). A valid key without that permission receives `403`.
         - Revoked, expired, unknown, or malformed keys receive `401`.
 
-        Provisional: the header form, key format, and permission names depend on the API key design
-        (security baseline S-2/S-3; discovery register D-143).
+        Owner decision (D-143, 2026-11-25): API keys are sent as `Authorization: Bearer <api key>`, with
+        the permissions `messages:send` and `messages:read`. Further key-format details follow the API
+        key design (security baseline S-3).
   parameters:
     RequestId:
       name: X-Request-ID
@@ -393,10 +395,18 @@ components:
         - Requests rejected by validation (`400`, `422` other than `idempotency-key-reused`), by
           authentication or authorization (`401`, `403`), for insufficient credit (`402`), or by rate
           limiting (`429`) are not recorded, so you may correct the problem and retry with the same key.
-        - After the retention period, a key is forgotten and a reused key is treated as a new request.
-          Provisional: the retention period is not yet decided (D-094d) and will be published here.
+        - **Retention: seven days.** A recorded key is kept for seven days (168 hours) after the
+          original request was accepted. Within that period every request with the key is handled as
+          described above.
+        - **After the retention period** the key is forgotten. A request that reuses it is processed
+          as a **new** request: it is not compared with the earlier body (no `422`), no earlier
+          response is replayed, and it can create a second message, a second charge, and a second SMS.
+          Do not retry with an old key after seven days; to check whether an earlier message was
+          accepted, use `GET /v1/messages?client_reference=...` (or the message `id` if you have it).
 
-        Provisional (ADR-0018, D-094a–d): required vs optional, scope, recorded outcomes, retention.
+        Owner decisions (D-094a–d, 2026-11-25): the key is required; scope is account + operation;
+        validation, authentication, authorization, insufficient-credit, and rate-limit rejections are
+        not recorded; retention is seven days. ADR-0018 itself remains Proposed.
       schema:
         type: string
         minLength: 1
@@ -438,7 +448,8 @@ components:
     IdempotentReplayed:
       description: |
         Present with the value `true` when this response is a replay of an earlier response for the
-        same `Idempotency-Key`. Absent on the original response. Provisional header name (D-094).
+        same `Idempotency-Key`. Absent on the original response. Provisional header name (marked
+        TBD in the idempotency proposal; not part of the D-094 decisions).
       schema:
         type: string
         enum: ['true']
@@ -522,7 +533,8 @@ components:
       description: |
         The account does not have enough available credit to accept this message. Nothing was
         processed and the idempotency key was not recorded, so the same request can be retried with
-        the same key after a top-up. Provisional (D-094c; credit model ADR-0011/ADR-0019).
+        the same key after a top-up (owner decisions D-094c and D-146, 2026-11-25: not recorded;
+        HTTP `402`). How credit is reserved is not part of this contract (ADR-0011, ADR-0019).
       headers:
         X-Request-ID:
           $ref: '#/components/headers/XRequestID'
@@ -716,8 +728,9 @@ components:
     SenderId:
       type: string
       description: |
-        The sender name or number shown to the recipient. It must exactly match a sender ID approved
-        for your account. Allowed characters and length per network depend on network registration
+        The sender name or number shown to the recipient. Required in every request: there is no
+        account-level default sender ID (owner decision D-147, 2026-11-25). It must exactly match a
+        sender ID approved for your account. Allowed characters and length per network depend on network registration
         rules (TODO(telco-confirm): sender ID format and length per network); `maxLength` here is only
         a structural bound.
       minLength: 1
@@ -740,9 +753,10 @@ components:
             response. Characters outside GSM-7 (for example emoji) switch the whole message to `ucs2`,
             which roughly halves the characters per segment.
 
-            Provisional: the `maxLength` below is a structural bound; the maximum number of segments
-            per message is not yet decided (D-144, depends on network limits D-105). A body that is
-            within `maxLength` but needs too many segments returns `422 message-too-long`.
+            Owner decision (D-144, 2026-11-25): at most 1,600 characters. The maximum number of
+            segments per message is set by product and provider policy (not by this contract) and
+            depends on provider limits (D-105); a body within 1,600 characters that needs more segments
+            than that policy allows returns `422 message-too-long`.
           minLength: 1
           maxLength: 1600
         client_reference:
@@ -750,7 +764,9 @@ components:
     MessageStatus:
       type: string
       description: |
-        Customer-visible message status. Provisional set (D-099, ADR-0021). The meaning of each value,
+        Customer-visible message status. Owner-approved set (D-099, 2026-11-25), extensible: new values
+        may be added (see Compatibility). It maps the internal states of ADR-0021, which remains
+        Proposed. The meaning of each value,
         and how it maps to the platform's internal lifecycle, is documented in
         `contracts/openapi/README.md`.
 
@@ -802,7 +818,8 @@ components:
         code:
           type: string
           description: |
-            Machine-readable reason. Initial set (provisional, D-099):
+            Machine-readable reason. Initial set (owner-approved, D-099, 2026-11-25); new codes may be
+            added:
             `recipient_opted_out`, `policy_violation`, `provider_rejected` (with `rejected`);
             `retries_exhausted`, `expired_before_submission`, `permanent_submission_error` (with `failed`);
             `provider_reported_undelivered`, `provider_reported_expired` (with `undelivered`);

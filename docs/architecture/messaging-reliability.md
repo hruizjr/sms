@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — pending owner review (supports ADR-0020, ADR-0021) | Project owner | 2026-11-24 |
+| Draft — pending owner review (supports ADR-0020, ADR-0021); customer-visible labels recorded 2026-11-25 | Project owner | 2026-11-25 |
 
 **This document is authoritative** for internal event-delivery guarantees, the transactional outbox,
 message lifecycle milestones, provider submission outcomes, and delivery receipt (DLR) handling, as
@@ -206,7 +206,9 @@ delivery** unless a provider-specific, documented guarantee exists and an ADR re
 - `UNKNOWN` **does not mean undelivered.** Not all providers or routes may return receipts at all.
 - The window is **configurable per provider** (and possibly per traffic type). **There is no universal
   default.** Initial values are set from each provider's documentation and observed behaviour (D-116).
-- Customer-facing labels and billing treatment of `UNKNOWN` are pending owner decisions (D-096, D-099).
+- Customer-facing labels were decided by the owner on 2026-11-25 (D-096, D-099): `UNKNOWN` is shown as
+  `unknown` and `SUBMIT_UNCERTAIN` as `submission_uncertain` (public API contract §3). Billing treatment
+  of `UNKNOWN` remains a pending owner decision (D-096).
 
 ### 5.4 Late receipts
 

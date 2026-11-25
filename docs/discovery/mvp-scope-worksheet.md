@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — **proposed tiers only; no owner decision recorded** | Project owner | 2026-11-24 |
+| Draft — proposed tiers; **one owner decision recorded** (MVP-08, 2026-11-25) | Project owner | 2026-11-25 |
 
 This worksheet helps the owner decide what launches first (D-089, D-020). Every capability from the
 original product expectations (D-007) is listed and classified:
@@ -27,7 +27,7 @@ it. The owner records the final tier in the "Owner decision" column.
 | MVP-05 | Sender ID request and approval workflow | Client, admin | Essential | |
 | MVP-06 | API keys (create, scope, revoke) | Developer | Essential | |
 | MVP-07 | Send a single message via public API (with idempotency key) | Developer | Essential | |
-| MVP-08 | Send to many recipients via API (batch) | Developer | Essential* | |
+| MVP-08 | Send to many recipients via API (batch) | Developer | Essential* | **Excluded from the MVP** (owner, 2026-11-25; D-094e) |
 | MVP-09 | Send from the portal (type/paste recipients or upload a recipient file) | Client user | Essential | |
 | MVP-10 | Message composer with segment count and cost estimate | Client user | Essential | |
 | MVP-11 | Contact book, groups, and segmentation | Client user | Deferrable | |
@@ -131,6 +131,7 @@ it. The owner records the final tier in the "Owner decision" column.
 - **Security:** large batches amplify abuse; approval policy applies (MVP-13).
 - **Acceptance criteria:** partial rejections reported per recipient; no duplicate charges on retry.
 - **Open questions:** do launch customers send campaigns via API or portal (CU-10)?
+- **Owner decision (2026-11-25, PR #7 review):** bulk sending is excluded from the MVP (D-094e). The public API v1 contract has no bulk endpoint.
 
 ### MVP-09 — Send from the portal
 - **Problem:** non-technical clients need to send without integration.
