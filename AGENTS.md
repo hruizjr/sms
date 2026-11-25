@@ -76,9 +76,20 @@ This section is the **only** definition of the document hierarchy; other documen
 | Source | Authoritative for |
 | ------ | ----------------- |
 | **`AGENTS.md`** (this file) | Agent conduct, permissions, task boundaries, repository workflow, and project-wide non-negotiable rules (MUST / MUST NOT rules in this file). [Git workflow](docs/engineering/git-workflow.md) and [AI agent workflow](docs/engineering/ai-agent-workflow.md) give the detailed procedures; they add detail but cannot relax this file. |
-| **Specialist documents** | Their own technical subjects: [messaging reliability](docs/architecture/messaging-reliability.md) (event delivery, message lifecycle, provider submission outcomes, delivery receipts); [API idempotency](docs/architecture/api-idempotency.md) (idempotency contract); [financial integrity](docs/architecture/financial-integrity.md) (monetary representation, rounding, ledger rules); [security baseline](docs/security/security-baseline.md) (security principles and controls); [testing standards](docs/standards/testing-standards.md) (test levels, scenarios, expectations); [coding standards](docs/standards/coding-standards.md) (language conventions and examples). |
+| **Specialist documents** | Their own technical subjects (listed below the table). |
 | **Accepted ADRs** in the [decision log](docs/engineering/decision-log.md) | Approved architectural decisions. **Proposed** ADRs are direction, not binding (§2 rule 3). |
 | **[Discovery register](docs/requirements/discovery-register.md)** | Status of known, assumed, and unresolved project information. |
+
+Specialist documents and their subjects:
+
+- [messaging reliability](docs/architecture/messaging-reliability.md) — event delivery, message lifecycle,
+  provider submission outcomes, delivery receipts;
+- [API idempotency](docs/architecture/api-idempotency.md) — idempotency contract;
+- [financial integrity](docs/architecture/financial-integrity.md) — monetary representation, rounding,
+  ledger rules;
+- [security baseline](docs/security/security-baseline.md) — security principles and controls;
+- [testing standards](docs/standards/testing-standards.md) — test levels, scenarios, expectations;
+- [coding standards](docs/standards/coding-standards.md) — language conventions and examples.
 
 Rules:
 
