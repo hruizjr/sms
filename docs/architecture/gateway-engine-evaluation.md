@@ -52,7 +52,7 @@ The spike results apply to **the tested deployment only**:
 
 They **do not prove** that every Jasmin version or deployment configuration is unsuitable. In particular:
 
-- RabbitMQ 3.x was not tested;
+- RabbitMQ 3.x, and RabbitMQ 4.x releases other than 4.4.1, were not tested;
 - later Jasmin commits or releases were not tested;
 - patched or hardened builds were not tested.
 
@@ -63,21 +63,23 @@ Two links between the earlier review and the spike:
 - **Same code paths.** The review read `master` at `0aac58e`. The key code paths it cites — timeout requeue, DLR purge, Redis-down skip, and queue declaration — are identical in the 0.11.0 tag, as checked with `git grep` during the spike.
 - **Review-only findings.** Findings that come only from the source or documentation review (marked **[V]**) were not all exercised by the spike. Section 9.5 lists what was not tested.
 
+**Simulator, not a mobile network.** Wherever this document says a message was "delivered" or "reached the SMSC" in the spike, the evidence is the SMPP simulator's behaviour. That means the `submit_sm` PDUs it received, the SMSC message IDs it assigned, and the `DELIVRD` receipts it generated. No real mobile network or handset was involved, so **actual delivery to recipient handsets was not tested** — including whether repeated submissions would reach a recipient as duplicate SMS.
+
 ### 1.3 Spike findings in brief
 
 Full results are in §9.3–§9.5.
 
 | Area | Result in the tested deployment |
 | ---- | ------------------------------- |
-| SMPP submission timeout | **[T-FAIL] Blind resubmission → duplicate SMS.**<br>- One withheld `submit_sm_resp` produced **2** `submit_sm` for one message; three withheld produced **4**.<br>- Our side recorded only one SMSC message ID per message, so **the duplicates were invisible to the platform**.<br>- Shorter timers changed only the timing. |
+| SMPP submission timeout | **[T-FAIL] Blind resubmission → duplicate upstream submission attempts.**<br>- One withheld `submit_sm_resp` produced **2** `submit_sm` PDUs for one message; three withheld produced **4**.<br>- Our side recorded only one SMSC message ID per logical message, so **the repeated submissions were invisible to the platform**.<br>- Shorter timers changed only the timing.<br>- **[NT]** Whether recipients would actually receive duplicate SMS on their handsets was not tested (simulator only).<br>- This remains a **confirmed reliability failure and a production blocker**: after an ambiguous timeout, Jasmin resubmits blindly, which AGENTS.md rule 23 forbids. |
 | RabbitMQ restart | **[T-FAIL] Non-durable queues; message loss.**<br>- All Jasmin queues are non-durable. After a broker restart every queue was gone: **10 of 10 queued messages were lost**.<br>- Jasmin did not restore its consumers.<br>- A new `/send` then returned **HTTP 200 `Success`** with an embedded failure — a failure reported as success. |
-| RabbitMQ 4.x compatibility | **[T-FAIL] by default.**<br>- Jasmin 0.11.0 cannot declare its queues on RabbitMQ 4.4.1 (`transient_nonexcl_queues` is deprecated and refused).<br>- It runs only with a temporary permit that RabbitMQ says will be removed. |
+| RabbitMQ 4.4.1 compatibility (the release tested) | **[T-FAIL] by default.**<br>- Jasmin 0.11.0 cannot declare its queues on RabbitMQ 4.4.1 (`transient_nonexcl_queues` is deprecated and refused).<br>- It runs only with a temporary permit that RabbitMQ says will be removed.<br>- **[NT]** RabbitMQ 3.x and other 4.x releases. |
 | Redis | **Mandatory dependency for DLR correlation.**<br>- **[T-PASS]** A graceful Redis restart kept correlation.<br>- **[T-FAIL]** If Redis **lost its data**, or was **down at submit time**, the SMS was still sent once, but **its receipt never reached Go**. |
-| Unicode receipts | **[T-FAIL] reproducible.**<br>- A UCS2 delivery receipt caused RabbitMQ 4.4.1 to reject an AMQP frame and close Jasmin's connection.<br>- Jasmin reconnected but **never re-created its consumers**, and the final receipt was lost.<br>- Afterwards the HTTP API still answered `Success` while nothing was submitted, until a manual restart.<br>- The encoding itself was correct.<br>- **[T-INC]** The root cause (Jasmin/txAMQP framing versus RabbitMQ 4's stricter parser) is unresolved. |
-| DLR callbacks to Go | **Bounded retries.**<br>- **[T-PASS]** Endpoint outages of 10 s and 45 s were survived.<br>- **[T-FAIL]** After a 150 s outage the receipt was **purged** after 4 tries (no dead-letter); the SMS was delivered, but Go never learned of it.<br>- **[T-INC]** The documented "404 → immediate purge" path was not observed. |
-| Jasmin process restart | **[T-PASS]** Queued and in-flight messages were each submitted once and delivered (two sub-cases). |
+| Unicode receipts | **[T-FAIL] reproducible.**<br>- A UCS2 delivery receipt from the simulator caused RabbitMQ 4.4.1 to reject an AMQP frame and close Jasmin's connection.<br>- Jasmin reconnected but **never re-created its consumers**, and the final receipt was lost.<br>- Afterwards the HTTP API still answered `Success` while nothing was submitted, until a manual restart.<br>- The encoding itself was correct.<br>- **[T-INC]** The root cause (Jasmin/txAMQP framing versus stricter parsing in RabbitMQ 4.4.1) is unresolved. |
+| DLR callbacks to Go | **Bounded retries.**<br>- **10 s and 45 s outages:** **[T-PASS]** for endpoint recovery: Jasmin retried, and the final `DELIVRD` callback arrived. **[T-INC]** for callback-sequence completeness: Go recorded only 1 of the 2 expected callbacks, and the missing one is unexplained.<br>- **[T-FAIL]** After a 150 s outage the receipt was **purged** after 4 tries (no dead-letter). The simulator reported the message delivered, but Go never learned of it.<br>- **[T-INC]** The documented "404 → immediate purge" path was not observed. |
+| Jasmin process restart | **[T-PASS]** Queued and in-flight messages were each submitted once and reported delivered by the simulator (two sub-cases). |
 | Correlation | **[T-PASS]** Our reference in `dlr-url` and Jasmin's ID were present in every callback.<br>**[T-FAIL] (edge case)** An SMSC message ID of `"0"` arrived as an empty `id_smsc`. |
-| Multipart GSM | **[T-PASS]** Two parts with UDH, correct encoding, receipt delivered. |
+| Multipart GSM | **[T-PASS]** Two parts with UDH and correct encoding at the simulator; receipt delivered to Go. |
 | Security defaults | **[T-PASS]** Invalid HTTP API and jCli credentials were rejected.<br>**Findings:** in the official image:<br>- jCli accepts the published default credentials and binds `0.0.0.0`;<br>- RabbitMQ `guest/guest` has administrator rights from another container;<br>- Redis has no password;<br>- the HTTP API is plain HTTP;<br>- `messages.log` holds message content in clear text. |
 
 No result supports exactly-once delivery, and none is claimed.
@@ -106,7 +108,7 @@ The text below is the recommendation as written before the spike. It is kept unc
 >
 > The spike (section 9) is designed to test exactly these risks. **[R]** Adopt Jasmin (Option C, Jasmin variant) only if its acceptance criteria pass with configuration and Go-side controls alone, or with a small patch you approve. Otherwise, build the dispatch and SMPP layer in Go (Option A) behind the same adapter. The adapter boundary means the work in Groups 1–2 and the Go business layer are unaffected either way.
 
-All four behaviours in item 3 were observed in the spike, with one difference: the receipt was purged after **4** tries, that is 3 retries (§9.3).
+All four behaviours in item 3 were observed in the spike, with one difference: the receipt was purged after **4** tries, that is 3 retries (§9.3). The resubmission was observed as **repeated `submit_sm` PDUs at the simulator**. Duplicate SMS on real handsets was not tested (§1.2).
 
 ---
 
@@ -198,9 +200,9 @@ All four behaviours in item 3 were observed in the spike, with one difference: t
 
 | # | Result |
 | - | ------ |
-| J1 | **[T-FAIL] Confirmed (S8).** One withheld `submit_sm_resp` led to 2 submissions of the same message; three withheld led to 4. Our side saw one SMSC ID per message. |
-| J2 | **[T-FAIL] Bounded retries confirmed (S7c).** After a 150 s endpoint outage the receipt was purged after 4 tries. **[T-PASS]** 10 s and 45 s outages were survived. **[T-INC]** The "404 → immediate purge" path was not observed, because Jasmin reported our 404 as a generic `HttpApiError()`. |
-| J3 | **[T-FAIL] Confirmed (S5).** All queues are non-durable, and 10 of 10 queued messages were lost on a broker restart. Beyond the review, Jasmin also did not recover its consumers and reported a failed `/send` as `Success`. On RabbitMQ 4.4.1, the non-durable queues are refused by default (§9.2). |
+| J1 | **[T-FAIL] Confirmed (S8)** as duplicate upstream submission attempts. One withheld `submit_sm_resp` led to 2 `submit_sm` PDUs for the same message; three withheld led to 4. Our side saw one SMSC ID per logical message. Actual duplicate delivery to handsets **[NT]**. |
+| J2 | **[T-FAIL] Bounded retries confirmed (S7c).** After a 150 s endpoint outage the receipt was purged after 4 tries. For the 10 s and 45 s outages, endpoint recovery was **[T-PASS]** (the final `DELIVRD` arrived), but callback-sequence completeness was **[T-INC]**: 1 of 2 expected callbacks was recorded, unexplained. **[T-INC]** The "404 → immediate purge" path was not observed, because Jasmin reported our 404 as a generic `HttpApiError()`. |
+| J3 | **[T-FAIL] Confirmed (S5).** All queues are non-durable, and 10 of 10 queued messages were lost on a broker restart. Beyond the review, Jasmin also did not recover its consumers and reported a failed `/send` as `Success`. On RabbitMQ 4.4.1 (the only release tested), the non-durable queues are refused by default (§9.2). |
 | J4 | **[T-FAIL] Confirmed (S6c).** Redis was down at submit time and the receipt never reached Go. **[T-FAIL]** Redis data loss between submit and receipt had the same effect (S6b). **[T-PASS]** A graceful Redis restart kept correlation (S6a). |
 | J5 | **[NT]** A broker that is down at submit time was not tested as such. Related observation (S5, S9): after a broker restart or a lost consumer, `/send` returned HTTP 200 `Success` although the message was never submitted. A `Success` response therefore cannot be treated as proof that the message was queued. |
 | J6 | **[NT]** |
@@ -285,7 +287,7 @@ Customer ─▶ Go API ─▶ PostgreSQL: message ACCEPTED + credit reservation 
 
 **Spike results for this table** (§9.3):
 
-- **Jasmin process — [T-PASS] (S4).** Queued and in-flight messages were each submitted once and delivered, in two sub-cases. A duplicate from a crash during an in-flight `submit_sm` was **not observed**, but this is not proof that it cannot happen.
+- **Jasmin process — [T-PASS] (S4).** Queued and in-flight messages were each submitted once and reported delivered by the simulator, in two sub-cases. A duplicate from a crash during an in-flight `submit_sm` was **not observed**, but this is not proof that it cannot happen.
 - **RabbitMQ — [T-FAIL] (S5).** The loss of queued submits was confirmed, and consumers were not recovered.
 - **Redis — [T-FAIL] (S6b, S6c).** Receipts were lost both when Redis was down at submit time and when Redis lost its data.
 - **Go DLR endpoint — [T-FAIL] (S7c).** The receipt was purged after 4 tries.
@@ -340,7 +342,7 @@ There is no generic plugin system and no "multi-engine router" — one interface
 
 **Reliability summary.** As shipped, Jasmin's delivery semantics are at-least-once at the SMSC (J1) and lossy for receipts and queued messages on failures (J2–J4). Our rules require the opposite at the SMSC boundary: never resubmit an ambiguous submission, and never lose evidence silently. Go-side reconciliation can detect losses; it cannot undo a duplicate SMS. **This is why J1 is the decisive spike criterion.**
 
-**Spike confirmation (S8, S10).** J1 was confirmed, and the resulting duplicates were invisible to our platform.
+**Spike confirmation (S8, S10).** J1 was confirmed as repeated `submit_sm` PDUs after an ambiguous timeout, and the repeated submissions were invisible to our platform. Whether they would reach recipients as duplicate SMS was not tested (simulator only). The finding remains a production blocker.
 
 In the official image and reference setup, the spike also observed these defaults:
 
@@ -377,11 +379,11 @@ The "How resolved" column is the pre-spike plan, which used the originally propo
 
 | # | Risk / unknown | Type | How resolved (pre-spike plan) | Outcome after the spike |
 | - | -------------- | ---- | ----------------------------- | ----------------------- |
-| R1 | J1 timeout resubmission causes duplicate SMS | Verified behaviour | Spike S5; if confirmed, a patch decision or Option A | **[T-FAIL] Confirmed** (executed as S8). One of the reasons for rejection. |
+| R1 | J1 timeout resubmission causes duplicate SMS | Verified behaviour | Spike S5; if confirmed, a patch decision or Option A | **[T-FAIL] Confirmed** as duplicate upstream submission attempts (executed as S8). Duplicate delivery to handsets **[NT]**. One of the reasons for rejection. |
 | R2 | Receipt and queue loss on restarts or callback outages (J2–J4, J6) | Verified behaviour, effect assumed | Spike S6–S8 | **[T-FAIL] Confirmed** for J2–J4 (S5, S6b, S6c, S7c), plus the Unicode-receipt failure (S9b/c). J6 **[NT]**. |
 | R3 | Throughput unknown; no upstream benchmark | Unknown | Separate load test after functional criteria pass, against verified requirements | **[NT]** No longer relevant for Jasmin. Capacity must still be measured for any gateway. |
 | R4 | Maintenance velocity and stale dependency pins | Verified | Owner decision on carrying a fork, or on commercial support | Unchanged. One reason the required patches are not carried (§9.7). |
-| R5 | Compatibility with supported RabbitMQ/Redis versions | Assumption | Spike runs current supported versions, pinned | **[T-FAIL]** RabbitMQ 4.4.1 refuses Jasmin's queues by default and works only with a temporary permit. **[T-PASS]** Redis 8.12.0 worked. RabbitMQ 3.x **[NT]**. |
+| R5 | Compatibility with supported RabbitMQ/Redis versions | Assumption | Spike runs current supported versions, pinned | **[T-FAIL]** RabbitMQ 4.4.1 refuses Jasmin's queues by default and works only with a temporary permit. **[T-PASS]** Redis 8.12.0 worked. RabbitMQ 3.x and other 4.x releases **[NT]**. |
 | R6 | Telco SMPP specifics (TON/NPI, encodings, receipt formats, binds, throughput) | Unknown — no telco specs | Telco discovery checklist; never invented | Unchanged. Applies equally to the Go-owned gateway. |
 | R7 | DLR expiry (24 h default) versus telco receipt latency | Unknown | Telco answers; set `dlr_expiry` accordingly | No longer relevant for Jasmin. Receipt latency is still a telco question for the Go gateway. |
 | R8 | Query-string preservation in `dlr-url` | Assumption | Spike S4 | **[T-PASS]** Preserved in every callback (executed as S3). |
@@ -437,28 +439,30 @@ RabbitMQ and Redis were pulled from Google's Docker Hub mirror because Docker Hu
 
 **Configuration (spike only):**
 
-- **Simulator:** 100% delivered, with fast receipts. `SMPP_CONNECTION_HANDLERS` was raised from 1 to 5 for the confirmation runs (§9.4).
-- **Jasmin connector:** `res_to 10` and `requeue_delay 20`, shortening the default 120 s timers. This changes only timing: with the defaults the code path is the same, with about 4 minutes between duplicate submissions.
+- **Simulator:** configured to report 100% of messages as delivered, with fast receipts. `SMPP_CONNECTION_HANDLERS` was raised from 1 to 5 for the confirmation runs (§9.4).
+- **Jasmin connector:** `res_to 10` and `requeue_delay 20`, shortening the default 120 s timers. This changes only timing: with the defaults the code path is the same, with about 4 minutes between repeated submissions.
 - **RabbitMQ 4.4.1 by default:** **[T-FAIL]** Jasmin cannot declare its queues. RabbitMQ refuses with `Feature 'transient_nonexcl_queues' is deprecated … not permitted anymore`, and `RouterPB` and other services fail to start.
 - **RabbitMQ 4.4.1 with a workaround:** with `deprecated_features.permit.transient_nonexcl_queues = true`, Jasmin starts. RabbitMQ states that the permit is temporary and the feature will be removed. **All other results were obtained with this permit.**
 
 ### 9.3 Confirmed results
 
+"Delivered" in this table means the SMPP simulator reported delivery. No real mobile network or handset was involved (§1.2).
+
 | # | Scenario | Result | Evidence summary |
 | - | -------- | ------ | ---------------- |
 | S1 | Submission Go → Jasmin → simulator | **[T-PASS]** | `Success "<uuid>"`; exactly 1 `submit_sm` at the proxy; `submit_sm_resp` `ESME_ROK` |
-| S2 | Delivery receipt returned to Go | **[T-PASS]** | Level-1 (`ESME_ROK`) and level-2 (`DELIVRD`) callbacks; the Go record reached delivered |
+| S2 | Delivery receipt returned to Go | **[T-PASS]** | Level-1 (`ESME_ROK`) and level-2 (`DELIVRD`, generated by the simulator) callbacks; the Go record reached delivered |
 | S3 | Correlation with unique non-zero SMSC IDs | **[T-PASS]** | SMSC IDs 1, 2, 3 arrived as `id_smsc` 1, 2, 3. Our reference (in `dlr-url`) and the Jasmin ID were present in every callback; this confirms the §4.3 assumption for the tested setup |
 | S3-edge | Correlation with SMSC message ID `"0"` | **[T-FAIL]** (edge case) | Reproduced twice: `"0"` arrives as an **empty** `id_smsc`. Correlation by our reference still worked |
-| S4 | Jasmin restart with messages queued or in flight | **[T-PASS]** | (a) 10 queued, (b) 20 throttled with a mid-stream restart: each submitted once, all delivered |
+| S4 | Jasmin restart with messages queued or in flight | **[T-PASS]** | (a) 10 queued, (b) 20 throttled with a mid-stream restart: each submitted once, all reported delivered by the simulator |
 | S5 | RabbitMQ restart with messages queued | **[T-FAIL]** | All queues `durable=false`.<br>- After the restart every Jasmin queue was gone: **10 of 10 queued messages lost**, and none reached the simulator.<br>- Consumers were not recovered.<br>- A new `/send` returned **HTTP 200 `Success "[Failure instance: … ChannelClosed … NOT_FOUND - no queue 'submit.sm.sim']"`** |
-| S6a | Redis graceful restart between submit and receipt | **[T-PASS]** | Receipt correlated and delivered |
-| S6b | Redis data lost between submit and receipt | **[T-FAIL]** | SMS submitted once and delivered by the simulator; **the receipt never reached Go** |
-| S6c | Redis down at submit time | **[T-FAIL]** | SMS submitted once. Jasmin logged `DLR is not enqueued … RC is not connected`; **the receipt never reached Go** |
-| S7a | Callback endpoint returning an HTTP error for 10 s | **[T-PASS]** | Retried, then delivered |
-| S7b | Callback endpoint down for 45 s | **[T-PASS]** | Connection refused ×3, then delivered |
-| S7c | Callback endpoint down for 150 s | **[T-FAIL]** | 4 attempts over about 65 s, then `Message try-count is 4 … purged from queue`. The SMS was delivered at the SMSC; **Go never learns it** |
-| S8 | SMPP submission timeout | **[T-FAIL]** | (a) 1 withheld response: **2 `submit_sm`** for one message, with two different SMSC IDs.<br>(b) 3 withheld: **4 `submit_sm`**.<br>- Jasmin logged `request timed out … message requeued`.<br>- The Go record showed **one** SMSC ID per message, so **the duplicates were invisible to the platform**.<br>- Each timeout also re-bound the session, delaying other traffic by about 30 s |
+| S6a | Redis graceful restart between submit and receipt | **[T-PASS]** | Receipt correlated and delivered to Go |
+| S6b | Redis data lost between submit and receipt | **[T-FAIL]** | Message submitted once and reported delivered by the simulator; **the receipt never reached Go** |
+| S6c | Redis down at submit time | **[T-FAIL]** | Message submitted once to the simulator. Jasmin logged `DLR is not enqueued … RC is not connected`; **the receipt never reached Go** |
+| S7a | Callback endpoint returning an HTTP error for 10 s | **[T-PASS]** for endpoint recovery; **[T-INC]** for callback-sequence completeness | Jasmin retried, the endpoint recovered, and the final `DELIVRD` callback arrived. Go recorded only **1 of the 2** expected callbacks (levels 1 and 2); the missing callback is unexplained (§9.4). Not a complete DLR-delivery pass |
+| S7b | Callback endpoint down for 45 s | **[T-PASS]** for endpoint recovery; **[T-INC]** for callback-sequence completeness | Connection refused ×3, then the endpoint recovered and the final `DELIVRD` callback arrived. Go recorded only **1 of the 2** expected callbacks; the missing callback is unexplained (§9.4). Not a complete DLR-delivery pass |
+| S7c | Callback endpoint down for 150 s | **[T-FAIL]** | 4 attempts over about 65 s, then `Message try-count is 4 … purged from queue`. The simulator reported the message delivered; **Go never learns it** |
+| S8 | SMPP submission timeout | **[T-FAIL]** — confirmed reliability failure and production blocker | Duplicate upstream submission attempts:<br>(a) 1 withheld response: **2 `submit_sm` PDUs** for one message, given two different SMSC IDs by the simulator.<br>(b) 3 withheld: **4 `submit_sm` PDUs**.<br>- Jasmin logged `request timed out … message requeued`.<br>- The Go record showed **one** SMSC ID per message, so **the repeated submissions were invisible to the platform**.<br>- **[NT]** Actual duplicate delivery to recipient handsets was not tested.<br>- Each timeout also re-bound the session, delaying other traffic by about 30 s |
 | S9a | Multipart GSM (250 characters), isolated after a clean reset | **[T-PASS]** | 2 parts with UDHI, `data_coding` 0; receipt delivered; consumers healthy for 120 s |
 | S9b | Short Unicode (UCS2), isolated after a clean reset | **[T-FAIL]**, reproducible | Encoding was correct: 1 part, `data_coding` 0x08.<br>- About 45 s later the AMQP connection broke, and consumers were not restored within 120 s.<br>- The final receipt was lost.<br>- Reproduced in 2 of 2 isolated runs, and in the earlier runs |
 | S9c | Unicode multipart (120 characters), isolated after a clean reset | **[T-FAIL]** | Segmentation and encoding were correct: 2 parts, UDHI, `data_coding` 0x08.<br>- The AMQP connection broke, and consumers were not restored within 120 s.<br>- The final receipt was lost (1 isolated run) |
@@ -466,9 +470,9 @@ RabbitMQ and Redis were pulled from Google's Docker Hub mirror because Docker Hu
 
 **Totals over all messages submitted.**
 
-- **Duplicate submissions:** only in S8, with 5 extra `submit_sm` across 2 messages. None in S1–S7 or S9.
+- **Repeated upstream submissions:** only in S8, with 5 extra `submit_sm` PDUs across 2 messages. None in S1–S7 or S9. Whether any would reach a handset as a duplicate SMS was not tested.
 - **Lost messages** (never submitted): 10, all in S5.
-- **Lost receipts** for SMS that did reach the SMSC: S6b, S6c and S7c (one each), S9b (twice in isolated runs), and S9c (once).
+- **Lost receipts** for messages the simulator had accepted: S6b, S6c and S7c (one each), S9b (twice in isolated runs), and S9c (once).
 
 **S9 chain of events, as far as the evidence shows.** This is a factual description, not a fix. It repeated in every failing run:
 
@@ -482,9 +486,9 @@ RabbitMQ and Redis were pulled from Google's Docker Hub mirror because Docker Hu
 
 **Inconclusive results:**
 
-- **S9 root cause — [T-INC].** Two questions remain open: whether the frame is malformed by Jasmin/txAMQP or only rejected by RabbitMQ 4's stricter parser, and whether RabbitMQ 3.x accepts it. RabbitMQ 3.x was not tested.
+- **S9 root cause — [T-INC].** Two questions remain open: whether the frame is malformed by Jasmin/txAMQP or only rejected by stricter parsing in RabbitMQ 4.4.1, and whether RabbitMQ 3.x or other 4.x releases accept it. Neither was tested.
 - **S7 "404 → immediate purge" — [T-INC].** Jasmin reported our 404 as a generic `HttpApiError()`, not the `"404"` string its no-retry rule matches. The documented immediate-purge behaviour (J2) was therefore **not observed** in this setup.
-- **S7a/S7b callback count — unexplained observation.** Go recorded 1 of the 2 expected callbacks (levels 1 and 2), although the final `DELIVRD` arrived. Jasmin logs both levels under one message ID and keys its retry counter by that ID, so it could not be determined which callback was lost.
+- **S7a/S7b callback-sequence completeness — [T-INC], unexplained.** In both cases the endpoint recovered and the final `DELIVRD` arrived, but Go recorded only 1 of the 2 expected callbacks (levels 1 and 2). Jasmin logs both levels under one message ID and keys its retry counter by that ID, so it could not be determined which callback was missing or why. Endpoint recovery is therefore counted as a pass, but neither case is a complete DLR-delivery pass.
 
 **Harness defects.** These were found during the spike and handled; their results are **not counted**:
 
@@ -499,7 +503,8 @@ RabbitMQ and Redis were pulled from Google's Docker Hub mirror because Docker Hu
 | ---- | ------ |
 | Any real telco (Smart, Globe, PLDT, DITO): receipt formats, message-ID formats, latency, throughput | **[NT]** Simulator only |
 | Load and throughput | **[NT]** No capacity claim is made (§3.4 still applies) |
-| RabbitMQ 3.x (the reference compose uses 3.10), later Jasmin commits, patched or hardened builds | **[NT]** §1.2 |
+| RabbitMQ 3.x (the reference compose uses 3.10), RabbitMQ 4.x releases other than 4.4.1, later Jasmin commits, patched or hardened builds | **[NT]** §1.2 |
+| Actual delivery to recipient handsets, including whether repeated `submit_sm` PDUs (S8) would produce duplicate SMS | **[NT]** Simulator only |
 | SMPP TLS to upstream (the review found no certificate verification, §6) | **[NT]** |
 | IPv6 | **[NT]** |
 | Jasmin's SMPP server for customers (§4.6), and the REST API (Celery) | **[NT]** |
@@ -515,9 +520,9 @@ Management-API message counts lag. Queue durability and consumer counts were the
 
 | Issue | Fixable by configuration | Needs a maintained patch | Fundamental limitation |
 | ----- | :----------------------: | :----------------------: | :--------------------: |
-| RabbitMQ 4.x refuses Jasmin's queues (§9.2) | Temporary permit only | ✔ durable queue declaration | |
-| A Unicode receipt breaks AMQP; consumers not restored (S9b/c) | Unknown (RabbitMQ 3.x untested) | ✔ frame encoding and reconnect logic | |
-| Timeout → automatic resubmission → duplicate SMS (S8) | ✘ timers change only timing | ✔ the requeue-on-timeout path | ✔ the duplicates are invisible to the platform |
+| RabbitMQ 4.4.1 refuses Jasmin's queues (§9.2) | Temporary permit only | ✔ durable queue declaration | |
+| A Unicode receipt breaks AMQP; consumers not restored (S9b/c) | Unknown (RabbitMQ 3.x and other 4.x releases untested) | ✔ frame encoding and reconnect logic | |
+| Timeout → automatic resubmission → duplicate upstream submission attempts (S8) | ✘ timers change only timing | ✔ the requeue-on-timeout path | ✔ the repeated submissions are invisible to the platform |
 | Queued messages lost on a broker restart; no consumer recovery; failure reported as `Success` (S5) | ✘ | ✔ durability, recovery, error handling | |
 | Receipt purged after bounded retries (S7c) | Partly: larger `max_retries`/`retry_delay`, a highly available endpoint | ✔ dead-letter instead of purge | Bounded retries by design |
 | Redis data loss loses receipts (S6b) | ✔ Redis persistence and high availability | | |
@@ -535,7 +540,7 @@ Management-API message counts lag. Queue durability and consumer counts were the
   - AMQP frame and reconnect handling for Unicode receipts;
   - Redis-down handling.
 
-  Our core rules — no duplicate SMS, no silent loss — would then depend on that fork.
+  Our core rules — no blind resubmission after an ambiguous outcome (the rule that guards against duplicate SMS), and no silent loss — would then depend on that fork.
 - **Why not hybrid (Option C with Jasmin).** The defects are in the SMPP dispatch and receipt path. That is exactly what a hybrid would keep Jasmin for, so a hybrid does not avoid them.
 
 **Owner decision (2026-11-25):** the tested Jasmin 0.11.0 deployment is rejected for production adoption, with the direction recorded in §1.1.
@@ -571,7 +576,7 @@ The table below replaces the pre-spike list "ADRs that may need revision". It re
 | --- | ---------------------------- |
 | ADR-0012 Provider abstraction | The Go-owned gateway sits behind this adapter boundary. Its option C ("third-party gateway software") now has this evidence against the tested Jasmin 0.11.0 deployment. The SMPP-library selection the ADR anticipates is **still open**, and is a separate owner decision. |
 | ADR-0006 Broker, ADR-0007 Redis | **No change needed.** The engine-private RabbitMQ and Redis cases discussed in §5 arose only if Jasmin were adopted. Neither is introduced. |
-| ADR-0021 Message status model | **No change needed** for the accepted customer-visible statuses. The spike confirms why `submission_uncertain` and `unknown` must exist: duplicates and lost receipts can occur below the platform. Internal engine milestones are a design detail of the future gateway. |
+| ADR-0021 Message status model | **No change needed** for the accepted customer-visible statuses. The spike confirms why `submission_uncertain` and `unknown` must exist: repeated upstream submissions and lost receipts can occur below the platform. Internal engine milestones are a design detail of the future gateway. |
 | ADR-0009 Control/data plane | **No change needed.** The data plane stays in Go; the question raised in the pre-spike list no longer arises. |
 | Future ADR | **"SMS gateway engine and SMPP library"** — to record the Go-owned gateway decision, its architecture and the library choice when gateway development is scheduled. It will cite this document. It is not written now. |
 
