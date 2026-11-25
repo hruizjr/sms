@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -234,34 +235,99 @@ func TestMetricsMiddlewareUsesRoutePattern(t *testing.T) {
 	}
 }
 
-func TestRecover(t *testing.T) {
+// syntheticSecret stands in for sensitive data (a connection string with a password) that a
+// careless panic might carry. It is not a real credential.
+//
+//nolint:gosec // G101: deliberate synthetic credential used to prove it is never logged.
+const syntheticSecret = "postgres://app:synthetic-pa55word@db.invalid/sms"
+
+// secretCarrier is a non-error, non-string panic value with a sensitive field.
+type secretCarrier struct{ DSN string }
+
+func TestRecoverDoesNotLeakPanicValue(t *testing.T) {
 	t.Parallel()
 
-	var buf bytes.Buffer
-	fallback := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("generic error"))
-	})
-	h := newTestRouter(Recover(jsonLogger(&buf), fallback), func(http.ResponseWriter, *http.Request) {
-		panic("synthetic failure with internal detail")
-	})
+	tests := []struct {
+		name     string
+		value    any
+		wantType string
+	}{
+		{"string", "failed to connect: " + syntheticSecret, "string"},
+		{"error", fmt.Errorf("open database %s: %w", syntheticSecret, errors.New("refused")), "*fmt.wrapError"},
+		{"struct", secretCarrier{DSN: syntheticSecret}, "middleware.secretCarrier"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/items/1", nil))
+			var buf bytes.Buffer
+			fallback := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte("generic error"))
+			})
+			h := newTestRouter(Recover(jsonLogger(&buf), fallback), func(http.ResponseWriter, *http.Request) {
+				panic(tt.value)
+			})
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500", rec.Code)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/items/1", nil))
+
+			if rec.Code != http.StatusInternalServerError {
+				t.Errorf("status = %d, want 500", rec.Code)
+			}
+			body, _ := io.ReadAll(rec.Body)
+			log := buf.String()
+			for _, leak := range []string{syntheticSecret, "synthetic-pa55word", "failed to connect", "refused"} {
+				if strings.Contains(string(body), leak) {
+					t.Errorf("panic value leaked to the client (%q): %q", leak, body)
+				}
+				if strings.Contains(log, leak) {
+					t.Errorf("panic value leaked to the log (%q): %s", leak, log)
+				}
+			}
+
+			var entry map[string]any
+			if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+				t.Fatalf("panic log is not a single JSON entry: %v: %s", err, log)
+			}
+			if entry["msg"] != "panic recovered" || entry["request_id"] != "req-123" || entry["route"] != "/items/{id}" {
+				t.Errorf("panic log has wrong fields: %s", log)
+			}
+			if entry["panic_type"] != tt.wantType {
+				t.Errorf("panic_type = %v, want %q", entry["panic_type"], tt.wantType)
+			}
+			if _, ok := entry["panic"]; ok {
+				t.Errorf("panic log must not contain the raw panic value: %s", log)
+			}
+			stack, _ := entry["stack"].(string)
+			if !strings.Contains(stack, "middleware.TestRecoverDoesNotLeakPanicValue") {
+				t.Errorf("stack should name the panicking function, got: %s", stack)
+			}
+		})
 	}
-	body, _ := io.ReadAll(rec.Body)
-	if strings.Contains(string(body), "internal detail") {
-		t.Errorf("panic value leaked to the client: %q", body)
+}
+
+func TestPanicStackHasNoArgumentValues(t *testing.T) {
+	t.Parallel()
+
+	// panicStack must list only function names and file:line positions. runtime/debug.Stack
+	// would print each frame's raw argument words, e.g. "stackFromFrame(0x4d2)", and PC offsets
+	// such as "+0x1f"; neither may appear.
+	stack := stackFromFrame(0x4d2) // 1234, a stand-in for a sensitive integer argument
+	if strings.Contains(stack, "0x") {
+		t.Errorf("stack contains raw words: %s", stack)
 	}
-	log := buf.String()
-	for _, want := range []string{`"msg":"panic recovered"`, `"request_id":"req-123"`, "synthetic failure with internal detail", `"stack":`} {
-		if !strings.Contains(log, want) {
-			t.Errorf("panic log missing %s: %s", want, log)
-		}
+	if !strings.Contains(stack, "middleware.stackFromFrame") || !strings.Contains(stack, "middleware_test.go:") {
+		t.Errorf("stack missing function or file:line: %s", stack)
 	}
+}
+
+//go:noinline
+func stackFromFrame(sensitive int) string {
+	if sensitive < 0 {
+		return ""
+	}
+	return panicStack()
 }
 
 func TestRecoverAfterResponseStarted(t *testing.T) {
@@ -273,10 +339,14 @@ func TestRecoverAfterResponseStarted(t *testing.T) {
 
 	inner := Recover(jsonLogger(&buf), fallback)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		panic("late failure")
+		panic("late failure: " + syntheticSecret)
 	}))
 	rec := httptest.NewRecorder()
 	inner.ServeHTTP(recordStatus(rec), httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil))
+
+	if !strings.Contains(buf.String(), `"panic_type":"string"`) || strings.Contains(buf.String(), syntheticSecret) {
+		t.Errorf("late panic should be logged by type only: %s", buf.String())
+	}
 
 	if fallbackCalled {
 		t.Error("fallback must not run once the response has started")

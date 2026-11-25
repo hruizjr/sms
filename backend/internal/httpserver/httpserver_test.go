@@ -168,7 +168,7 @@ func TestPanicProducesGenericProblem(t *testing.T) {
 	deps, logs := testDeps(true)
 	h := newRouter(deps, func(r chi.Router) {
 		r.Get("/boom", func(http.ResponseWriter, *http.Request) {
-			panic("synthetic internal detail: connection string user=app")
+			panic("synthetic internal detail: connection string user=app password=synthetic-pa55word")
 		})
 	})
 
@@ -180,12 +180,21 @@ func TestPanicProducesGenericProblem(t *testing.T) {
 	if p.Detail != "An unexpected error occurred." || p.RequestID != "req-test" {
 		t.Errorf("problem = %+v", p)
 	}
-	if strings.Contains(string(body), "synthetic internal detail") || strings.Contains(string(body), "goroutine") {
+	if strings.Contains(string(body), "synthetic internal detail") || strings.Contains(string(body), "synthetic-pa55word") ||
+		strings.Contains(string(body), "goroutine") {
 		t.Errorf("internal details leaked to the client: %s", body)
 	}
 	log := logs.String()
-	if !strings.Contains(log, "panic recovered") || !strings.Contains(log, `"status":500`) {
-		t.Errorf("expected a panic log and a 500 access log entry, got: %s", log)
+	if !strings.Contains(log, `"msg":"panic recovered"`) || !strings.Contains(log, `"panic_type":"string"`) {
+		t.Errorf("expected a panic log recording the panic type, got: %s", log)
+	}
+	if !strings.Contains(log, `"msg":"http request"`) || !strings.Contains(log, `"status":500`) {
+		t.Errorf("expected a 500 access log entry, got: %s", log)
+	}
+	for _, leak := range []string{"synthetic internal detail", "synthetic-pa55word", "user=app"} {
+		if strings.Contains(log, leak) {
+			t.Errorf("panic value leaked to the log (%q): %s", leak, log)
+		}
 	}
 }
 
