@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — living document | Project owner | 2026-11-24 (remediation: D-092–D-099, D-114–D-117, D-140–D-142 added) |
+| Draft — living document | Project owner | 2026-11-24 (Phase 2A: D-074–D-079, D-118–D-119, D-129–D-131, D-160–D-163 added; no status changed) |
 
 This register lists everything we know, assume, or still need to find out. **It is the authority on
 what is known.** AI agents must not treat any item as confirmed unless it is in §1 with evidence.
@@ -22,6 +22,11 @@ what is known.** AI agents must not treat any item as confirmed unless it is in 
   - **Telco-dependent** — only the telcos can answer.
   - **Regulatory-dependent** — depends on law/regulators; needs qualified legal advice.
   - **Engineering decision** — a technical choice reserved for the owner (§9).
+- **Routing (Phase 2A):** each open item's priority (P0/P1/P2/Future), intended respondent, questionnaire,
+  and the evidence needed to resolve it are recorded in the
+  [owner discovery workbook](../discovery/owner-discovery-workbook.md). This register remains the authority
+  for each item's **status and category**; evidence is logged in the
+  [evidence register](../discovery/evidence-register.md).
 
 ---
 
@@ -90,6 +95,12 @@ what is known.** AI agents must not treat any item as confirmed unless it is in 
 | D-071 | Expected volume of contacts per tenant and size of CSV imports. | Import design and storage. |
 | D-072 | Analytics and reporting requirements (granularity, history length, export formats). | Whether ClickHouse is needed. |
 | D-073 | Message content storage: must full content be kept? For how long? Who may view it? | Privacy, storage, retention. |
+| D-074 | Expected monthly ramp-up of traffic after launch, per launch customer. | Capacity planning, telco capacity requests, cash flow. |
+| D-075 | Message length and encoding mix (single vs. multipart; share requiring UCS-2). | Segments drive cost and telco throughput. |
+| D-076 | Backup and disaster-recovery targets (acceptable data loss and downtime). | Database replication, hosting, and cost (architecture question AQ-8). |
+| D-077 | Split of security and incident responsibilities, and escalation paths, between us, telcos, and customers. | Incident handling and contract terms. |
+| D-078 | Who reviews sender ID requests, campaign approvals, and abuse alerts operationally, and with what turnaround. | Manual approval workflows need staffing. |
+| D-079 | Customer support model (hours, channels, tiers). | Staffing and tooling. |
 
 ## 6. Business decisions required
 
@@ -116,6 +127,15 @@ what is known.** AI agents must not treat any item as confirmed unless it is in 
 | D-098 | **Conflicting final receipts**: resolution policy when a provider reports different final states for one message. | Reconciliation and customer reporting. |
 | D-099 | **Customer-visible status set and webhook semantics** (statuses exposed; webhooks documented as at-least-once with event IDs). | Public API contract. |
 
+Business decisions continued (the D-080–D-099 range is full; new business decisions use D-160 onward):
+
+| ID | Decision | Options / notes |
+| -- | -------- | --------------- |
+| D-160 | **Operating model**: independent aggregator with direct telco contracts, reseller of another aggregator, connectivity through an intermediary, or a hybrid. | Relates to owner-stated intent D-001; depends on D-113, D-118, D-120. |
+| D-161 | **Ownership and contracting structure**: which legal entity signs telco and customer contracts; investors' role and decision rights. | Relates to assumption D-047; affects licensing and billing. |
+| D-162 | **Revenue model and target gross margin** (per-segment margin, platform/setup/sender ID fees). | Depends on telco pricing (D-108) and customer price expectations. |
+| D-163 | **Commitments already made** to customers, investors, or telcos (launch dates, prices, volumes, exclusivity). | Hidden commitments constrain scope and schedule. |
+
 ## 7. Telco-dependent requirements
 
 Full checklist: [telco discovery checklist](../integrations/telco-discovery-checklist.md).
@@ -140,23 +160,29 @@ Full checklist: [telco discovery checklist](../integrations/telco-discovery-chec
 | D-115 | Provider capabilities for resolving ambiguous submissions: status-query API, provider-side duplicate detection. |
 | D-116 | Receipt timing characteristics (typical and maximum delay) to set per-provider `UNKNOWN` windows. |
 | D-117 | Number of decimal places in telco rates; telco's own rounding and segment-counting rules for billing. |
+| D-118 | Whether connectivity will be direct to each telco or through an intermediary aggregator/connectivity provider (interim or permanent), and whether telcos offer direct aggregator access. |
+| D-119 | Whether traffic for one network may fail over to another telco's route (commercial and technical terms). |
 
 ## 8. Regulatory-dependent requirements
 
 These require advice from qualified Philippine telecommunications and data-privacy counsel. Nothing here
-is legal advice.
+is legal advice. Public sources consulted so far are listed in the
+[legal and regulatory research log](../discovery/legal-regulatory-research.md); they do not resolve any item.
 
 | ID | Item |
 | -- | ---- |
-| D-120 | Which NTC registrations, licences, or authorizations are required to operate as an A2P aggregator / value-added service provider, and current status of each. Confirm the current legal framework, including any recent legislative changes. |
-| D-121 | Data Privacy Act of 2012 (RA 10173) obligations: lawful basis for processing recipient data, roles (we are likely a *personal information processor* for client data — to be confirmed), breach notification, Data Protection Officer, NPC registration requirements. |
-| D-122 | Consent and opt-out obligations for marketing vs. transactional messages. |
+| D-120 | Which NTC registrations, licences, or authorizations are required to operate as an A2P aggregator / value-added service provider, and current status of each. Confirm the current legal framework, including any recent legislative changes. (Texts and leads: research log LR-01–LR-05, LR-16, LR-17.) |
+| D-121 | Data Privacy Act of 2012 (RA 10173) obligations: lawful basis for processing recipient data, roles (we are likely a *personal information processor* for client data — to be confirmed), breach notification, Data Protection Officer, NPC registration requirements. (Texts and leads: research log LR-09–LR-11, LR-18.) |
+| D-122 | Consent and opt-out obligations for marketing vs. transactional messages. (NTC broadcast messaging circulars: research log LR-06–LR-08.) |
 | D-123 | Sender ID and anti-spam/anti-scam rules (regulatory and telco-imposed). |
 | D-124 | Record-keeping and retention obligations (message logs, billing records, tax records). |
 | D-125 | Requirements for serving government clients (procurement, security accreditation, data residency). |
 | D-126 | Lawful requests from authorities for records: process and obligations. |
 | D-127 | Tax and invoicing requirements (e.g. BIR rules for receipts/invoices). |
 | D-128 | Implications of the SIM Registration Act (RA 11934) for sender identities, if any. |
+| D-129 | Obligations for cross-border processing if hosting, backups, or service providers are outside the Philippines (Data Privacy Act Sec. 21 identified in public research; interpretation pending). |
+| D-130 | Customer due diligence and acceptable-use obligations required by law (as distinct from business policy D-085, D-086). |
+| D-131 | Whether the Anti-Financial Account Scamming Act (RA 12010) creates obligations or exposure for an SMS platform. (Research log LR-13.) |
 
 ## 9. Engineering decisions requiring owner approval
 

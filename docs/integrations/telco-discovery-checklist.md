@@ -49,6 +49,7 @@ Legend: `—` not asked · `Asked` · `Partial` · `Confirmed` (with evidence) �
 ---
 
 ## 1. Connectivity protocols
+- [ ] Do you offer direct A2P connectivity to aggregators, or only through intermediaries? (D-118)
 - [ ] Which protocols are offered for A2P submission: SMPP, HTTP/REST API, other?
 - [ ] Which is recommended/required for our expected volume?
 - [ ] Are different protocols used for submission, delivery receipts, and incoming messages?
@@ -195,6 +196,7 @@ Legend: `—` not asked · `Asked` · `Partial` · `Confirmed` (with evidence) �
 
 ## 21. Routing scope and number portability
 - [ ] Does the telco accept traffic destined for other networks' subscribers (off-net)? Price?
+- [ ] If this route is unavailable, may traffic for this network's subscribers be sent via another telco (failover)? (D-119)
 - [ ] How are ported numbers handled? Does the telco route correctly, or must we determine the current network?
 - [ ] Is an MNP database, HLR lookup, or number-range data available to us? Cost and terms.
 
