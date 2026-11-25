@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — proposed tiers; **owner decisions recorded** for MVP-01, MVP-05, MVP-08, MVP-09, MVP-13, MVP-29, MVP-30 (2026-11-25) | Project owner | 2026-11-25 |
+| Draft — proposed tiers; **owner decisions recorded** for MVP-01, MVP-05, MVP-08, MVP-09, MVP-13, MVP-29, MVP-30 (2026-11-25) and MVP-11, MVP-12 (2026-11-26) | Project owner | 2026-11-26 |
 
 This worksheet helps the owner decide what launches first (D-089, D-020). Every capability from the
 original product expectations (D-007) is listed and classified:
@@ -30,8 +30,8 @@ it. The owner records the final tier in the "Owner decision" column.
 | MVP-08 | Send to many recipients via API (batch) | Developer | Essential* | **Deferred to a later release** — not in the MVP (owner, 2026-11-25; D-094e) |
 | MVP-09 | Send from the portal (type/paste recipients or upload a recipient file) | Client user | Essential | **MVP: single-message sending only** — exactly one recipient per send operation; no pasted recipient lists, recipient-file uploads, contact-group sends, or multi-recipient selection. Bulk sending **deferred to a later release** (owner, 2026-11-25) |
 | MVP-10 | Message composer with segment count and cost estimate | Client user | Essential | |
-| MVP-11 | Contact book, groups, and segmentation | Client user | Deferrable | |
-| MVP-12 | Campaign scheduling | Client user | Deferrable* | |
+| MVP-11 | Contact book, groups, and segmentation | Client user | Deferrable | **Deferrable** — saved contacts and contact groups deferred from the MVP; the MVP portal takes a manually entered mobile number per single-recipient message (owner, 2026-11-26) |
+| MVP-12 | Campaign scheduling | Client user | Deferrable* | **Deferrable** — campaign scheduling deferred with campaign approval and bulk sending; a separate scheduled-single-message feature is not ruled out (owner, 2026-11-26) |
 | MVP-13 | Campaign approval by admin (policy-based) | Admin | ~~Essential~~ **Deferrable** | **Deferred beyond the MVP** — no bulk sending or campaign-sending workflow in the MVP; essential abuse controls stay (MVP-01, MVP-05, MVP-29, MVP-30) (owner, 2026-11-25) |
 | MVP-14 | Opt-out / suppression enforcement | System, admin | Essential | |
 | MVP-15 | Inbound messages (replies, keywords) | Client | Deferrable | |
@@ -171,6 +171,12 @@ it. The owner records the final tier in the "Owner decision" column.
 - **Security:** large store of personal data; export controls.
 - **Acceptance criteria:** tenant-isolated; import validation; export audited.
 - **Open questions:** do launch customers keep contacts in their own systems instead?
+- **Owner decision (2026-11-26, PR #7 review):** confirmed **Deferrable**. Both saved contact management and
+  contact groups are deferred from the MVP. In the MVP portal, the customer enters the mobile number
+  manually for each single-recipient message (MVP-09); customers may submit several separate messages, but
+  there is no contact-group sending. Saved contacts may be introduced **independently** of contact groups
+  in a later release. Contact volumes and import sizes (D-071) and contact-data retention (D-073) are not
+  decided by this.
 
 ### MVP-12 — Campaign scheduling
 - **Problem:** campaigns go out at planned times.
@@ -180,6 +186,10 @@ it. The owner records the final tier in the "Owner decision" column.
 - **Security:** scheduled sends must re-check balance, suppression, and approval at release time.
 - **Acceptance criteria:** cancelled campaigns never send; release respects any time restrictions.
 - **Open questions:** do launch customers need scheduling on day one?
+- **Owner decision (2026-11-26, PR #7 review):** confirmed **Deferrable**. **Campaign scheduling** is
+  deferred from the MVP, alongside campaign approval (MVP-13) and bulk sending (MVP-08, MVP-09). This
+  decision concerns campaign scheduling only; it does **not** permanently rule out a separate
+  scheduled-single-message feature in a future release, which would need its own decision.
 
 ### MVP-13 — Campaign approval
 - **Problem:** large or first-time campaigns are the main abuse vector (D-025, D-087).

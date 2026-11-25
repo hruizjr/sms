@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — Phase 2A; no item has been resolved by this workbook (owner decisions of 2026-11-25 on the public API contract, bulk-sending scope, and campaign approval are noted below and recorded in the discovery register) | Project owner | 2026-11-25 |
+| Draft — Phase 2A; no item has been resolved by this workbook (owner decisions of 2026-11-25 and 2026-11-26 on the public API contract and MVP scope are noted below and recorded in the discovery register) | Project owner | 2026-11-26 |
 
 This workbook lists **every open item** in the [discovery register](../requirements/discovery-register.md),
 grouped by workstream, in plain language. For each item it says why it matters, what we know today, what
@@ -131,7 +131,7 @@ Use the [MVP scope worksheet](mvp-scope-worksheet.md) to classify capabilities.
 
 | ID | Question | Why it matters | Known today / options | Evidence that closes it | Ask | P | Blocks |
 | -- | -------- | -------------- | --------------------- | ----------------------- | --- | - | ------ |
-| D-089 | **MVP scope and launch customers** — what launches first? | Phase 2 exit criterion; drives everything after. | Candidate list in the product brief and MVP worksheet. **Partly decided 2026-11-25 (PR #7 review):** single-message sending through the portal and the public API; bulk sending through both channels deferred to a later release (MVP-08, MVP-09); one recipient per portal send; campaign approval workflow (MVP-13) deferred; essential abuse controls confirmed. | Owner's written approval of the worksheet. | Owner, [Customers](questionnaires/enterprise-customer.md) | P0 | MVP scope |
+| D-089 | **MVP scope and launch customers** — what launches first? | Phase 2 exit criterion; drives everything after. | Candidate list in the product brief and MVP worksheet. **Partly decided 2026-11-25 (PR #7 review):** single-message sending through the portal and the public API; bulk sending through both channels deferred to a later release (MVP-08, MVP-09); one recipient per portal send; campaign approval workflow (MVP-13) deferred; essential abuse controls confirmed. **2026-11-26:** saved contacts and contact groups (MVP-11) and campaign scheduling (MVP-12) deferred. | Owner's written approval of the worksheet. | Owner, [Customers](questionnaires/enterprise-customer.md) | P0 | MVP scope |
 | D-020 | Proposed: define an MVP before building features. | Same as D-089. | Proposed. | Same as D-089. | Owner | P0 | MVP scope |
 | D-007 | Original capability list treated as expectations, not requirements. | Prevents building everything at once. | Owner-stated. | MVP worksheet approval. | Owner | P1 | MVP scope |
 | D-064 | **Sub-accounts / hierarchies** (e.g. BPO with several clients)? | Tenant data model. | Unknown. | Customer requirements. | [Customers](questionnaires/enterprise-customer.md) | P1 | Architecture |

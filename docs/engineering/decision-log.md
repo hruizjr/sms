@@ -810,3 +810,10 @@ these decisions**; no other ADR status changed.
 | Portal recipient scope (MVP-09) | One portal send operation accepts **exactly one recipient**: no pasted recipient lists, recipient-file uploads, contact-group sends, or multi-recipient selection. Separate single-recipient sends remain subject to rate limits and abuse controls |
 | Campaign approval (MVP-13; D-025, D-087) | MVP-13 changed from Essential to **Deferrable**: dedicated campaign-level approval workflows are deferred beyond the MVP (no bulk sending or campaign-sending workflow in the MVP). Essential abuse controls stay in the MVP: admin-controlled tenant onboarding and activation, sender ID approval before use, tenant/API-key velocity limits, abuse alerts and an operational kill switch, and audit logging of administrative and security actions. The approval policy is **not** decided: thresholds, first-campaign policies, and turnaround remain open |
 | Public API contract details | D-143 (Bearer API key; `messages:send`, `messages:read`), D-144 (1,600-character maximum; segment count deferred to product/provider policy), D-145 (domain stays a placeholder), D-146 (`402` for insufficient credit), D-147 (explicit `sender_id`), recorded in the [discovery register](../requirements/discovery-register.md) |
+
+**Further MVP scope decisions (owner, 2026-11-26, PR #7 review).** No ADR status changed.
+
+| Item | Decision |
+| ---- | -------- |
+| Contact book and groups (MVP-11) | **Deferrable**: saved contact management and contact groups are deferred from the MVP. The MVP portal takes a manually entered mobile number for each single-recipient message; customers may submit several separate messages; there is no contact-group sending. Saved contacts may be introduced independently in a later release |
+| Campaign scheduling (MVP-12) | **Deferrable**: campaign scheduling is deferred alongside campaign approval (MVP-13) and bulk sending (MVP-08, MVP-09). This does not permanently rule out a separate scheduled-single-message feature in a future release |

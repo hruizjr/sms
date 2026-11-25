@@ -546,3 +546,17 @@ test('MVP-13 campaign approval is deferred while essential abuse controls stay i
   assert.match(brief, /\*\*Campaign approval workflows\*\* .* deferred beyond the MVP/);
   assert.match(brief, /Abuse controls: tenant\/API-key velocity limits, abuse alerts, and an operational kill switch/);
 });
+
+test('MVP-11 saved contacts/groups and MVP-12 campaign scheduling are deferred (owner, 2026-11-26)', () => {
+  const worksheet = docText('../docs/discovery/mvp-scope-worksheet.md');
+  const row = (id) => worksheet.split('\n').find((l) => l.startsWith(`| ${id} |`));
+  assert.match(row('MVP-11'), /\| \*\*Deferrable\*\* — saved contacts and contact groups deferred from the MVP; the MVP portal takes a manually entered mobile number per single-recipient message \(owner, 2026-11-26\) \|$/);
+  assert.match(row('MVP-12'), /\| \*\*Deferrable\*\* — campaign scheduling deferred .*a separate scheduled-single-message feature is not ruled out \(owner, 2026-11-26\) \|$/);
+  const brief = flat(docText('../docs/product/product-brief.md'));
+  assert.match(brief, /\*\*Saved contacts and contact groups\*\* .* deferred from the MVP .* Saved contacts may be introduced independently/);
+  assert.match(brief, /\*\*Campaign scheduling\*\* — deferred .* A separate scheduled-single-message feature is not ruled out/);
+  const register = docText('../docs/requirements/discovery-register.md');
+  assert.match(register.split('\n').find((l) => l.startsWith('| D-089 |')), /Owner decision 2026-11-26/);
+  // D-078 (reviewer and operational ownership) stays open and unchanged by these decisions.
+  assert.doesNotMatch(register.split('\n').find((l) => l.startsWith('| D-078 |')), /2026-11-26/);
+});

@@ -81,7 +81,8 @@ MVP (pending approval):
 - Sender ID registry with manual admin approval; sender IDs approved before use.
 - Single-message send via the client portal and the public API (one recipient per message). *Originally
   "single-message and bulk send via portal and public API"; bulk sending deferred by owner decision
-  2026-11-25.* In the portal, one send operation accepts **exactly one recipient**: no pasted recipient
+  2026-11-25.* In the portal (owner decisions 2026-11-25 and 2026-11-26), the customer enters the mobile
+  number manually, and one send operation accepts **exactly one recipient**: no pasted recipient
   lists, recipient-file uploads, contact-group sends, or multi-recipient selection. Customers may submit
   several separate single-recipient messages, subject to rate limits and abuse controls.
 - Prepaid credit ledger with reservation and settlement; manual top-up by admin.
@@ -103,6 +104,10 @@ MVP (pending approval):
 - **Campaign approval workflows** (dedicated campaign-level approval by admins) — deferred beyond the MVP,
   which has no bulk sending or campaign-sending workflow (owner decision 2026-11-25; MVP-13). Essential
   abuse controls remain in the MVP (see above).
+- **Saved contacts and contact groups** (contact book, groups, segmentation) — deferred from the MVP (owner
+  decision 2026-11-26; MVP-11). Saved contacts may be introduced independently of groups in a later release.
+- **Campaign scheduling** — deferred with campaign approval and bulk sending (owner decision 2026-11-26;
+  MVP-12). A separate scheduled-single-message feature is not ruled out for a future release.
 - Webhooks (unless early API customers require them).
 - Two-way messaging / inbound keywords (depends on short code availability).
 - Reseller/sub-account hierarchy.
