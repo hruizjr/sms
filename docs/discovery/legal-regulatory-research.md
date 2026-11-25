@@ -18,10 +18,10 @@
 | ----- | ------- |
 | **Official primary source** | Published by the issuing body itself (e.g. NTC, NPC, Official Gazette) |
 | **Official reproduction** | Government-hosted reproduction of the text (e.g. Supreme Court E-Library, Senate Legislative Reference) |
-| **Official register record** | Filing metadata in the Office of the National Administrative Register (ONAR), searched via the UP Law Center's NARO site |
+| **Official register metadata** | Filing metadata in the Office of the National Administrative Register (ONAR), searched via the UP Law Center's NARO site |
 | **Unofficial full-text copy** | Full text reproduced by a private legal library (here lawphil.net and dev.lawyerly.ph). Useful for reading, but must be checked against an official copy before reliance |
 | **Secondary legal commentary** | Law-firm alerts, news articles, summaries — **leads only** |
-| **Unverified lead** | An issuance reported to exist whose text was not read |
+| **Unverified regulatory lead** | An issuance reported to exist whose text was not read |
 
 **Access status** — *Read* (text actually read), *Partly read*, *Not accessible from this research
 environment* (the page refused automated access), *Metadata only*.
@@ -80,7 +80,7 @@ here are labelled **"Owner's review reports … — not read in this research."*
 | What remains unresolved | Whether our proposed service is a "data transmission service" at all; if so, which segment, if any, applies to a platform that does not construct or operate network facilities; how Rule X, Sec. 5(c) "superseded" interacts with NTC VAS rules (LR-03); the official publication and effectivity dates. **The classification requires a written opinion from qualified Philippine telecommunications counsel.** |
 | Register IDs | D-120, D-160, D-113 |
 
-### LR-16 — NTC Memorandum Circular No. 002-02-2026 (DTIP eligibility, registration, and authorization) — **unverified lead**
+### LR-16 — NTC Memorandum Circular No. 002-02-2026 (DTIP eligibility, registration, and authorization) — **unverified regulatory lead**
 
 | Field | Detail |
 | ----- | ------ |
@@ -114,7 +114,7 @@ here are labelled **"Owner's review reports … — not read in this research."*
 | What remains unresolved | Whether every 2008 provision still applies independently after RA 12234, its IRR (Rule X, Sec. 5(c) supersedes "prior NTC registration and authorization rules" — scope unclear), the reported MO 005-06-2025 (LR-04), and the reported MC 002-02-2026 (LR-16, including its claimed "modified VAS CoR"). **The exact legal interaction is an open counsel question (LC-03).** |
 | Register IDs | D-120, D-113, D-160 |
 
-### LR-04 — NTC Memorandum Order No. 005-06-2025 (VAS registration) — **unverified lead**
+### LR-04 — NTC Memorandum Order No. 005-06-2025 (VAS registration) — **unverified regulatory lead**
 
 | Field | Detail |
 | ----- | ------ |
@@ -205,7 +205,7 @@ here are labelled **"Owner's review reports … — not read in this research."*
 | Field | Detail |
 | ----- | ------ |
 | Official source URL | https://privacy.gov.ph/wp-content/uploads/2023/05/Circular-2022-04.pdf — Official primary source, **not accessible from this research environment** (HTTP 403) |
-| Official register record read | https://naro.law.upd.edu.ph/issuances/58 — **Metadata only**: title "Registration of Personal Data Processing System, Notification Regarding Automated Decision-Making or Profiling, Designation of Data Protection Officer, and the National Privacy Commission Seal of Registration"; Circular No. 2022-04; National Privacy Commission; issued **2022-12-05**; filed with ONAR **2023-01-04**; ONAR registration no. 23-0017. The record states no electronic copy is attached. |
+| Official register metadata read | https://naro.law.upd.edu.ph/issuances/58 — **Metadata only**: title "Registration of Personal Data Processing System, Notification Regarding Automated Decision-Making or Profiling, Designation of Data Protection Officer, and the National Privacy Commission Seal of Registration"; Circular No. 2022-04; National Privacy Commission; issued **2022-12-05**; filed with ONAR **2023-01-04**; ONAR registration no. 23-0017. The record states no electronic copy is attached. |
 | Effectivity | Not verified |
 | Owner's review reports | Mandatory registration based on employee-count, sensitive-personal-information, and risk-based criteria; automated decision-making and profiling requirements; DPO designation and registration requirements — **not read in this research.** Search-result summaries (not read) mention thresholds such as 250 employees and 1,000 data subjects. |
 | What is established | From the official register title: the circular covers registration of data processing systems, notification regarding automated decision-making or profiling, DPO designation, and an NPC seal of registration. |

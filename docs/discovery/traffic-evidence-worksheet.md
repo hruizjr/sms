@@ -2,15 +2,15 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Template — **no traffic data collected yet** | Project owner | 2026-11-24 (SIM comparison removed) |
+| Template — **no traffic data collected yet** | Project owner | 2026-11-25 (§5 revised) |
 
 Use this worksheet to collect evidence that tests the reported **~5 billion per month** figure (D-004) and
 replaces it with verified demand. The questions and sizing formulas are defined in
 [traffic capacity discovery](../requirements/traffic-capacity-discovery.md) (§3 questions, §4 formulas);
 this worksheet captures the answers.
 
-> **Rule:** no infrastructure sizing, capacity plan, or cost estimate may use the 5-billion figure until
-> its unit and basis are established here with evidence.
+> **Rule:** no traffic model, infrastructure sizing, capacity plan, cost estimate, or financial model may
+> use the 5-billion figure until its unit and commercial basis are established here with evidence.
 
 ## 1. What could "5 billion" mean?
 
@@ -70,13 +70,14 @@ This worksheet keeps three kinds of information strictly apart:
 | **Evidence** | Customer records, historical volume reports from current providers, signed contracts or letters of intent stating volumes, source-backed projections with a documented method | Yes, within the scope and date of each document, once logged in the [evidence register](evidence-register.md) |
 | **Verified demand** | The total built only from evidence rows in §3, split into committed, estimated, and aspirational (§4) | This is the only basis for capacity planning, telco negotiations, and cost estimates |
 
-National mobile subscriber or SIM-registration counts are **not** used to judge whether the 5-billion
-figure is plausible: they do not reflect how much A2P traffic businesses send, how many messages one
-person receives, or what share any one aggregator would carry. An earlier draft of this worksheet included
-such a comparison; it was removed because it could be mistaken for validation.
+Why subscriber and SIM counts are not used:
 
-Actual demand must be established through customer records, documented commitments, and source-backed
-volume projections recorded in §2–§4.
+- Subscriber and SIM counts are **not evidence of demand** for our platform.
+- Total mobile subscribers cannot establish the volume that any particular aggregator can acquire or route.
+- The 5-billion monthly figure must be validated through **customer-level historical traffic, documented
+  commitments, and source-backed projections** recorded in §2–§4.
+- **No traffic, infrastructure, or financial model may rely on the figure** until its unit and commercial
+  basis are established.
 
 ## 6. Status
 
