@@ -129,8 +129,12 @@ CI (format, lint, test, type check, vulnerability and secret scan); OpenAPI skel
 
 ### Phase 7 — Portal features (MVP)
 **Acceptance criteria:**
-- [ ] MVP client portal features (per approved SRS): sending, contacts/imports, campaigns, reports, API keys, balance.
-- [ ] MVP admin features: tenant management, sender ID approval, credit allocation, pricing, campaign approval, monitoring views.
+- [ ] MVP client portal features (per approved SRS): single-recipient sending (one recipient per send operation; no
+      pasted lists, recipient files, or group sends), reports, API keys, balance. Bulk sending and campaign sending
+      are deferred to a later release (owner decisions 2026-11-25, MVP-08, MVP-09); contacts/imports per MVP-11.
+- [ ] MVP admin features: tenant management and activation, sender ID approval, credit allocation, pricing, abuse
+      controls (velocity limits, alerts, kill switch), audit log, monitoring views. Campaign approval is deferred beyond
+      the MVP (owner decision 2026-11-25, MVP-13).
 - [ ] E2E tests for critical journeys pass; accessibility checks pass.
 
 ### Phase 8 — First real telco integration (test environment)

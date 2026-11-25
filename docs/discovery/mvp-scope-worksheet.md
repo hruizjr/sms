@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — proposed tiers; **owner decisions recorded** for MVP-08 and MVP-09 (2026-11-25) | Project owner | 2026-11-25 |
+| Draft — proposed tiers; **owner decisions recorded** for MVP-01, MVP-05, MVP-08, MVP-09, MVP-13, MVP-29, MVP-30 (2026-11-25) | Project owner | 2026-11-25 |
 
 This worksheet helps the owner decide what launches first (D-089, D-020). Every capability from the
 original product expectations (D-007) is listed and classified:
@@ -20,19 +20,19 @@ it. The owner records the final tier in the "Owner decision" column.
 
 | ID | Capability | Primary user | Proposed tier | Owner decision |
 | -- | ---------- | ------------ | ------------- | -------------- |
-| MVP-01 | Client account (tenant) creation by admin | Admin | Essential | |
+| MVP-01 | Client account (tenant) creation by admin | Admin | Essential | **Essential** — admin-controlled tenant onboarding and activation (owner, 2026-11-25) |
 | MVP-02 | Self-service registration with document upload (KYC) | Prospective client | Deferrable | |
 | MVP-03 | Client users and basic roles | Client admin | Essential | |
 | MVP-04 | Admin users, roles, and mandatory MFA | Our staff | Essential | |
-| MVP-05 | Sender ID request and approval workflow | Client, admin | Essential | |
+| MVP-05 | Sender ID request and approval workflow | Client, admin | Essential | **Essential** — sender ID approval before use (owner, 2026-11-25) |
 | MVP-06 | API keys (create, scope, revoke) | Developer | Essential | |
 | MVP-07 | Send a single message via public API (with idempotency key) | Developer | Essential | |
 | MVP-08 | Send to many recipients via API (batch) | Developer | Essential* | **Deferred to a later release** — not in the MVP (owner, 2026-11-25; D-094e) |
-| MVP-09 | Send from the portal (type/paste recipients or upload a recipient file) | Client user | Essential | **MVP: single-message sending only.** Bulk sending (many recipients, including an uploaded recipient file) **deferred to a later release** (owner, 2026-11-25) |
+| MVP-09 | Send from the portal (type/paste recipients or upload a recipient file) | Client user | Essential | **MVP: single-message sending only** — exactly one recipient per send operation; no pasted recipient lists, recipient-file uploads, contact-group sends, or multi-recipient selection. Bulk sending **deferred to a later release** (owner, 2026-11-25) |
 | MVP-10 | Message composer with segment count and cost estimate | Client user | Essential | |
 | MVP-11 | Contact book, groups, and segmentation | Client user | Deferrable | |
 | MVP-12 | Campaign scheduling | Client user | Deferrable* | |
-| MVP-13 | Campaign approval by admin (policy-based) | Admin | Essential | |
+| MVP-13 | Campaign approval by admin (policy-based) | Admin | ~~Essential~~ **Deferrable** | **Deferred beyond the MVP** — no bulk sending or campaign-sending workflow in the MVP; essential abuse controls stay (MVP-01, MVP-05, MVP-29, MVP-30) (owner, 2026-11-25) |
 | MVP-14 | Opt-out / suppression enforcement | System, admin | Essential | |
 | MVP-15 | Inbound messages (replies, keywords) | Client | Deferrable | |
 | MVP-16 | Per-message delivery status and history | Client user, developer | Essential | |
@@ -48,8 +48,8 @@ it. The owner records the final tier in the "Owner decision" column.
 | MVP-26 | Automatic failover routing between telcos | System | Future | |
 | MVP-27 | Telco usage reconciliation report | Admin/finance | Essential | |
 | MVP-28 | Operations monitoring (queues, binds, failures) | Ops | Essential | |
-| MVP-29 | Audit log | Admin, auditor | Essential | |
-| MVP-30 | Abuse controls: velocity limits, alerts, kill switch | System, admin | Essential | |
+| MVP-29 | Audit log | Admin, auditor | Essential | **Essential** — audit logging of administrative and security actions (owner, 2026-11-25) |
+| MVP-30 | Abuse controls: velocity limits, alerts, kill switch | System, admin | Essential | **Essential** — tenant/API-key velocity limits, abuse alerts, operational kill switch (owner, 2026-11-25) |
 | MVP-31 | Sub-accounts and reseller hierarchy | Client, reseller | Future | |
 | MVP-32 | Public API documentation | Developer | Essential | |
 | MVP-33 | Telco simulator (development and demos) | Engineering | Essential | |
@@ -67,6 +67,9 @@ it. The owner records the final tier in the "Owner decision" column.
 - **Security:** tenant isolation from day one; audited creation.
 - **Acceptance criteria:** admin can create, suspend, and reactivate a tenant; all actions audited.
 - **Open questions:** what documents are required before activation (D-085, D-130)?
+- **Owner decision (2026-11-25, PR #7 review):** confirmed **Essential**. Admin-controlled tenant onboarding
+  and activation is one of the essential abuse-prevention controls kept when campaign approval (MVP-13) was
+  deferred.
 
 ### MVP-02 — Self-service registration with KYC
 - **Problem:** manual onboarding does not scale.
@@ -104,6 +107,8 @@ it. The owner records the final tier in the "Owner decision" column.
 - **Security:** impersonation of banks, government, and brands.
 - **Acceptance criteria:** messages cannot use unapproved sender IDs; decisions audited.
 - **Open questions:** can we register on the client's behalf with each telco?
+- **Owner decision (2026-11-25, PR #7 review):** confirmed **Essential** — sender IDs are approved before
+  use. Kept as an essential abuse-prevention control when MVP-13 was deferred.
 
 ### MVP-06 — API keys
 - **Problem:** developers need credentials to call the API.
@@ -143,6 +148,11 @@ it. The owner records the final tier in the "Owner decision" column.
 - **Acceptance criteria:** invalid numbers reported before sending; confirmation shows recipients, segments, cost.
 - **Open questions:** maximum file size needed?
 - **Owner decision (2026-11-25, final PR #7 review):** in the MVP, the portal supports **single-message sending** (one recipient per message). Bulk sending through the portal — many recipients, including an uploaded recipient file — is **deferred to a later release**, together with API bulk sending (MVP-08). The capability, acceptance criteria, and file-import items above describe the deferred bulk scope and are kept as history.
+- **Owner decision (2026-11-25, MVP-13 review) — portal recipient scope:** one portal send operation
+  accepts **exactly one recipient**. The MVP portal does **not** support pasting multiple recipient numbers
+  into one send operation, uploading recipient files, or sending to contact groups or several selected
+  recipients in one operation. A customer may still submit several separate single-recipient messages;
+  each is subject to the platform's essential rate limits and abuse controls (MVP-30).
 
 ### MVP-10 — Composer with segment and cost estimate
 - **Problem:** encoding surprises (e.g. emoji) can double cost (D-029).
@@ -179,6 +189,14 @@ it. The owner records the final tier in the "Owner decision" column.
 - **Security:** approval actions audited.
 - **Acceptance criteria:** campaigns needing approval cannot be released without it.
 - **Open questions:** thresholds; turnaround time customers will accept.
+- **Owner decision (2026-11-25, PR #7 review):** tier changed from Essential to **Deferrable**. Dedicated
+  campaign-level approval workflows are **deferred beyond the MVP**, because the MVP has no bulk sending and
+  no campaign-sending workflow (MVP-08, MVP-09). This does **not** remove the essential abuse-prevention
+  controls, which stay in the MVP: admin-controlled tenant onboarding and activation (MVP-01), sender ID
+  approval before use (MVP-05), tenant/API-key velocity limits, abuse alerts, and an operational kill
+  switch (MVP-30), and audit logging of administrative and security actions (MVP-29). The approval policy
+  itself is **not** fully decided: detailed approval thresholds, first-campaign policies, and operational
+  turnaround remain open for a later release (D-025, D-087).
 
 ### MVP-14 — Opt-out / suppression enforcement
 - **Problem:** recipients who opted out must not be messaged (D-024).
@@ -324,6 +342,8 @@ it. The owner records the final tier in the "Owner decision" column.
 - **Security:** tamper evidence; restricted access.
 - **Acceptance criteria:** every listed sensitive action produces an audit record.
 - **Open questions:** retention period (D-124).
+- **Owner decision (2026-11-25, PR #7 review):** confirmed **Essential** — audit logging of administrative
+  and security actions. Kept as an essential abuse-prevention control when MVP-13 was deferred.
 
 ### MVP-30 — Abuse controls
 - **Problem:** smishing through our platform could end telco relationships (R-20).
@@ -333,6 +353,10 @@ it. The owner records the final tier in the "Owner decision" column.
 - **Security:** central to the threat model.
 - **Acceptance criteria:** suspension takes effect immediately and is audited.
 - **Open questions:** content/URL rules required by telcos (D-110).
+- **Owner decision (2026-11-25, PR #7 review):** confirmed **Essential** — tenant and API-key velocity
+  limits, abuse alerts, and an operational kill switch. Kept when MVP-13 was deferred; in the MVP they also
+  bound customers who submit many separate single-recipient messages (MVP-09). Campaign-level suspension
+  applies once campaigns exist in a later release.
 
 ### MVP-31 — Sub-accounts and reseller hierarchy
 - **Problem:** BPOs and resellers serve their own clients.

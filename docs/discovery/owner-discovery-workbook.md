@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — Phase 2A; no item has been resolved by this workbook (owner decisions of 2026-11-25 on the public API contract and bulk-sending scope are noted below and recorded in the discovery register) | Project owner | 2026-11-25 |
+| Draft — Phase 2A; no item has been resolved by this workbook (owner decisions of 2026-11-25 on the public API contract, bulk-sending scope, and campaign approval are noted below and recorded in the discovery register) | Project owner | 2026-11-25 |
 
 This workbook lists **every open item** in the [discovery register](../requirements/discovery-register.md),
 grouped by workstream, in plain language. For each item it says why it matters, what we know today, what
@@ -131,14 +131,14 @@ Use the [MVP scope worksheet](mvp-scope-worksheet.md) to classify capabilities.
 
 | ID | Question | Why it matters | Known today / options | Evidence that closes it | Ask | P | Blocks |
 | -- | -------- | -------------- | --------------------- | ----------------------- | --- | - | ------ |
-| D-089 | **MVP scope and launch customers** — what launches first? | Phase 2 exit criterion; drives everything after. | Candidate list in the product brief and MVP worksheet. **Partly decided 2026-11-25 (PR #7 review):** single-message sending through the portal and the public API; bulk sending through both channels deferred to a later release (MVP-08, MVP-09). | Owner's written approval of the worksheet. | Owner, [Customers](questionnaires/enterprise-customer.md) | P0 | MVP scope |
+| D-089 | **MVP scope and launch customers** — what launches first? | Phase 2 exit criterion; drives everything after. | Candidate list in the product brief and MVP worksheet. **Partly decided 2026-11-25 (PR #7 review):** single-message sending through the portal and the public API; bulk sending through both channels deferred to a later release (MVP-08, MVP-09); one recipient per portal send; campaign approval workflow (MVP-13) deferred; essential abuse controls confirmed. | Owner's written approval of the worksheet. | Owner, [Customers](questionnaires/enterprise-customer.md) | P0 | MVP scope |
 | D-020 | Proposed: define an MVP before building features. | Same as D-089. | Proposed. | Same as D-089. | Owner | P0 | MVP scope |
 | D-007 | Original capability list treated as expectations, not requirements. | Prevents building everything at once. | Owner-stated. | MVP worksheet approval. | Owner | P1 | MVP scope |
 | D-064 | **Sub-accounts / hierarchies** (e.g. BPO with several clients)? | Tenant data model. | Unknown. | Customer requirements. | [Customers](questionnaires/enterprise-customer.md) | P1 | Architecture |
 | D-085 | Customer **onboarding / KYC** requirements. | Abuse prevention; onboarding effort. | Unknown; legal input D-130. | Owner policy. | Owner | P1 | MVP scope |
 | D-086 | **Acceptable use policy**. | Abuse prevention; contract terms. | Unknown. | Owner policy reviewed by counsel. | Owner, [Counsel](questionnaires/legal-counsel.md) | P1 | MVP scope |
-| D-087 | **Campaign approval** policy. | Admin workload; abuse prevention. | Unknown. | Owner policy. | Owner | P1 | MVP scope |
-| D-025 | Proposed: approval for large campaigns or new tenants. | As D-087. | Proposed. | Owner approval. | Owner | P1 | MVP scope |
+| D-087 | **Campaign approval** policy. | Admin workload; abuse prevention. | **Workflow deferred from the MVP 2026-11-25 (PR #7 review; MVP-13).** Policy not decided: thresholds, first-campaign policies, and turnaround remain open for a later release. | Owner policy before campaigns are scheduled. | Owner | P2 | Implementation |
+| D-025 | Proposed: approval for large campaigns or new tenants. | As D-087. | Proposed. **Workflow deferred from the MVP 2026-11-25 (MVP-13)**; the proposal itself remains open. | Owner approval before campaigns are scheduled. | Owner | P2 | Implementation |
 | D-022 | Proposed: sender IDs approved before use. | Impersonation risk. | Proposed. | Owner approval; telco process (D-103). | Owner | P1 | MVP scope |
 | D-021 | Proposed: MFA mandatory for Super Admins. | Admins control money and routing. | Proposed. | Owner approval. | Owner | P1 | Implementation |
 | D-023 | Proposed: idempotency keys on message submission. | Prevents duplicate operations. | **Decided 2026-11-25 (PR #7 review):** approved; key required (D-094a). **ADR-0018 accepted 2026-11-25.** | Owner decision — recorded. | Owner | P1 | Architecture |
@@ -172,7 +172,7 @@ Use the [MVP scope worksheet](mvp-scope-worksheet.md) to classify capabilities.
 | D-068 | **Hosting** model and **data-residency** expectations. | Telco connectivity, privacy, cost. | Unknown. | Owner decision informed by D-102, D-129, customer requirements. | Owner, [Ops](questionnaires/operations.md), [Customers](questionnaires/enterprise-customer.md) | P1 | Architecture |
 | D-044 | Assumption: hosting can meet telco connectivity needs (static IPs, VPN). | Hosting choice. | Assumption. | Telco specs (D-102) vs. hosting offers. | [Ops](questionnaires/operations.md), [Telcos](questionnaires/telco-core.md) | P1 | Architecture |
 | D-076 | **Backup and disaster-recovery** targets (how much data loss and downtime are acceptable). | Database replication and cost. | Unknown (architecture question AQ-8). | Owner decision. | Owner, [Ops](questionnaires/operations.md) | P1 | Architecture |
-| D-078 | Who reviews **abuse alerts, sender IDs, and campaign approvals** day to day? | Manual approval workflows need staff. | Unknown. | Staffing plan. | Owner, [Ops](questionnaires/operations.md) | P1 | MVP scope |
+| D-078 | Who reviews **abuse alerts, sender IDs, and campaign approvals** day to day? | Manual approval workflows need staff. | Unknown. Campaign approvals not needed in the MVP (MVP-13 deferred, 2026-11-25). | Staffing plan. | Owner, [Ops](questionnaires/operations.md) | P1 | MVP scope |
 | D-077 | **Security responsibility split** and incident escalation between us, telcos, and customers. | Incident handling and contracts. | Unknown. | Telco and customer contract terms; owner policy. | [Ops](questionnaires/operations.md), [Telcos](questionnaires/telco-core.md) | P2 | Launch |
 | D-079 | **Customer support** model (hours, channels, tiers). | Staffing and tooling. | Unknown. | Owner decision. | Owner, [Ops](questionnaires/operations.md) | P2 | Launch |
 | D-141 | Adopt PostgreSQL Row-Level Security? | Defense-in-depth for tenant isolation. | Evaluation planned in Phase 3 (ADR-0010). | Evaluation results; owner decision. | Owner | P2 | Architecture |

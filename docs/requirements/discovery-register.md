@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — living document | Project owner | 2026-11-25 (owner decisions recorded on D-023, D-089 (bulk sending deferred), D-094a–e, D-096 (customer-visible part), D-099 (status part), D-143–D-147 for the public API contract; ADR-0018 accepted and ADR-0021 accepted with a limited scope — see the decision log) |
+| Draft — living document | Project owner | 2026-11-25 (owner decisions recorded on D-023, D-025 and D-087 (campaign approval deferred from the MVP; policy open), D-089 (bulk sending deferred; one recipient per portal send; MVP-13 deferred), D-094a–e, D-096 (customer-visible part), D-099 (status part), D-143–D-147 for the public API contract; ADR-0018 accepted and ADR-0021 accepted with a limited scope — see the decision log) |
 
 This register lists everything we know, assume, or still need to find out. **It is the authority on
 what is known.** AI agents must not treat any item as confirmed unless it is in §1 with evidence.
@@ -58,7 +58,7 @@ what is known.** AI agents must not treat any item as confirmed unless it is in 
 | D-022 | Sender IDs must be approved before use; impersonation checks during approval. | Smishing and brand impersonation risk. |
 | D-023 | Public API supports idempotency keys on message submission (contract proposed in ADR-0018; open details in D-094). | Prevents duplicate operations and charges on client retries inside our platform. Does not by itself prevent duplicate telco submissions. **Owner decision 2026-11-25 (PR #7 review):** approved; the key is required (D-094a). **ADR-0018 accepted by the owner on 2026-11-25.** |
 | D-024 | Opt-out/suppression list is enforced platform-wide before dispatch. | Compliance and recipient protection. |
-| D-025 | Campaigns above a configurable size (or from new tenants) require admin approval. | Abuse prevention; owner listed "campaign approval". |
+| D-025 | Campaigns above a configurable size (or from new tenants) require admin approval. | Abuse prevention; owner listed "campaign approval". **Owner decision 2026-11-25 (PR #7 review), scope only:** the campaign approval workflow is **deferred from the MVP** (MVP-13), because the MVP has no bulk sending or campaign-sending workflow. **Not decided:** the proposal itself — approval thresholds, first-campaign (new-tenant) policies, and operational turnaround remain open for a later release. Essential abuse controls (tenant onboarding/activation, sender ID approval, velocity limits, abuse alerts, kill switch, audit logging) stay in the MVP. |
 | D-026 | A simulator provider adapter is built before any real telco adapter. | Enables development and testing without telco access. |
 | D-027 | Admin portal deployed separately from client portal (ADR-0013). | Reduced attack surface. |
 | D-028 | All timestamps stored in UTC and displayed in Philippine time (Asia/Manila) by default. | Consistency. |
@@ -99,7 +99,7 @@ what is known.** AI agents must not treat any item as confirmed unless it is in 
 | D-075 | Message length and encoding mix (single vs. multipart; share requiring UCS-2). | Segments drive cost and telco throughput. |
 | D-076 | Backup and disaster-recovery targets (acceptable data loss and downtime). | Database replication, hosting, and cost (architecture question AQ-8). |
 | D-077 | Split of security and incident responsibilities, and escalation paths, between us, telcos, and customers. | Incident handling and contract terms. |
-| D-078 | Who reviews sender ID requests, campaign approvals, and abuse alerts operationally, and with what turnaround. | Manual approval workflows need staffing. |
+| D-078 | Who reviews sender ID requests, campaign approvals, and abuse alerts operationally, and with what turnaround. | Manual approval workflows need staffing. **Note 2026-11-25:** campaign approvals are not needed in the MVP (MVP-13 deferred); sender ID reviews and abuse alerts still are. Item remains open. |
 | D-079 | Customer support model (hours, channels, tiers). | Staffing and tooling. |
 
 ## 6. Business decisions required
@@ -113,9 +113,9 @@ what is known.** AI agents must not treat any item as confirmed unless it is in 
 | D-084 | Pricing structure: per network, per message type, volume tiers? | Pricing engine complexity. |
 | D-085 | Customer onboarding / KYC requirements (business documents, verification). | Onboarding workflow. |
 | D-086 | Acceptable use policy: prohibited content and industries. | Compliance and abuse prevention. |
-| D-087 | Campaign approval policy (which campaigns need manual approval). | Admin workflow. |
+| D-087 | Campaign approval policy (which campaigns need manual approval). | Admin workflow. **Owner decision 2026-11-25 (PR #7 review), scope only:** the campaign approval workflow is **deferred from the MVP** (MVP-13). The policy is **not** fully decided: approval thresholds, first-campaign policies, and operational turnaround remain open for a later release. |
 | D-088 | Whether to allow reseller/wholesale customers. | Tenant model, regulatory exposure. |
-| D-089 | MVP scope and launch customers. | Roadmap. **Owner decision 2026-11-25 (PR #7 review), partial:** the MVP supports single-message sending through the client portal and the public API; bulk sending through both channels (MVP-08, MVP-09) is deferred to a later release. The rest of the MVP scope and the launch customers remain open. |
+| D-089 | MVP scope and launch customers. | Roadmap. **Owner decision 2026-11-25 (PR #7 review), partial:** the MVP supports single-message sending through the client portal and the public API; bulk sending through both channels (MVP-08, MVP-09) is deferred to a later release. A portal send operation accepts exactly one recipient (no pasted lists, recipient files, contact-group or multi-recipient sends). The dedicated campaign approval workflow (MVP-13) is deferred beyond the MVP; essential abuse controls (MVP-01, MVP-05, MVP-29, MVP-30) are confirmed. The rest of the MVP scope and the launch customers remain open. |
 | D-090 | Budget envelope for infrastructure and operations. | Technology choices. |
 | D-091 | Single vs. separate admin and client portals (ADR-0013). | Security vs. simplicity. **Owner decision 2026-11-25 (ADR-0013):** one application, `client-portal`, initially, with shared `packages/ui`; `admin-portal` added when admin functionality begins. |
 | D-092 | **Monetary representation and precision**: currency(ies); precision (decimal places) of actual telco wholesale rates and our retail rates; resulting storage representation and scale (scaled integer vs. exact decimal). | Requires actual rate cards and the pricing model. Centavos may be insufficient. See ADR-0019 and [financial integrity](../architecture/financial-integrity.md). |

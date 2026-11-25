@@ -516,7 +516,33 @@ test('bulk sending is deferred through both channels and absent from the contrac
   assert.match(brief, /\*\*Bulk sending\*\* \(many recipients per send\) through the public API and through the client portal, including uploaded recipient files — deferred to a later release/);
   const worksheet = docText('../docs/discovery/mvp-scope-worksheet.md');
   assert.match(worksheet, /^\| MVP-08 \|.*\*\*Deferred to a later release\*\*/m);
-  assert.match(worksheet, /^\| MVP-09 \|.*\*\*MVP: single-message sending only\.\*\*.*\*\*deferred to a later release\*\*/m);
+  assert.match(worksheet, /^\| MVP-09 \|.*\*\*MVP: single-message sending only\*\*.*\*\*deferred to a later release\*\*/m);
   const register = docText('../docs/requirements/discovery-register.md');
   assert.match(register.split('\n').find((l) => l.startsWith('| D-089 |')), /bulk sending through both channels \(MVP-08, MVP-09\) is deferred to a later release/);
+});
+
+test('MVP portal: exactly one recipient per send operation (MVP-09)', () => {
+  const worksheet = docText('../docs/discovery/mvp-scope-worksheet.md');
+  const row = worksheet.split('\n').find((l) => l.startsWith('| MVP-09 |'));
+  assert.match(row, /exactly one recipient per send operation; no pasted recipient lists, recipient-file uploads, contact-group sends, or multi-recipient selection/);
+  assert.match(flat(worksheet), /one portal send operation accepts \*\*exactly one recipient\*\*/);
+  const brief = flat(docText('../docs/product/product-brief.md'));
+  assert.match(brief, /one send operation accepts \*\*exactly one recipient\*\*: no pasted recipient lists, recipient-file uploads, contact-group sends, or multi-recipient selection/);
+  assert.match(brief, /several separate single-recipient messages, subject to rate limits and abuse controls/);
+});
+
+test('MVP-13 campaign approval is deferred while essential abuse controls stay in the MVP', () => {
+  const worksheet = docText('../docs/discovery/mvp-scope-worksheet.md');
+  const rows = Object.fromEntries(worksheet.split('\n').filter((l) => /^\| MVP-\d\d \|/.test(l)).map((l) => [l.slice(2, 8), l]));
+  assert.match(rows['MVP-13'], /\*\*Deferrable\*\* \| \*\*Deferred beyond the MVP\*\*/);
+  for (const id of ['MVP-01', 'MVP-05', 'MVP-29', 'MVP-30']) assert.match(rows[id], /\| Essential \| \*\*Essential\*\* — .*\(owner, 2026-11-25\) \|$/, id);
+  const register = docText('../docs/requirements/discovery-register.md');
+  for (const id of ['D-025', 'D-087']) {
+    const line = register.split('\n').find((l) => l.startsWith(`| ${id} |`));
+    assert.match(line, /campaign approval workflow is \*\*deferred from the MVP\*\*/, id);
+    assert.match(line, /thresholds, first-campaign .*policies, and operational turnaround remain open for a later release/, id);
+  }
+  const brief = flat(docText('../docs/product/product-brief.md'));
+  assert.match(brief, /\*\*Campaign approval workflows\*\* .* deferred beyond the MVP/);
+  assert.match(brief, /Abuse controls: tenant\/API-key velocity limits, abuse alerts, and an operational kill switch/);
 });
