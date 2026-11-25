@@ -1,0 +1,3 @@
+/* Tailwind CSS entry point. Design tokens come from the shared UI package (owner decision F8). */
+@import 'tailwindcss';
+@import '@sms/ui/theme.css';

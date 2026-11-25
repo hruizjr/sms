@@ -39,8 +39,8 @@ coverage.html
 # Node / frontend
 # -----------------------------------------------------------------------------
 node_modules/
-/frontend/dist/
-/frontend/coverage/
+/frontend/**/dist/
+/frontend/**/coverage/
 *.tsbuildinfo
 .vite/
 npm-debug.log*
