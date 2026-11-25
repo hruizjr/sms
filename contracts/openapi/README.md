@@ -214,5 +214,10 @@ pnpm run check   # redocly lint + bundle + contract tests
 
 CI runs the same commands (`.github/workflows/contracts-ci.yml`, job **OpenAPI contract check**).
 TypeScript type generation (`openapi-typescript`, approved) is added with its first consumer, the
-frontend (Group 4). Go server-side validation or code generation is not chosen (ADR-0015) and needs
-owner approval.
+frontend (Group 5; numbered Group 4 before the owner's renumbering). **Go code** is generated from this
+specification by `oapi-codegen` into `backend/internal/publicapi` (Phase 3 Group 4; owner decisions in
+[decision log §9](../../docs/engineering/decision-log.md#9-owner-decisions--go-contract-integration-phase-3-group-4-2026-11-25);
+how to regenerate: [`backend/README.md`](../../backend/README.md#openapi-code-generation-public-api-v1)).
+A change to this file therefore also needs `go generate ./internal/publicapi/...` from `backend/`; the
+backend CI fails otherwise. Go request **validation** against this specification is not chosen yet
+(deferred to the first endpoint implementation, decision D6).

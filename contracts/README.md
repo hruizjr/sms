@@ -5,7 +5,7 @@ versioned independently of any one implementation.
 
 | Planned sub-folder | Contents | Consumers |
 | ------------------ | -------- | --------- |
-| `openapi/` | OpenAPI 3.x specifications for the portal API and the public developer API | Go server, generated TypeScript types for the frontend, public API documentation, contract tests |
+| `openapi/` | OpenAPI 3.x specifications for the portal API and the public developer API | Go server (types and routes generated into `backend/internal/publicapi`), generated TypeScript types for the frontend, public API documentation, contract tests |
 | `events/`  | Schemas for internal asynchronous events (e.g. *message accepted*, *delivery receipt received*) | Producers and consumers in the data plane |
 | `webhooks/`| Schemas of the payloads we send to customer webhooks | Public documentation, contract tests |
 
