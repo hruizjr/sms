@@ -1,0 +1,80 @@
+# Security CI — Phase 3 Group 6 (owner decision L7; decision log §11).
+#
+# Status-check names (intended to become required status checks, owner decision L9):
+#   "Secret scan"        gitleaks over the full git history reachable from the checked-out commit.
+#   "Dependency review"  pull requests only: blocks new or changed dependencies with known
+#                        vulnerabilities of moderate or higher severity, in every dependency scope.
+#                        Licences are reported only, never blocking (owner decision).
+#
+# Security: least-privilege token (read-only contents), actions pinned to full commit SHAs, no
+# repository secrets used, credentials not persisted after checkout. gitleaks is built from its Go
+# module at an exact version; the Go checksum database verifies the source.
+name: Security CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.27.4"         # decision log §7.1
+  GOTOOLCHAIN: local
+  # gitleaks (MIT licence), released 2026-02-21. Exceptions are listed, with reasons, in .gitleaksignore.
+  GITLEAKS_VERSION: v8.30.1
+
+jobs:
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository (full history)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - name: Install gitleaks
+        run: go install "github.com/zricethezav/gitleaks/v8@${GITLEAKS_VERSION}"
+
+      - name: Scan the full git history
+        # --redact keeps any finding's value out of the log; the rule, file, line and commit are shown.
+        run: |
+          echo "commits in history: $(git rev-list --count HEAD)"
+          "$(go env GOPATH)/bin/gitleaks" git --redact --no-banner --verbose --exit-code 1 --log-opts="HEAD" .
+
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
+        with:
+          fail-on-severity: moderate
+          fail-on-scopes: runtime, development, unknown
+          vulnerability-check: true
+          # Licence information is reported in the job summary but never fails the check: no
+          # allow or deny list is configured (owner decision: report-only).
+          license-check: true
+          comment-summary-in-pr: never

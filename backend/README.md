@@ -4,11 +4,11 @@ The Go backend: one Go module (`github.com/hruizjr/sms/backend`) that builds two
 `migrate` (ADR-0002, ADR-0003). Phase 3 is built in reviewed groups
 ([decision log §7](../docs/engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25)).
 
-**Current state — Groups 1, 2 and 4:** an HTTP API with configuration, structured logging, `/healthz`,
+**Current state — Groups 1, 2, 4 and 6:** an HTTP API with configuration, structured logging, `/healthz`,
 `/readyz` (which checks PostgreSQL), Prometheus metrics on a separate loopback-only listener, graceful
 shutdown, a PostgreSQL connection pool, goose migrations, sqlc configuration, Go types and Chi routes
 generated from the public API contract (not mounted in production; see
-[OpenAPI code generation](#openapi-code-generation-public-api-v1)), unit and integration tests, and CI.
+[OpenAPI code generation](#openapi-code-generation-public-api-v1)), unit and integration tests, CI, and a container image for the local Docker Compose stack (Group 6).
 There are **no business tables, no business functionality, no `/v1` endpoints, and no SMS sending**.
 
 ## Layout
@@ -19,10 +19,12 @@ backend/
 ├── .golangci.yml               Linter configuration (golangci-lint v2)
 ├── .env.example                Every configuration variable, with defaults
 ├── sqlc.yaml                   sqlc configuration (pgx/v5); no queries yet
+├── .dockerignore               Build context rules for infra/docker/backend.Dockerfile
 ├── tools/                      Separate Go module that version-locks code generators (oapi-codegen)
 ├── cmd/
 │   ├── api/main.go             HTTP API: load config → open pool → serve → shut down → close pool
-│   └── migrate/main.go         Migrations: up | status | version | down
+│   ├── migrate/main.go         Migrations: up | status | version | down
+│   └── healthcheck/main.go     Container health check: GET http://127.0.0.1:8080/readyz → exit 0/1
 ├── migrations/                 Versioned goose SQL migrations, embedded into cmd/migrate
 ├── queries/                    SQL queries for sqlc (empty until the first business feature)
 └── internal/
@@ -265,6 +267,33 @@ generator itself requires a fixed version.
 
 ## Running locally
 
+There are two ways to run the backend locally:
+
+| | Docker Compose stack (Group 6) | Native (`go run`) |
+| - | ------------------------------ | ----------------- |
+| Start | `docker compose -f infra/local/compose.yaml up -d --build --wait` (from the repository root) | Start only PostgreSQL in Compose, then `go run ./cmd/migrate up` and `go run ./cmd/api` |
+| Needs | Docker with Compose v2.7.0 or later | Go, plus Docker for PostgreSQL |
+| Migrations | Automatic: the one-off `migrate` service runs `up` before the API starts | Explicit `go run ./cmd/migrate up` |
+| Rollback (`migrate down`) | Not available (refused: `DB_HOST` is not a loopback IP) | Yes |
+| Metrics (`:9090`) | Not reachable (inside the container only) | `http://127.0.0.1:9090/metrics` |
+| Best for | Running the whole stack, the client portal, reviews | Changing and debugging Go code, rollback, metrics, integration tests |
+
+The Compose stack is documented in [`infra/local/README.md`](../infra/local/README.md): one-command start,
+health checks, migration lifecycle, reset, cleanup and troubleshooting. The image is built from
+[`infra/docker/backend.Dockerfile`](../infra/docker/backend.Dockerfile):
+- **Build:** a Go 1.27.4 builder; static binaries (`CGO_ENABLED=0`, `-trimpath`).
+- **Runtime:** a distroless base, user 65532. No shell; both base images pinned by tag and digest.
+- **Contents:** `api` (the entrypoint), `migrate`, and `healthcheck`.
+
+`cmd/healthcheck` exists because the runtime image has no `curl`. It uses only the standard library and
+accepts only `http` URLs whose host is a loopback IP. It follows no redirects and gives up after 3 s.
+Its exit code:
+- `0` when `/readyz` answers 200;
+- `1` when the API is not ready or unreachable;
+- `2` on a usage error.
+
+The rest of this section describes the native way.
+
 ### Toolchain
 
 The module pins Go **1.27.4** (`toolchain go1.27.4` in `go.mod`). Install any Go release ≥ 1.21; with the
@@ -433,10 +462,11 @@ go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
 itself on `PATH` (as CI does). If your `PATH` points to an older Go that only delegates to 1.27.4,
 govulncheck reports type errors in the standard library rather than results.
 
-## Known follow-ups (not part of Group 2)
+## Known follow-ups
 
 - **sqlc:** generate code and add a `sqlc diff` CI check once the first real query exists.
-- **Windows:** the owner validates the PowerShell steps above with Docker Desktop.
+- **Windows:** the owner validates the PowerShell steps above, and the Docker Desktop checklist in
+  [`infra/local/README.md`](../infra/local/README.md), with Docker Desktop.
 - **Readiness logging:** review the access-log severity of `/readyz` 503 responses (currently `ERROR`,
   per the Group 1 rule for status ≥ 500).
 - **Database roles:** before any production business schema, separate the migration role (DDL) from the

@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — pending owner review | Project owner | 2026-11-25 |
+| Draft — pending owner review | Project owner | 2026-11-26 |
 
 This roadmap sequences the work and defines **acceptance criteria** for each milestone. It deliberately
 contains **no dates**: timing depends on telco, regulatory, and business inputs that are not yet known.
@@ -16,7 +16,7 @@ Phase 1  Engineering foundation ...................... COMPLETE
 Phase 2  Discovery closure & solution architecture ◀── telco, regulatory, traffic, business inputs
          (2A preparation package merged; external discovery and 2B ONGOING)
    │
-Phase 3  Walking skeleton (tooling, CI, local stack)   AUTHORIZED, IN PROGRESS (Group 5 in review)
+Phase 3  Walking skeleton (tooling, CI, local stack)   AUTHORIZED, IN PROGRESS (Group 6 in review)
    │
 Phase 4  Control-plane core: tenants, identity, RBAC, audit
    │
@@ -76,7 +76,7 @@ criteria below is tracked in the [Phase 2 exit checklist](../discovery/phase2-ex
 until the owner's renumbering of 2026-11-25, [decision log §9](../engineering/decision-log.md#9-owner-decisions--go-contract-integration-phase-3-group-4-2026-11-25)), each
 reviewed and merged before the next starts
 ([decision log §7](../engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25)).
-**Implementation status:** Groups 1 (Go API skeleton), 2 (PostgreSQL foundation), 3 (OpenAPI contract) and 4 (Go API contract integration) are merged; Group 5 (frontend foundation) is in review.
+**Implementation status:** Groups 1 (Go API skeleton), 2 (PostgreSQL foundation), 3 (OpenAPI contract), 4 (Go API contract integration) and 5 (frontend foundation) are merged; Group 6 (local development stack and expanded CI) is in review.
 
 | Group | Scope | State |
 | ----- | ----- | ----- |
@@ -85,8 +85,8 @@ reviewed and merged before the next starts
 | 2 | PostgreSQL, migrations, local database | Merged (PR #5) |
 | 3 | API contract (OpenAPI) | Merged (PR #7) |
 | 4 | Go API contract integration: Go types and Chi routes generated from the contract (oapi-codegen), reproducible generation and CI checks; no endpoint mounted | Merged (PR #8) |
-| 5 | Frontend foundation (Group 4 before the renumbering): pnpm workspace, client portal shell (one page), shared UI package with tokens, Button and Card, lint, type check, tests, build, Linux and Windows CI ([decision log §10](../engineering/decision-log.md#10-owner-decisions--frontend-foundation-phase-3-group-5-2026-11-25)) | Submitted — awaiting owner review and merge |
-| 6 | Local development stack and expanded CI (Group 5 before the renumbering) | Not started |
+| 5 | Frontend foundation (Group 4 before the renumbering): pnpm workspace, client portal shell (one page), shared UI package with tokens, Button and Card, lint, type check, tests, build, Linux and Windows CI ([decision log §10](../engineering/decision-log.md#10-owner-decisions--frontend-foundation-phase-3-group-5-2026-11-25)) | Merged (PR #9) |
+| 6 | Local development stack and expanded CI (Group 5 before the renumbering): Docker Compose with PostgreSQL, a one-off migration service and the API; client portal development proxy; Local stack check, secret scan and dependency review in CI ([decision log §11](../engineering/decision-log.md#11-owner-decisions--local-development-stack-and-expanded-ci-phase-3-group-6-2026-11-26)) | Submitted — awaiting owner review and merge |
 
 **Depends on:** ADR-0002/0003/0004/0005/0013/0014/0015/0016/0017 — accepted 2026-11-25; owner repository
 actions — done (git-workflow §0).

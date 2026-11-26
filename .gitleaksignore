@@ -1,0 +1,16 @@
+# gitleaks exceptions (read by the "Secret scan" CI job; Phase 3 Group 6, decision log §11).
+#
+# Each entry is the exact fingerprint of ONE reviewed finding (commit:file:rule:line). Add an entry
+# only for a value that is verifiably not a secret, with the reason above it. A real secret is never
+# listed here: it is rotated, and the owner decides how to handle the history.
+#
+# Reviewed 2026-11-26. Rule generic-api-key matched the Idempotency-Key header value in a backend unit
+# test (TestPublicAPICreateMessageBindsHeaderAndBody). The value is a randomly chosen UUID used as a
+# client idempotency key: a request identifier chosen by the API client, not an authentication
+# credential (contract: contracts/openapi/public-api-v1.yaml, Idempotency-Key). It grants no access to
+# anything.
+# - Commit b208db1 is the squash-merge of PR #8 on main.
+b208db1fe4493475d9cda605733742eb809fb0de:backend/internal/httpserver/publicapi_test.go:generic-api-key:218
+# - Commit 89b4d03 is the original Group 4 commit; it is part of this working branch's history, which
+#   pull-request checks scan in full.
+89b4d033040932b8b2cc8e9c6e84fdb2088f4ad1:backend/internal/httpserver/publicapi_test.go:generic-api-key:218

@@ -72,6 +72,9 @@ ADR-0015** (see [§9](#9-owner-decisions--go-contract-integration-phase-3-group-
 changed.
 **In Phase 3 Group 5 (2026-11-25) the owner approved the frontend foundation under ADR-0013** (see
 [§10](#10-owner-decisions--frontend-foundation-phase-3-group-5-2026-11-25)); no ADR status changed.
+**In Phase 3 Group 6 (2026-11-26) the owner approved the local development stack and expanded CI** (see
+[§11](#11-owner-decisions--local-development-stack-and-expanded-ci-phase-3-group-6-2026-11-26)); no ADR
+status changed.
 
 | ADR | Title | Status |
 | --- | ----- | ------ |
@@ -986,3 +989,94 @@ are installed on Linux.
 Only React's packages are shipped to browsers.
 
 `pnpm audit`: no known vulnerabilities (2026-11-25).
+
+---
+
+## 11. Owner decisions — local development stack and expanded CI (Phase 3 Group 6, 2026-11-26)
+
+Recorded from the owner's approval of the Group 6 proposal (decisions L1–L9 and additional requirements).
+**The approval is limited to these decisions.** No ADR status changed. No new Go or npm dependency was
+added, and the OpenAPI contract is unchanged.
+
+| ID | Topic | Decision |
+| -- | ----- | -------- |
+| L1 | What runs in Compose | PostgreSQL, a one-off migration service and the Go API run in Docker Compose (`infra/local/compose.yaml`). The client portal runs natively |
+| L2 | Image pinning | Every image is pinned by tag **and** SHA-256 digest, including PostgreSQL. The PostgreSQL image stays identical between backend CI and local Compose. The Go builder and distroless runtime use their multi-platform (index) digests |
+| L3 | API container health check | A standard-library Go program, `backend/cmd/healthcheck`, shipped in the image |
+| L4 | Frontend container | None |
+| L5 | Frontend-to-backend connectivity | The Vite development server proxies `/healthz` and `/readyz` only. No frontend API calls |
+| L6 | Migrations | Automatic: the one-off `migrate` service runs `migrate up` on every Compose start. The API depends on it with `condition: service_completed_successfully` |
+| L7 | Security CI | gitleaks full-history secret scanning ("Secret scan"). Dependency review ("Dependency review") blocks moderate and higher vulnerabilities; licences are reported only |
+| L8 | Windows | The stack is tested by Linux CI, plus a manual Docker Desktop checklist (`infra/local/README.md`). GitHub's Windows runners cannot run Linux containers |
+| L9 | Required status checks | Inspect the real GitHub configuration before documenting it. The target list is in `docs/engineering/git-workflow.md` §0, with "Frontend check (Windows)" optional initially |
+
+**Images** (digests recorded 2026-11-26; versions as approved in §7.1):
+
+| Use | Image | Index digest |
+| --- | ----- | ------------ |
+| PostgreSQL (Compose and backend CI) | `postgres:18.7-trixie` | `sha256:c699303802144847d238196173655dbbecf7a96aeca1565f2b02eb671a1f0b6b` |
+| Go builder (`infra/docker/backend.Dockerfile`) | `golang:1.27.4-trixie` | `sha256:430985542100b871e108ccc00e8dcc5eef08ca14ee5825e98ebf563d8ffec4ee` |
+| Runtime (`infra/docker/backend.Dockerfile`) | `gcr.io/distroless/static-debian13:nonroot` | `sha256:8ce6dd87e9823c5b48dcfb2c8604714ccb351ce59607327bcc4957448da279b5` |
+
+The "Local stack check" CI job fails if a pulled image is not pinned by digest, if a Dockerfile base
+image is not pinned by tag and digest, or if the PostgreSQL image differs between Compose and backend CI.
+
+**CI tools added**, all pinned. None is a new application dependency.
+
+| Tool | Version | Licence | How it is pinned | Note |
+| ---- | ------- | ------- | ---------------- | ---- |
+| gitleaks | v8.30.1 (2026-02-21) | MIT | `go install github.com/zricethezav/gitleaks/v8@v8.30.1`; the Go checksum database verifies the source | §7.2 approved `gitleaks-action`. The scanner is run from its Go module instead, with the same Go toolchain as the backend, because the action downloads a release binary at run time. This is the same tool |
+| `actions/dependency-review-action` | v5.0.1 (2026-11-17) | MIT | Commit SHA `bbc44d14a204704ccc493733616cd1e93a0321ec` | §7.2 approved GitHub dependency review. It fails on moderate or higher severity in all scopes (runtime, development, unknown); licence check on, with no allow or deny list, so licences are reported only |
+
+**Secret scan of the existing history** (2026-11-26, before introducing the check):
+- **Scope:** gitleaks v8.30.1, default rules, over the full history of `main` (15 commits scanned; gitleaks skips merge commits), and over the working branch.
+- **Result:** one rule match on `main`, `generic-api-key`, in
+  `backend/internal/httpserver/publicapi_test.go` line 218 (commit `b208db1`, PR #8). The same line also
+  appears in the branch's original Group 4 commit `89b4d03`.
+- **Reviewed as not a secret.** It is the `Idempotency-Key` header value in a unit test: a random UUID that
+  an API client chooses as a request identifier. It is not a credential and grants no access.
+- **Handling:** both exact fingerprints are listed, with this reason, in `.gitleaksignore`. Nothing else
+  is allowlisted and no rule is disabled. After the exceptions, both histories scan clean.
+- **Not in Git:** a git-ignored local `infra/local/.env` also matched in a working-tree scan. It is never
+  committed or scanned in CI.
+
+**Docker Compose minimum version: v2.7.0.**
+- **Why:** this is the first release in which `up --wait` waits for a one-off service that another
+  service depends on with `service_completed_successfully` to *complete*, instead of expecting it to be
+  running.
+- **How it was established:** from the Compose source history. Commit `fd8538f7` (2022-06-18), "Use
+  appropriate dependency condition for one-shot containers when running `compose up --wait`", added
+  `getDependencyCondition` to `pkg/compose/start.go`. It is present at tag v2.7.0 and absent at v2.6.1.
+- **What was run:** older Compose releases were not executed. The stack was run with Compose v5.7.1
+  (Docker Engine 29.9.3) locally and with the Compose version on GitHub's `ubuntu-24.04` runner.
+
+**Verification of the migration lifecycle and container settings** (`scripts/local-stack-check.sh`, also run
+in CI; Compose v5.7.1, 2026-11-26), all passed:
+- **Fresh start on a new volume:** PostgreSQL healthy, then `migrate` exits 0 having applied the baseline,
+  then the API becomes healthy. `/healthz` and `/readyz` return 200.
+- **Repeated start:** `migrate` reports "no pending migrations"; the version is unchanged.
+- **New migration:** a temporary migration added to `backend/migrations` was applied on the next
+  `up --build --wait`, and the API stayed healthy. This was tested locally only and not committed; CI
+  covers it through the failed-migration test.
+- **Failed migration:** a deliberately invalid migration made `migrate` exit 1 and `up --wait` fail. The
+  `api` container was created but never started, and the port did not answer. The migration was rolled
+  back: version unchanged, no partial table. After it was removed, the stack started normally.
+- **Persistence:** data survived `stop`/`start` and `down`/`up`. The API stopped gracefully (exit 0,
+  "database pool closed").
+- **Volume reset:** `down -v` removed the volume. The next start created a fresh database with only the
+  baseline applied.
+- **`migrate down` in a container** is refused, because `DB_HOST` is not a loopback IP.
+- **API and migrate containers:** user 65532, read-only root filesystem, all capabilities dropped,
+  `no-new-privileges`. The API process runs as uid 65532.
+- **PostgreSQL with `no-new-privileges`:** it initialised a fresh volume, restarted and served normally,
+  so the option is kept (owner requirement 7).
+- **Published ports:** only 5432 and 8080, both on `127.0.0.1`. The API's metrics port is not reachable
+  from the host.
+- **`DB_PASSWORD`:** Compose refuses to run without it; there is no default.
+
+**Development proxy:** through `pnpm dev`, `/readyz` and `/healthz` return the API's answers, and
+`/v1/messages` is served by Vite, not proxied. The frontend CSP and lint rules are unchanged.
+
+**Sandbox note.** The agent's environment intercepts HTTPS with its own certificate authority. Local image
+builds therefore used an uncommitted Compose override that adds that certificate to the *build* stage
+only. CI builds the committed Dockerfile unchanged.

@@ -29,8 +29,9 @@ env:
   GOTOOLCHAIN: local             # never download a different toolchain inside CI
   GOLANGCI_LINT_VERSION: v2.15.0
   GOVULNCHECK_VERSION: v1.10.0
-  # PostgreSQL 18 (ADR-0005); must match infra/local/compose.yaml.
-  POSTGRES_IMAGE: postgres:18.7-trixie
+  # PostgreSQL 18 (ADR-0005), pinned by tag and multi-platform digest (owner decision L2, Group 6).
+  # Must be identical to infra/local/compose.yaml; the "Local stack check" job enforces this.
+  POSTGRES_IMAGE: postgres:18.7-trixie@sha256:c699303802144847d238196173655dbbecf7a96aeca1565f2b02eb671a1f0b6b
 
 defaults:
   run:
@@ -44,7 +45,7 @@ jobs:
     services:
       postgres:
         # Service images cannot use the workflow-level env; keep in sync with POSTGRES_IMAGE.
-        image: postgres:18.7-trixie
+        image: postgres:18.7-trixie@sha256:c699303802144847d238196173655dbbecf7a96aeca1565f2b02eb671a1f0b6b
         env:
           POSTGRES_DB: sms
           POSTGRES_USER: sms

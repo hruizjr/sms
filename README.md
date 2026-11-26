@@ -4,11 +4,19 @@ A multi-tenant platform for business-to-consumer ("Application-to-Person", A2P) 
 Philippines, intended to connect business, government, and enterprise customers to mobile networks
 through direct telco connectivity (subject to agreements and regulatory approval).
 
-> **Project status: Phase 1 — Engineering Foundation.**
-> This repository currently contains **documentation and repository structure only**.
-> There is no application code, no database schema, and no telco integration.
+> **Project status: Phase 3 — Walking skeleton (technical foundation only).**
+> The repository contains:
+> - documentation;
+> - a Go API skeleton (health and readiness endpoints, metrics, PostgreSQL connection, migrations);
+> - the draft OpenAPI contract for the public messages API, and Go code generated from it (not served);
+> - a client portal shell;
+> - a local Docker Compose development stack;
+> - CI.
+>
+> There is **no business functionality**: no SMS sending, no telco integration, no business database
+> tables, no authentication or billing.
 > No telco agreement, regulatory authorization, or traffic projection has been verified.
-> Phase 2 has **not** been authorized.
+> Phase 2 discovery is ongoing ([roadmap](docs/roadmap/development-roadmap.md)).
 
 ## Start here
 
@@ -26,23 +34,35 @@ through direct telco connectivity (subject to agreements and regulatory approval
 ├── AGENTS.md            Instructions for all AI coding agents (source of truth)
 ├── CLAUDE.md            Pointer that makes Claude Code load AGENTS.md
 ├── backend/             Go backend: one module, several runtime processes
-│   ├── cmd/             One folder per executable (API server, workers, ...) — none yet
-│   └── internal/        Private application modules (billing, messaging, ...) — none yet
+│   ├── cmd/             Executables: api, migrate, healthcheck
+│   └── internal/        Technical packages (config, database, httpserver, ...); business modules later
 ├── frontend/            React + TypeScript + Vite + Tailwind CSS (pnpm workspace) — client portal shell
 ├── contracts/           Shared API contracts (OpenAPI) and event schemas
-├── infra/               Local development and deployment configuration (Docker, monitoring)
-├── scripts/             Developer and CI helper scripts
+├── infra/               Docker image and local Docker Compose stack (PostgreSQL, migrations, API)
+├── scripts/             Developer and CI helper scripts (local stack check)
 ├── tests/               Cross-cutting tests: end-to-end, load, provider contract suites
 ├── docs/                Product, requirements, architecture, standards, security, risks, roadmap
-└── .github/             Pull request and task templates
+└── .github/             CI workflows, pull request and task templates
 ```
 
 Each top-level folder has its own `README.md` explaining what belongs there.
 
-## Technology preferences (not all approved — see the decision log)
+## Run it locally
 
-- **Frontend:** React, TypeScript (strict), Vite, Tailwind CSS
-- **Backend:** Go, Chi router (under evaluation), REST
+Start PostgreSQL, the migrations and the API with one command, from the repository root (first time:
+copy `infra/local/.env.example` to `infra/local/.env` and set `DB_PASSWORD`):
+
+```bash
+docker compose -f infra/local/compose.yaml up -d --build --wait
+```
+
+Then, optionally, run the client portal from `frontend/` with `pnpm dev`. Details, reset and Windows
+notes: [`infra/local/README.md`](infra/local/README.md).
+
+## Technology (see the decision log for the status of each)
+
+- **Frontend:** React, TypeScript (strict), Vite, Tailwind CSS (accepted, ADR-0013)
+- **Backend:** Go, Chi router, REST + OpenAPI (accepted, ADR-0004, ADR-0015)
 - **Data:** PostgreSQL (primary). Kafka/Redpanda, Redis, ClickHouse are *candidates*, to be introduced only when justified.
 - **Operations:** Docker, Prometheus, Grafana
 

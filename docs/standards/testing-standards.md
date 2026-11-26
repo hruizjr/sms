@@ -107,7 +107,7 @@ or **leak one customer's data to another** — so the most important behaviours 
 
 - **Static analysis:** `govulncheck`, `golangci-lint` security linters, dependency audit for frontend
   packages (`pnpm audit` in CI, since pnpm is the accepted package manager — ADR-0013).
-- **Secret scanning:** a pre-commit or CI secret scanner (tool to be chosen) plus GitHub secret scanning
+- **Secret scanning:** gitleaks over the full git history in CI ("Secret scan", adopted in Phase 3 Group 6) plus GitHub secret scanning
   where available.
 - **Automated security tests:** authorization matrix tests (every role × every endpoint), tenant isolation
   tests, input validation (oversized payloads, malformed phone numbers, CSV formula injection), webhook

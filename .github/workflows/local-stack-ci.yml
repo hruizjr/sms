@@ -1,0 +1,171 @@
+# Local stack CI — Phase 3 Group 6 (Docker Compose development stack; decision log §11).
+#
+# Status-check names:
+#   "Local stack check"             Linux; intended to become a required status check (owner decision L9)
+#   "Local stack config (Windows)"  optional; checks .env discovery and the Compose model in PowerShell.
+#                                   GitHub's Windows runners cannot run Linux containers, so the stack
+#                                   itself is verified on Linux only (owner decision L8).
+#
+# Security: least-privilege token (read-only contents), actions pinned to full commit SHAs, no
+# repository secrets used, credentials not persisted after checkout. The database password is a
+# random throwaway value generated inside the job, masked in logs, and never stored. Published ports
+# are bound to the runner's loopback interface only.
+name: Local Stack CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: local-stack-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "26.13.1"   # decision log §7.1; must match frontend/package.json
+  PNPM_VERSION: "10.34.9"   # decision log §7.1; must match frontend/package.json
+  COMPOSE_PROJECT_NAME: sms-local-check
+
+jobs:
+  stack:
+    name: Local stack check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Show Docker and Compose versions
+        run: |
+          docker version --format 'Docker Engine {{.Server.Version}}'
+          docker compose version
+
+      - name: Check image pinning
+        run: |
+          set -euo pipefail
+          digest='@sha256:[0-9a-f]{64}$'
+          compose_pg="$(grep -E '^\s+image: postgres:' infra/local/compose.yaml | awk '{print $2}')"
+          ci_env_pg="$(grep -E '^\s+POSTGRES_IMAGE: ' .github/workflows/backend-ci.yml | awk '{print $2}')"
+          ci_svc_pg="$(grep -E '^\s+image: postgres:' .github/workflows/backend-ci.yml | awk '{print $2}')"
+          echo "compose:           ${compose_pg}"
+          echo "backend CI env:    ${ci_env_pg}"
+          echo "backend CI service: ${ci_svc_pg}"
+          [[ "${compose_pg}" =~ ${digest} ]] || { echo "PostgreSQL image is not pinned by digest"; exit 1; }
+          [[ "${compose_pg}" == "${ci_env_pg}" && "${compose_pg}" == "${ci_svc_pg}" ]] \
+            || { echo "PostgreSQL image differs between Compose and backend CI"; exit 1; }
+          # Every base image in the Dockerfile is pinned by tag and digest.
+          grep -E '^FROM ' infra/docker/backend.Dockerfile | while read -r _ image _; do
+            echo "Dockerfile FROM:   ${image}"
+            [[ "${image}" =~ :[^@]+${digest} ]] || { echo "base image ${image} is not pinned by tag and digest"; exit 1; }
+          done
+          # Every pulled Compose image is pinned (the locally built backend image is not pulled).
+          grep -E '^\s+image: ' infra/local/compose.yaml | awk '{print $2}' | while read -r image; do
+            [[ "${image}" == "sms-local-backend:dev" ]] && continue
+            [[ "${image}" =~ ${digest} ]] || { echo "Compose image ${image} is not pinned by digest"; exit 1; }
+          done
+
+      - name: Create a throwaway infra/local/.env
+        run: |
+          set -euo pipefail
+          test ! -e infra/local/.env
+          password="$(openssl rand -hex 24)"
+          echo "::add-mask::${password}"
+          sed "s/^DB_PASSWORD=.*/DB_PASSWORD=${password}/" infra/local/.env.example > infra/local/.env
+          # Compose refuses to start without a password (no default).
+          if docker compose -f infra/local/compose.yaml --env-file /dev/null config --quiet 2>/dev/null; then
+            echo "Compose accepted a configuration without DB_PASSWORD"; exit 1
+          fi
+
+      - name: Run the local stack check (lifecycle, security settings, failed migration, persistence, reset)
+        env:
+          KEEP_STACK: "1" # leave the stack running for the development proxy check below
+        run: bash scripts/local-stack-check.sh
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install pnpm
+        run: npm install --global "pnpm@${PNPM_VERSION}"
+
+      - name: Install frontend dependencies (lockfile only)
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Check the client portal development proxy (/healthz and /readyz only)
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          pnpm dev > vite-dev.log 2>&1 &
+          for _ in $(seq 1 60); do
+            curl -fsS -o /dev/null http://localhost:5173/ && break
+            sleep 1
+          done
+          test "$(curl -fsS http://localhost:5173/readyz)" = '{"status":"ready"}'
+          test "$(curl -fsS http://localhost:5173/healthz)" = '{"status":"ok"}'
+          # Any other path is served by Vite itself (the portal page), never by the API.
+          content_type="$(curl -s -o /dev/null -w '%{content_type}' http://localhost:5173/v1/messages)"
+          echo "GET /v1/messages through Vite: ${content_type}"
+          [[ "${content_type}" == text/html* ]]
+          kill %1
+
+      - name: Show stack logs
+        if: failure()
+        run: |
+          docker compose -f infra/local/compose.yaml ps -a || true
+          docker compose -f infra/local/compose.yaml logs --no-color --tail 200 || true
+          cat frontend/vite-dev.log 2>/dev/null || true
+
+      - name: Clean up
+        if: always()
+        run: docker compose -f infra/local/compose.yaml down -v --rmi local --remove-orphans
+
+  windows-config:
+    name: Local stack config (Windows)
+    runs-on: windows-2025
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Show Compose version
+        run: docker compose version
+
+      - name: Without infra/local/.env, Compose refuses to run (no default password)
+        run: |
+          if (Test-Path infra/local/.env) { throw "infra/local/.env must not exist in a fresh checkout" }
+          docker compose -f infra/local/compose.yaml config --quiet 2>$null
+          if ($LASTEXITCODE -eq 0) { throw "Compose accepted a configuration without DB_PASSWORD" }
+          "refused as expected (exit code $LASTEXITCODE)"
+          $global:LASTEXITCODE = 0
+
+      - name: From the repository root, Compose finds infra/local/.env (documented PowerShell steps)
+        run: |
+          Copy-Item infra/local/.env.example infra/local/.env
+          $password = -join ((1..24) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) })
+          "::add-mask::$password"
+          (Get-Content infra/local/.env) -replace '^DB_PASSWORD=.*', "DB_PASSWORD=$password" |
+            Set-Content -Encoding utf8NoBOM infra/local/.env
+          $model = docker compose -f infra/local/compose.yaml config --format json | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw "docker compose config failed" }
+          if ($model.services.postgres.environment.POSTGRES_PASSWORD -ne $password) { throw "postgres did not get DB_PASSWORD from infra/local/.env" }
+          if ($model.services.api.environment.DB_PASSWORD -ne $password) { throw "api did not get DB_PASSWORD from infra/local/.env" }
+          foreach ($svc in 'postgres', 'api') {
+            foreach ($port in $model.services.$svc.ports) {
+              if ($port.host_ip -ne '127.0.0.1') { throw "$svc publishes a port on '$($port.host_ip)', not 127.0.0.1" }
+            }
+          }
+          if ($model.services.migrate.ports) { throw "migrate must not publish ports" }
+          "infra/local/.env discovered from the repository root; ports bound to 127.0.0.1 only"
