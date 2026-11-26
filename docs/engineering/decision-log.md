@@ -80,6 +80,8 @@ status changed.
 evaluation, the owner accepted ADR-0010 on 2026-11-26** (decisions RLS-1 to RLS-5,
 [§12.1](#121-owner-decisions-on-rls-adoption-2026-11-26)): option B for tenant-owned **control-plane** tables. The
 RLS strategy for high-volume **data-plane** tables remains deferred.
+**Phase 3 was closed on 2026-11-26** (see [§13](#13-phase-3-closure-2026-11-26)). No ADR status changed with
+the closure.
 
 | ADR | Title | Status |
 | --- | ----- | ------ |
@@ -1187,3 +1189,53 @@ ADR-0010 above, and they resolve D-141.
 - the roadmap marks the Phase 3 RLS evaluation item complete.
 
 **Nothing was implemented:** there are no business tables, migrations, runtime roles, product-code tenant helper or CI guard yet. The guard and the RLS tests apply from the first tenant-owned table, which needs the role-separation group (RLS-4) first or alongside it.
+
+---
+
+## 13. Phase 3 closure (2026-11-26)
+
+The Phase 3 walking skeleton is complete. All eight groups (0–7) are merged, and every exit criterion in the
+[roadmap](../roadmap/development-roadmap.md#phase-3--walking-skeleton) is met. Requested by the owner after a
+read-only audit of `main` at `63ab5de`.
+
+**This closure is documentation only.** No ADR status changed, and no code, configuration, CI workflow,
+contract or migration was modified. Phase 4 is **not** authorized by it.
+
+| Exit criterion | Evidence |
+| -------------- | -------- |
+| A new developer/agent can start the local stack with one documented command | `infra/local/README.md` §2: `docker compose -f infra/local/compose.yaml up -d --build --wait`, after a one-time copy of `.env.example`. Verified on Linux by "Local stack check" on every pull request. Verified on Windows by the owner's Docker Desktop validation on 2026-11-26 (below) |
+| CI runs on every PR and blocks merging on failure | All five workflows (Backend, Contracts, Frontend, Local Stack, Security CI) run on `pull_request` and `push` to `main`, with no path filters. Ruleset R1 requires nine checks (below) |
+| Branch protection configured on `main` | Ruleset R1 ([git workflow §0](git-workflow.md#0-repository-state)) |
+| Health endpoint served; frontend shell renders; tokens applied; all tests pass | `/healthz` and `/readyz`: API smoke test in "Go test and build", and "Local stack check". Shell and tokens: "Frontend check" (render, error-boundary and WCAG contrast tests; build check). All five workflows passed on `main` at `63ab5de` |
+| RLS evaluation completed and documented before Phase 4 | [RLS evaluation](../architecture/rls-evaluation.md); ADR-0010 Accepted; §12.1; PR #11 |
+
+**Required status checks** (ruleset R1, updated by the owner on 2026-11-26, owner decision L9):
+
+- **Required (nine):**
+  - `Go test and build`
+  - `Go lint`
+  - `Go vulnerability check`
+  - `Go generate check (Windows)`
+  - `OpenAPI contract check`
+  - `Frontend check`
+  - `Local stack check`
+  - `Secret scan`
+  - `Dependency review`
+- **Optional:** `Frontend check (Windows)` and `Local stack config (Windows)`.
+
+The ruleset is a repository setting, which agents do not change. The owner made the change. The agent session
+cannot read rulesets, so the change is recorded on the owner's report; the closure pull request records what it
+observed of the checks gating it.
+
+**Windows Docker Desktop validation** (owner decision L8): completed by the owner on 2026-11-26, with no failures
+reported, using Docker Desktop 4.100.1, Docker Engine 29.9.3 and Docker Compose 5.7.1. Recorded in
+`infra/local/README.md`.
+
+**Carried forward, not Phase 3 exit criteria:**
+
+- **Database role separation (RLS-4):** a separate, approved group, before or alongside the first tenant-owned
+  table.
+- **Data-plane RLS (RLS-5):** a separate evaluation when the message tables are designed.
+- **Phase 2 exit criteria:** still open ([Phase 2 exit checklist](../discovery/phase2-exit-checklist.md)).
+- **Native Windows PowerShell steps** in `backend/README.md`: not separately validated.
+- **Phase 4:** needs explicit owner authorization (`AGENTS.md`, "Authorized scope").
