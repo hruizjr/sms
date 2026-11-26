@@ -106,9 +106,10 @@ cmd/api ── config.Load ──▶ database.Open (pgxpool, lazy: no connection
   this is fatal (the API exits with the reasons); later, an unsafe connection is closed and `/readyz` fails.
 - **`migrate` checks its role** before every command and refuses a superuser or a role with `BYPASSRLS`,
   `CREATEROLE`, `CREATEDB`, `REPLICATION` or role memberships, so tables are always owned by `sms_migrator`.
-- Because tenant-owned tables will use `FORCE ROW LEVEL SECURITY`, the migration role (their owner, without
-  `BYPASSRLS`) is subject to their policies too. A future data migration on tenant-owned rows therefore needs
-  its own approved approach.
+- Because tenant-owned tables will use `FORCE ROW LEVEL SECURITY`, the migration role (their owner, with
+  `NOBYPASSRLS` by owner decision G1-9) is subject to their policies for its ordinary data queries; a test
+  proves it. No role has a blanket RLS bypass. A future cross-tenant data migration needs a separately
+  designed, controlled procedure, approved when it is needed.
 
 ### Liveness vs. readiness
 

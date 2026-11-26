@@ -404,5 +404,12 @@ report the result in the pull request or to the owner:
         prints the same line again (section 9, idempotent).
 
 > **Re-validation needed.** Phase 4 Group 1 changed the Compose file (role passwords and the
-> provisioning mount). The owner's validation above predates it; the checklist, including item 11 and an
-> upgrade of an existing volume (section 9), has not been run on Windows since.
+> provisioning mount). The owner's validation above predates it. Re-validate with
+> [`windows-validation.md`](windows-validation.md), which covers:
+>
+> - a fresh database, in a throwaway project;
+> - the upgrade of an existing volume without deleting data;
+> - role verification, health, restart and persistence;
+> - the tenants migration.
+>
+> Unlike items 9 and 10 above, it contains no destructive volume command.

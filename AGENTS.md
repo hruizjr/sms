@@ -619,8 +619,10 @@ Proposed; its item below is marked as proposed.)
     refuses an unsafe role; migrations run as `sms_migrator`, which owns the tables and has no `BYPASSRLS`
     ([backend README, "Database roles"](backend/README.md#database-roles-phase-4-group-1-owner-decision-rls-4)).
   - **Cross-tenant access:** it uses a dedicated reporting role with its own credentials and pool and
-    explicit read-only policies, and is audited in the application. `BYPASSRLS` is only for the migration
-    and break-glass roles.
+    explicit read-only policies, and is audited in the application. **No role receives a blanket
+    `BYPASSRLS`**: the migration role has `NOBYPASSRLS` (owner decision G1-9, decision log §18, superseding the
+    earlier rule that reserved it for the migration role), and a cross-tenant data migration or break-glass
+    access needs its own separately designed, controlled and approved procedure.
   - **Schema rules:** unique constraints and foreign keys on tenant data include `tenant_id`; views use
     `security_invoker = true`; there is no `SECURITY DEFINER` over tenant tables without review; the
     application role is never granted `TRUNCATE`.

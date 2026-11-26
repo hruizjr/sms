@@ -145,6 +145,7 @@ Admin reporting, reconciliation and background jobs may legitimately need to wor
 
 1. **Cross-tenant work uses its own role, credential and connection pool.** It never uses the application pool. Reporting gets model 1: **read-only explicit policies**, added table by table in migrations, with column grants where some data must not be exposed. Cross-tenant writes, such as reconciliation corrections, get narrowly scoped write policies only when an approved feature needs them.
 2. **`BYPASSRLS` is reserved for the migration role.** It needs it anyway to run data migrations on forced tables (§10), and a break-glass role would also have it. It is never used by any application or worker pool.
+   **Superseded for the migration role (owner, 2026-11-26; see [§11.1](#111-superseded-bypassrls-for-the-migration-role-2026-11-26)):** the migration role has `NOBYPASSRLS`. No blanket bypass is granted; cross-tenant data migrations need a separately designed, controlled procedure.
 3. **No product code exists for either model yet.** The roles, policies and pools are designed with the first feature that needs cross-tenant access.
 
 **Auditing implications** (the security baseline requires admin access to tenant data to be audited):
@@ -213,7 +214,7 @@ The owner adopted RLS on 2026-11-26 **conditional on all of these requirements**
 3. **Context is transaction-scoped only,** set by one application helper as the first statement of the transaction. The helper rejects missing or invalid tenant IDs before any tenant query runs (RLS-2). Session-level settings are never used.
 4. **Application tenant filters stay mandatory** (AGENTS.md §10.7). RLS is the backstop, not the mechanism.
 5. **Keys include `tenant_id`.** Unique constraints and foreign keys on tenant data include it; views use `security_invoker = true`; there is no `SECURITY DEFINER` over tenant tables without review.
-6. **Cross-tenant access follows §6:** explicit read-only policies on a separate role and pool, audited in the application; `BYPASSRLS` only for the migration and break-glass roles.
+6. **Cross-tenant access follows §6:** explicit read-only policies on a separate role and pool, audited in the application; `BYPASSRLS` only for the migration and break-glass roles. *(Superseded in part, [§11.1](#111-superseded-bypassrls-for-the-migration-role-2026-11-26): the migration role has `NOBYPASSRLS`; any bypass, including break-glass, needs its own separately designed and approved procedure.)*
 7. **A catalog CI check** fails if any table with `tenant_id` is unprotected (§7).
 8. **Re-evaluate** before introducing an external pooler (§9), and when designing high-volume or partitioned data-plane tables (policy cost at scale, partition behaviour) **[NT]**.
 
@@ -238,7 +239,7 @@ and [decision log §12.1](../engineering/decision-log.md#121-owner-decisions-on-
 | -- | -------- | -------------------------------- |
 | RLS-1 | **Adopt option B:** RLS as defense-in-depth for tenant-owned control-plane tables, on top of mandatory application tenant filtering, conditional on all of §10 | As recommended |
 | RLS-2 | **`NULLIF` policy expression**, with equivalent `USING` and `WITH CHECK`. Context set transaction-locally by one application helper, which **rejects missing or invalid tenant IDs before any tenant query**. Never session-level | As recommended. The owner made the helper's validation an explicit requirement. The `require_tenant_id()` alternative was not adopted |
-| RLS-3 | **Explicit cross-tenant policies** on a dedicated reporting role with its own credentials and pool; read-only policies; minimum table and column privileges. Cross-tenant writes need separate approval and narrow policies. `BYPASSRLS` only for the migration role and a separately controlled break-glass role. Cross-tenant admin operations audited in the application | As recommended |
+| RLS-3 | **Explicit cross-tenant policies** on a dedicated reporting role with its own credentials and pool; read-only policies; minimum table and column privileges. Cross-tenant writes need separate approval and narrow policies. `BYPASSRLS` only for the migration role and a separately controlled break-glass role. Cross-tenant admin operations audited in the application | As recommended. **The migration-role part was superseded on 2026-11-26** ([§11.1](#111-superseded-bypassrls-for-the-migration-role-2026-11-26)) |
 | RLS-4 | **Role separation is a prerequisite**, in a separate, explicitly approved group, before or alongside the first tenant-owned business table. The API must not use the bootstrap superuser | As recommended. **Implemented in Phase 4 Group 1** (decision log §18), with the migration role **without** `BYPASSRLS` (owner decision G1-5) |
 
 **Deferred:**
@@ -246,6 +247,35 @@ and [decision log §12.1](../engineering/decision-log.md#121-owner-decisions-on-
 | ID | Decision | What it needs |
 | -- | -------- | ------------- |
 | RLS-5 | **High-volume data-plane (message) tables** are excluded from the adoption. The control-plane decision is not extended to them automatically | A separate evaluation once their design and workload are known: write throughput, partitioning, query patterns, representative volume |
+
+### 11.1 Superseded: `BYPASSRLS` for the migration role (2026-11-26)
+
+**What this evaluation recommended.** §6 (item 2), §10 (conditions 1 and 6) and RLS-3 gave the migration role
+`BYPASSRLS`, so that it could run **data** migrations on tables with forced row-level security without setting a
+tenant context.
+
+**What the owner decided instead** (Phase 4 Group 1; approved 2026-11-26 as G1-5 and confirmed the same day as
+G1-9, [decision log §18](../engineering/decision-log.md#18-owner-decisions--database-role-separation-and-tenant-registry-phase-4-group-1-2026-11-26)):
+
+- `sms_migrator` and `sms_app` are both **non-superuser** and both have **`NOBYPASSRLS`**.
+- `sms_migrator` may own the application tables and run migrations (DDL), but **forced row-level security still
+  applies to its ordinary data queries**: as the owner of a forced table it sees and writes only the rows of the
+  tenant in `app.tenant_id`, and none without a tenant context.
+- **No blanket RLS bypass** is granted to any role.
+- A future **cross-tenant data migration** must use a **separately designed, controlled procedure**, approved
+  when it is needed. It is not designed here.
+
+**Why the recommendation was superseded.** A `BYPASSRLS` credential reads and writes every tenant's rows in every
+table (§6, "Model 2 makes audit gaps more dangerous"). Giving it permanently to the role that every deployment
+uses for migrations would keep that power available all the time, for a need that does not exist yet: there is no
+tenant-owned table and no data migration. The owner preferred the least-privilege position: forced policies apply
+to every role used day to day, and the rare cross-tenant data change gets its own controlled design.
+
+**What did not change.** RLS-1, RLS-2, RLS-4 and RLS-5, the rest of RLS-3 (reporting role, explicit read-only
+policies, audited cross-tenant operations) and every other condition in §10. ADR-0010 remains Accepted. The
+evaluation's text above is kept as the record of what was evaluated and recommended; the notes mark where it is
+superseded. The behaviour is tested in `backend/internal/database/tenant_integration_test.go`
+(`TestIntegrationForcedRLSAppliesToMigrationRole`), and the migrate command refuses a role with `BYPASSRLS`.
 
 ## 12. Performance (owner requirement D): indicative only
 

@@ -420,6 +420,9 @@ databases is a later, evidence-based decision.
    separate approval and narrowly scoped policies. `BYPASSRLS` is reserved for the migration role and a
    separately controlled break-glass role, never for application, reporting or worker connections.
    Cross-tenant administrative operations are audited in the application.
+   *Amended 2026-11-26 (owner decision G1-9, [§18](#18-owner-decisions--database-role-separation-and-tenant-registry-phase-4-group-1-2026-11-26)):
+   the migration role has `NOBYPASSRLS`; no blanket bypass is granted; cross-tenant data migrations need a
+   separately designed, controlled procedure. The rest of this item is unchanged.*
 4. **Prerequisite (RLS-4):** database role separation is implemented in a separate, explicitly approved
    development group, before or alongside the first tenant-owned business table. The API must not use the
    bootstrap PostgreSQL superuser.
@@ -1206,7 +1209,7 @@ ADR-0010 above, and they resolve D-141.
 | -- | -------- | ------ |
 | RLS-1 | **Adopt ADR-0010 option B**: RLS as defense-in-depth for **tenant-owned control-plane tables**, on top of mandatory application-level tenant filtering. Conditional on all requirements in [evaluation §10](../architecture/rls-evaluation.md#10-conditions-of-adoption-adopted-by-the-owner-rls-1). High-volume data-plane tables are explicitly excluded | **Accepted** |
 | RLS-2 | **Policy expression:** `tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid`, with equivalent `USING` and `WITH CHECK` policies. The tenant context is set transaction-locally through one application helper, which rejects missing or invalid tenant IDs before executing tenant queries. Session-level tenant settings are never used | **Accepted** |
-| RLS-3 | **Explicit cross-tenant policies:** a dedicated reporting role with its own credentials and connection pool, explicit read-only policies, and the minimum necessary table and column privileges. Cross-tenant writes need separate approval and narrowly scoped policies. `BYPASSRLS` only for the migration role and a separately controlled break-glass role, never for application, reporting or worker connections. Cross-tenant administrative operations are audited in the application | **Accepted** |
+| RLS-3 | **Explicit cross-tenant policies:** a dedicated reporting role with its own credentials and connection pool, explicit read-only policies, and the minimum necessary table and column privileges. Cross-tenant writes need separate approval and narrowly scoped policies. `BYPASSRLS` only for the migration role and a separately controlled break-glass role, never for application, reporting or worker connections. Cross-tenant administrative operations are audited in the application. *Migration-role part superseded by G1-9 (§18, 2026-11-26): `NOBYPASSRLS`* | **Accepted** |
 | RLS-4 | **Role separation is a prerequisite.** Implemented in a separate, explicitly approved development group, before or alongside the first tenant-owned business table. The API must not use the bootstrap PostgreSQL superuser. Not implemented in Group 7 | **Accepted**, implementation pending a future approved group |
 | RLS-5 | **High-volume data-plane tables deferred.** The control-plane decision is not extended to them automatically. They are evaluated separately when their design and workload are known: write throughput, partitioning, query patterns, representative volume | **Deferred** |
 
@@ -1418,6 +1421,7 @@ after this one is reviewed and merged. (This section follows §17, which is reco
 | G1-5 | **`sms_migrator`:** owns application tables and runs migrations; not a superuser; no `BYPASSRLS`; cannot create roles; only the database and schema privileges needed to migrate (`CONNECT`; `USAGE`, `CREATE` on `public`) |
 | G1-6 | **`sms_app`:** not a superuser; no `BYPASSRLS`; owns no tables or schemas; cannot create objects; no `TRUNCATE`; only the table privileges the API needs; inherits nothing from the migration role. The API refuses to start with an unsafe role or a table owner |
 | G1-7 | **Existing local volumes are never deleted automatically.** Fresh volumes are provisioned by the official image initialisation (`/docker-entrypoint-initdb.d`); existing volumes by a documented, idempotent upgrade command ([`infra/local/README.md` §9](../../infra/local/README.md#9-database-roles-and-upgrading-an-existing-database-volume)). A volume reset is offered only as an explicit, user-typed alternative with its data-loss warning |
+| G1-9 | **Confirmed by the owner on 2026-11-26, superseding the RLS evaluation's recommendation** (RLS-3's migration-role clause, evaluation §6 and §10): `sms_migrator` has **`NOBYPASSRLS`**. Both `sms_migrator` and `sms_app` are non-superuser and have no `BYPASSRLS`. `sms_migrator` may own application tables and run migrations, but forced RLS policies still apply to its ordinary data queries. Future cross-tenant data migrations must use a **separately designed, controlled procedure**; **no blanket RLS bypass** is granted. History and reasons: [RLS evaluation §11.1](../architecture/rls-evaluation.md#111-superseded-bypassrls-for-the-migration-role-2026-11-26) |
 | G1-8 | **Out of scope:** user identity, authentication, sessions, MFA, RBAC; customer or administrator HTTP endpoints; audit logging needing authenticated actors; message submission or delivery; billing, monetary types, balances, pricing, ledger; telco adapters, routing, simulator; production deployment, provisioning or real credentials |
 
 **Engineering details recorded with this group** (within the approved scope; listed so they can be reviewed):
@@ -1445,7 +1449,7 @@ after this one is reviewed and merged. (This section follows §17, which is reco
   the local stack check extended with role checks and the existing-volume upgrade. The required status-check
   names are unchanged.
 
-**Open follow-ups (not decided here):** the reporting role and the break-glass role; production role
-provisioning and credential management; how future **data** migrations act on tenant-owned rows, since the
-migration role is subject to forced RLS policies without `BYPASSRLS`; the retention period for the *account*
-class (legal review).
+**Open follow-ups (not decided here):** the reporting role and the break-glass role (neither may receive a
+blanket `BYPASSRLS` without its own approved design); production role provisioning and credential management;
+the separately designed, controlled procedure for any future cross-tenant **data** migration (G1-9); the
+retention period for the *account* class (legal review).

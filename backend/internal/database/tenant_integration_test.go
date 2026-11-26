@@ -312,3 +312,46 @@ func TestIntegrationInTenantTxNoLeakUnderConcurrency(t *testing.T) {
 		conn.Release()
 	}
 }
+
+// TestIntegrationForcedRLSAppliesToMigrationRole: the migration role owns the tenant-owned table but has
+// NOBYPASSRLS (owner decision G1-9, decision log §18), so FORCE ROW LEVEL SECURITY applies to its ordinary
+// data queries: without tenant context it sees and writes nothing, and with a context only that tenant's rows.
+func TestIntegrationForcedRLSAppliesToMigrationRole(t *testing.T) {
+	t.Parallel()
+	ctx := testContext(t)
+	f := newTenantFixture(t)
+	for _, n := range []struct {
+		tenant [16]byte
+		note   string
+	}{{f.tenantA, "a1"}, {f.tenantB, "b1"}} {
+		if err := f.app.InTenantTx(ctx, n.tenant, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `INSERT INTO rls_test_notes (tenant_id, note) VALUES ($1, $2)`, n.tenant, n.note)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	migrator := open(t, f.roles.Migrator)
+	if got := value[string](t, ctx, migrator, `
+		SELECT current_user || ' bypassrls=' || rolbypassrls || ' super=' || rolsuper || ' owner=' ||
+		       (SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid = 'public.rls_test_notes'::regclass)
+		FROM pg_roles WHERE rolname = current_user`); got != "sms_migrator bypassrls=false super=false owner=sms_migrator" {
+		t.Fatalf("migration role = %q", got)
+	}
+	if got := notes(t, ctx, migrator.Pool()); len(got) != 0 {
+		t.Errorf("table owner without tenant context sees %v, want no rows", got)
+	}
+	_, err := migrator.Pool().Exec(ctx, `INSERT INTO rls_test_notes (tenant_id, note) VALUES ($1, 'owner write')`, f.tenantA)
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
+		t.Errorf("table owner insert without tenant context: %v, want a row-level security violation", err)
+	}
+	var got []string
+	if err := migrator.InTenantTx(ctx, f.tenantA, func(tx pgx.Tx) error { got = notes(t, ctx, tx); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got, []string{"a1"}) {
+		t.Errorf("table owner with tenant A's context sees %v, want [a1]", got)
+	}
+}

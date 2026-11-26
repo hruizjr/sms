@@ -73,8 +73,11 @@ program; §11 lists the security engineering still required. Nothing here is leg
   - **Roles.** The application role must not own tables, be a superuser, or hold `BYPASSRLS`. Database role
     separation is a prerequisite (RLS-4), implemented in Phase 4 Group 1: the API connects as `sms_app` and
     refuses an unsafe role; migrations run as `sms_migrator`, which owns the tables and, by owner decision
-    (decision log §18, G1-5), has no `BYPASSRLS` either. `BYPASSRLS` is reserved for the migration and
-    break-glass roles; none is granted today.
+    (decision log §18, G1-5 and G1-9), has no `BYPASSRLS` either, so forced policies apply to its data
+    queries too. **No blanket RLS bypass is granted to any role.** A future cross-tenant data migration, or a
+    break-glass procedure, needs its own separately designed, controlled and approved procedure. (This
+    supersedes the earlier rule that reserved `BYPASSRLS` for the migration role;
+    [RLS evaluation §11.1](../architecture/rls-evaluation.md#111-superseded-bypassrls-for-the-migration-role-2026-11-26).)
   - **Policies** fail closed when the context is missing (the `NULLIF` form).
   - **Cross-tenant access** uses a dedicated, read-only reporting role, and is audited in the application.
   - **Threat model limit.** RLS protects against application query mistakes and missing tenant filters,
