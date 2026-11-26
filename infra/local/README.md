@@ -297,6 +297,15 @@ GitHub's Windows runners cannot run Linux containers, so CI verifies the stack i
 repository root, that ports are bound to 127.0.0.1, and that a missing password is refused ("Local stack
 config (Windows)").
 
+**Last validation: 2026-11-26, by the owner. Completed with no failures reported.** Versions:
+
+- Docker Desktop 4.100.1;
+- Docker Engine 29.9.3;
+- Docker Compose 5.7.1.
+
+The boxes below are left unticked so the procedure can be reused. Repeat it after a change to the Compose file,
+the Dockerfile or the PostgreSQL image, and record the new result here.
+
 Run this once on Windows with Docker Desktop (WSL 2 backend), in PowerShell from the repository root, and
 report the result in the pull request or to the owner:
 

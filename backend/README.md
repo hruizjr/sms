@@ -474,8 +474,11 @@ govulncheck reports type errors in the standard library rather than results.
 ## Known follow-ups
 
 - **sqlc:** generate code and add a `sqlc diff` CI check once the first real query exists.
-- **Windows:** the owner validates the PowerShell steps above, and the Docker Desktop checklist in
-  [`infra/local/README.md`](../infra/local/README.md), with Docker Desktop.
+- **Windows:**
+  - **Docker Desktop checklist** ([`infra/local/README.md`](../infra/local/README.md)): validated by the owner
+    on 2026-11-26 with Docker Desktop 4.100.1, Engine 29.9.3 and Compose 5.7.1.
+  - **Native PowerShell steps above** (running the Go tools without Docker): not separately reported as
+    validated; still open for the owner.
 - **Readiness logging:** review the access-log severity of `/readyz` 503 responses (currently `ERROR`,
   per the Group 1 rule for status ≥ 500).
 - **Database roles (required, owner decision RLS-4, 2026-11-26):** RLS is adopted for tenant-owned

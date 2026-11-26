@@ -15,7 +15,7 @@ A deliberately simple, trunk-based workflow for **one human owner and multiple A
 | `main` branch | Exists; holds the merged Phase 1 and Phase 2A history |
 | Default branch | `main` |
 | Branch protection on `main` | Configured by the owner as **repository ruleset "R1"** (active, targets `refs/heads/main`): pull requests required, zero required approvals, conversation resolution required, force pushes (non-fast-forward) and deletion blocked. Classic branch protection is not enabled. *Verified by an agent on 2026-11-26 (Phase 3 Group 6), see below.* |
-| Required CI status checks | **Verified 2026-11-26:** `Go test and build`, `Go lint`, `Go vulnerability check` (ruleset R1; "require branches to be up to date" is off). No other check is required yet; see "Target required checks" below |
+| Required CI status checks | **Nine checks**, added to ruleset R1 by the owner on 2026-11-26 (owner decision L9). They are listed in "Required status checks" below. Before that, only the first three were required (agent-verified 2026-11-26, Group 6). "Require branches to be up to date" was off at that verification |
 
 Agents create every task branch from the latest `main` and open Draft pull requests against `main`.
 Agents MUST NOT change the default branch, branch protection, or any other repository setting; these remain
@@ -33,25 +33,27 @@ session:
 
 Re-verify after any change in repository settings.
 
-**Target required checks after Phase 3 Group 6** (owner decision L9; the owner adds them to ruleset R1
-once the Group 6 workflows are merged):
+**Required status checks** (owner decision L9; ruleset R1 updated by the owner on 2026-11-26). How this was
+checked is in the Phase 3 closure pull request and [decision log §13](decision-log.md#13-phase-3-closure-2026-11-26).
+The names are the job names exactly as they appear in the workflows; every workflow runs on every pull request
+to `main`, with no path filters:
 
 | Check | Workflow | Required? |
 | ----- | -------- | --------- |
-| Go test and build | Backend CI | Yes (already required) |
-| Go lint | Backend CI | Yes (already required) |
-| Go vulnerability check | Backend CI | Yes (already required) |
-| Go generate check (Windows) | Backend CI | Yes (to add) |
-| OpenAPI contract check | Contracts CI | Yes (to add) |
-| Frontend check | Frontend CI | Yes (to add) |
-| Local stack check | Local Stack CI | Yes (to add) |
-| Secret scan | Security CI | Yes (to add) |
-| Dependency review | Security CI | Yes (to add). Runs on pull requests only |
+| Go test and build | Backend CI | Yes |
+| Go lint | Backend CI | Yes |
+| Go vulnerability check | Backend CI | Yes |
+| Go generate check (Windows) | Backend CI | Yes |
+| OpenAPI contract check | Contracts CI | Yes |
+| Frontend check | Frontend CI | Yes |
+| Local stack check | Local Stack CI | Yes |
+| Secret scan | Security CI | Yes |
+| Dependency review | Security CI | Yes. Runs on pull requests only |
 | Frontend check (Windows) | Frontend CI | No: optional initially |
 | Local stack config (Windows) | Local Stack CI | No: optional |
 
 The tool-assigned branch `claude/ecstatic-gates-ji0o5b` is reused by agent sessions as their working branch
-(Phase 3 Groups 4–6), updated from `main` by merge rather than history rewrite; its pull requests are
+(Phase 3 Groups 4–7 and the Phase 3 closure), updated from `main` by merge rather than history rewrite; its pull requests are
 squash-merged.
 
 ## 1. Branches
