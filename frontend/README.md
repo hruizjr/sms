@@ -32,8 +32,8 @@ frontend/
 ├── apps/
 │   └── client-portal/      The client portal (admin-portal added later, ADR-0013)
 │       ├── index.html
-│       ├── vite.config.ts  Vite, React, Tailwind, Vitest; production Content Security Policy
-│       ├── config/         Build configuration code (Content Security Policy) and its tests
+│       ├── vite.config.ts  Vite, React, Tailwind, Vitest; production Content Security Policy; dev proxy
+│       ├── config/         Build configuration code (Content Security Policy, development proxy) and its tests
 │       ├── scripts/        verify-build.mjs: checks the production build
 │       └── src/
 │           ├── main.tsx
@@ -150,6 +150,29 @@ so secrets never go there (`AGENTS.md` §8.10).
 fails while rendering, in a lifecycle method or in a constructor. It does **not** catch errors in event
 handlers or asynchronous code (promises, timers). It also does not catch errors in the boundary itself or
 in the application shell outside it. Error details are never shown to the user.
+
+## Running with the local API (development proxy)
+
+Start the backend stack from the repository root with
+`docker compose -f infra/local/compose.yaml up -d --build --wait` ([`infra/local/README.md`](../infra/local/README.md)),
+then run `pnpm dev` here and open http://localhost:5173.
+
+The Vite development server forwards **only `/healthz` and `/readyz`** to the API at
+`http://127.0.0.1:8080` (`apps/client-portal/config/dev-proxy.ts`; owner decision L5, Phase 3 Group 6):
+
+- **One origin:** the portal and the API share one origin in development, so the API needs no CORS.
+  This also suits the future server-managed session cookies.
+- **Nothing else is proxied:** no `/v1` or other API path. Any other path is answered by Vite itself.
+- **No frontend code calls these endpoints.** The ESLint network rules, the test network guard and the
+  production `connect-src 'none'` policy are unchanged.
+- **The proxy applies to `pnpm dev` only**, not to `pnpm preview`.
+- **The target is fixed at port 8080**, the default `API_PORT`. Making it configurable would need Node.js
+  type definitions, which are not added.
+
+The "Local stack check" CI job starts the stack and `pnpm dev`, then checks:
+
+- `/readyz` and `/healthz` answer through the proxy;
+- `/v1/messages` is not proxied.
 
 ## Routing
 

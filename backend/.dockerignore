@@ -1,0 +1,21 @@
+# Build context for infra/docker/backend.Dockerfile. Send only what the build needs.
+
+# Local build output and test artefacts
+bin/
+tmp/
+*.test
+*.out
+coverage.*
+
+# Local configuration and secrets: never part of an image
+.env
+.env.*
+!.env.example
+
+# The code-generator module is not needed to build the binaries
+tools/
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store

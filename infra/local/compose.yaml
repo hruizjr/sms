@@ -1,17 +1,48 @@
-# Local development stack — Phase 3 Group 2: PostgreSQL only.
+# Local development stack — Phase 3 Group 6 (owner decisions L1–L8, decision log §11).
 #
-# Usage (from the repository root; see infra/local/README.md):
+#   postgres  PostgreSQL 18 database (named volume "postgres-data")
+#   migrate   one-off: applies database migrations, then exits
+#   api       Go API, started only after migrate has completed successfully
+#
+# The client portal runs natively with `pnpm dev` (owner decision L4); see infra/local/README.md.
+#
+# Usage, from the repository root (see infra/local/README.md):
 #   copy infra/local/.env.example to infra/local/.env and set DB_PASSWORD
-#   docker compose -f infra/local/compose.yaml up -d
+#   docker compose -f infra/local/compose.yaml up -d --build --wait
 #
-# Not for production. The port is published on 127.0.0.1 only, so the database is reachable from
-# this machine but not from the network. Data is kept in the named volume "postgres-data".
+# Not for production. Published ports are bound to 127.0.0.1 only. No production credentials:
+# DB_PASSWORD has no default and comes from the git-ignored infra/local/.env.
 name: sms-local
+
+# Settings shared by the migrate and api containers (same image, built from backend/).
+x-backend: &backend
+  image: sms-local-backend:dev
+  build:
+    context: ../../backend
+    dockerfile: ../infra/docker/backend.Dockerfile
+  # Non-root (image user 65532), read-only root filesystem, no Linux capabilities, no privilege
+  # escalation (owner requirement, Group 6).
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+# Database settings for the containers. Containers reach PostgreSQL by its service name on the
+# container port 5432; DB_PORT in .env is only the port published on this machine.
+x-backend-database: &backend-database
+  APP_ENV: development
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_NAME: ${DB_NAME:-sms}
+  DB_USER: ${DB_USER:-sms}
+  DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is not set; copy infra/local/.env.example to infra/local/.env}
+  DB_SSLMODE: disable
+  LOG_FORMAT: text
 
 services:
   postgres:
-    # PostgreSQL 18 (ADR-0005, decision log §7.1), exact patch and Debian release pinned.
-    image: postgres:18.7-trixie
+    # PostgreSQL 18 (ADR-0005). Tag and multi-platform digest pinned; must stay identical to the
+    # service image in .github/workflows/backend-ci.yml (checked by the "Local stack check" CI job).
+    image: postgres:18.7-trixie@sha256:c699303802144847d238196173655dbbecf7a96aeca1565f2b02eb671a1f0b6b
     environment:
       POSTGRES_DB: ${DB_NAME:-sms}
       POSTGRES_USER: ${DB_USER:-sms}
@@ -23,6 +54,8 @@ services:
     volumes:
       # PostgreSQL 18 images keep data under /var/lib/postgresql/18/docker; mount the parent.
       - postgres-data:/var/lib/postgresql
+    # Verified in Group 6: the image initialises, restarts and serves with this option enabled.
+    security_opt: ["no-new-privileges:true"]
     healthcheck:
       # TCP check (-h 127.0.0.1): the server used during first-time initialisation listens only on
       # a Unix socket, so this reports healthy only once the real server accepts TCP connections.
@@ -31,6 +64,42 @@ services:
       timeout: 5s
       retries: 30
       start_period: 10s
+
+  migrate:
+    <<: *backend
+    entrypoint: ["/usr/local/bin/migrate"]
+    command: ["up"]
+    environment:
+      <<: *backend-database
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    <<: *backend
+    environment:
+      <<: *backend-database
+      # Listen on all interfaces inside the container; the host publishes it on 127.0.0.1 only.
+      HTTP_ADDR: ":8080"
+    ports:
+      - "127.0.0.1:${API_PORT:-8080}:8080"
+    # The metrics listener stays on 127.0.0.1:9090 inside the container and is not published.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      # Readiness (GET /readyz: API serving and PostgreSQL reachable), probed by the image's
+      # standard-library healthcheck program (the runtime image has no shell or curl).
+      test: ["CMD", "/usr/local/bin/healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    # Longer than the API's SHUTDOWN_TIMEOUT (15s), so `stop` never cuts graceful shutdown short.
+    stop_grace_period: 20s
 
 volumes:
   postgres-data:
