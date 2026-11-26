@@ -492,12 +492,18 @@ test('only the normalized request body is compared; X-Request-ID and tracing/tra
   assert.match(flat(docText('../docs/architecture/api-idempotency.md')), /`X-Request-ID` and other tracing or transport headers are \*\*not\*\* part of the comparison/);
 });
 
-test('ADR-0018 is accepted, ADR-0021 is accepted with a limited scope, ADR-0010 is accepted for control-plane tables only, and no other ADR status changed', () => {
+test('ADR-0018 is accepted, ADR-0021 and ADR-0012 are accepted with a limited scope, ADR-0010 is accepted for control-plane tables only, and no other ADR status changed', () => {
   const log = docText('../docs/engineering/decision-log.md');
   const index = log.slice(log.indexOf('## 4. Index'), log.indexOf('## 5. Review summary'));
   const accepted = [...index.matchAll(/^\| (\d{4}) \| [^|]+ \| \*\*Accepted/gm)].map((m) => m[1]);
   // ADR-0010 accepted by the owner on 2026-11-26 (decision log §12.1, RLS-1 to RLS-5).
-  assert.deepEqual(accepted, ['0002', '0003', '0004', '0005', '0010', '0013', '0014', '0015', '0016', '0017', '0018', '0021']);
+  // ADR-0012 accepted by the owner on 2026-11-26 with a limited scope (decision log §15, EX-3 simulator-only).
+  assert.deepEqual(accepted, ['0002', '0003', '0004', '0005', '0010', '0012', '0013', '0014', '0015', '0016', '0017', '0018', '0021']);
+  assert.match(index, /^\| 0012 \| [^|]+ \| \*\*Accepted — limited scope\*\* \(owner, 2026-11-26\): option B limited to the provisional interface, capability declarations, adapter abstraction and simulator; no SMPP library or real adapter \|$/m);
+  const adr12 = flat(log.slice(log.indexOf('### ADR-0012'), log.indexOf('### ADR-0013')));
+  assert.match(adr12, /\*\*Status:\*\* \*\*Accepted — limited scope\*\* \(by owner, 2026-11-26\)/);
+  assert.match(adr12, /does \*\*not\*\* cover, and these remain \*\*separate decisions\*\*: the \*\*SMPP client library\*\* selection/);
+  assert.match(adr12, /\*\*any real telco adapter\*\*/);
   assert.match(index, /^\| 0010 \| [^|]+ \| \*\*Accepted\*\* \(owner, 2026-11-26\): option B for tenant-owned control-plane tables; high-volume data-plane tables \*\*deferred\*\* \(RLS-5\) \|$/m);
   const adr10 = flat(log.slice(log.indexOf('### ADR-0010'), log.indexOf('### ADR-0011')));
   assert.match(adr10, /\*\*Status:\*\* \*\*Accepted\*\* \(by owner, 2026-11-26\) — \*\*option B for tenant-owned control-plane tables\*\*; high-volume data-plane tables excluded and deferred/);

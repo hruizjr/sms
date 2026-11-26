@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Living document — twelve ADRs accepted (2026-11-25 and ADR-0010 on 2026-11-26); others Proposed | Project owner | 2026-11-26 |
+| Living document — thirteen ADRs accepted (2026-11-25; ADR-0010 and ADR-0012 (limited scope) on 2026-11-26); others Proposed | Project owner | 2026-11-26 |
 
 ## 1. What an ADR is and why we use them
 
@@ -84,6 +84,9 @@ RLS strategy for high-volume **data-plane** tables remains deferred.
 the closure.
 **On 2026-11-26 the owner approved the MVP scope** (Phase 2 exit criterion EX-1, see
 [§14](#14-owner-decisions--mvp-scope-phase-2-ex-1-2026-11-26)). No ADR status changed.
+**On 2026-11-26 the owner decided to proceed simulator-only** (Phase 2 exit criterion EX-3, see
+[§15](#15-owner-decisions--simulator-only-development-phase-2-ex-3-2026-11-26)) and **accepted ADR-0012 with a
+limited scope**: the provisional provider interface, capability declarations, adapter abstraction and simulator.
 
 | ADR | Title | Status |
 | --- | ----- | ------ |
@@ -98,7 +101,7 @@ the closure.
 | 0009 | Logical control/data plane separation | Proposed |
 | 0010 | Multi-tenancy: shared schema with `tenant_id`; RLS as evaluated defense-in-depth | **Accepted** (owner, 2026-11-26): option B for tenant-owned control-plane tables; high-volume data-plane tables **deferred** (RLS-5) |
 | 0011 | Credit ledger model | Proposed (revised 2026-11-24) |
-| 0012 | Provider abstraction, capabilities, and simulator adapter | Proposed (revised 2026-11-24) |
+| 0012 | Provider abstraction, capabilities, and simulator adapter | **Accepted — limited scope** (owner, 2026-11-26): option B limited to the provisional interface, capability declarations, adapter abstraction and simulator; no SMPP library or real adapter |
 | 0013 | Frontend application structure and component strategy | **Accepted** (owner, 2026-11-25) |
 | 0014 | Database access and migration tooling | **Accepted** (owner, 2026-11-25) |
 | 0015 | API contracts: OpenAPI-first | **Accepted** (owner, 2026-11-25) |
@@ -507,8 +510,29 @@ payment model, refunds, pricing structure); ADR-0019.
 
 ### ADR-0012: Provider abstraction, capabilities, and simulator adapter
 
-- **Status:** Proposed · **Date proposed:** 2026-11-24 · **Revised:** 2026-11-24 (provider capabilities and
-  receipt normalization added)
+- **Status:** **Accepted — limited scope** (by owner, 2026-11-26) — **option B, limited to the provisional
+  provider interface, capability declarations, adapter abstraction and simulator** · **Date proposed:** 2026-11-24
+  · **Revised:** 2026-11-24 (provider capabilities and receipt normalization added)
+
+**Owner decision (2026-11-26, Phase 2 EX-3 simulator-only decision; see
+[§15](#15-owner-decisions--simulator-only-development-phase-2-ex-3-2026-11-26)):** option B is accepted, **limited
+to**:
+- a **provisional** provider interface, built against the simulator and expected to change when the first
+  official telco specification is received;
+- **capability declarations**: core logic consults declared capabilities, never a provider's identity; every
+  capability of a real provider cites its official documentation, and unknown capabilities are declared unknown
+  and treated conservatively;
+- the **adapter abstraction**: one adapter per provider, with normalization and outcome classification inside
+  the adapter;
+- the **simulator** adapter, with generic synthetic settings only (S2).
+
+This acceptance does **not** cover, and these remain **separate decisions**: the **SMPP client library**
+selection (a separate ADR, made with telco specifications in hand); **any real telco adapter**, its
+configuration or credentials (gates PG-1, PG-2 and PG-9); the final provider interface; and the
+ambiguous-submission policy (D-095). Accepting the ADR authorizes no implementation: simulator and adapter code
+need an approved Phase 4 group.
+
+The original analysis below is kept as written.
 
 **Context** — Owner requires Smart and Globe as independent adapters behind a common interface. Providers
 will differ in protocol, receipt behaviour, encodings, limits, and extra features.
@@ -1271,3 +1295,60 @@ is a scope decision only: it does not authorize implementation or Phase 4, and i
 questions (D-122, D-124, D-130, D-088, D-113; EX-4); launch-customer identity (D-061); D-066 and D-078 staffing.
 Phase 2 remains open: EX-1 and EX-13 are satisfied
 ([Phase 2 exit checklist](../discovery/phase2-exit-checklist.md)).
+
+---
+
+## 15. Owner decisions — simulator-only development (Phase 2, EX-3, 2026-11-26)
+
+On 2026-11-26 the owner decided to proceed with **simulator-only development and testing without a telco
+specification**, satisfying Phase 2 exit criterion EX-3 by recorded owner decision with the risks acknowledged.
+No telco information has been received: every question in the
+[telco discovery checklist](../integrations/telco-discovery-checklist.md) stays **unanswered**. This decision
+authorizes **no implementation** (no simulator code, real adapter, migration or product feature), does not close
+Phase 2, and does not authorize Phase 4.
+
+### 15.1 Decisions S1–S8
+
+| # | Decision |
+| - | -------- |
+| S1 | **Simulator-only.** Development and testing use the simulator as the only provider until at least one official telco specification is received and a real adapter is separately approved. |
+| S2 | **Synthetic settings only.** Simulator settings have generic names (for example `synthetic-default`); none is named after, or claims to emulate, Smart, Globe, PLDT Enterprise or DITO. Every capability is labelled *synthetic* or *unknown*. Settings for a named provider require that provider's official documentation ([testing standards §3.3](../standards/testing-standards.md#33-contract-tests)). |
+| S3 | **Nine failure scenarios.** The simulator covers acceptance, rejection, timeout (ambiguous outcome), delayed receipts, duplicate receipts, out-of-order receipts, **missing receipts**, **throttling**, and **session loss and reconnect**. |
+| S4 | **Conservative capability defaults.** No provider-side duplicate detection, no status-query capability, no guaranteed receipts and no guarantee that a receipt follows the acknowledgment. Ambiguous outcomes are never automatically resubmitted (interim rule below). |
+| S5 | **Provisional provider interface.** Built under ADR-0012 option B (accepted with a limited scope, below), labelled provisional, and expected to change when the first telco specification arrives. The SMPP client library remains a separate ADR made with specifications in hand. |
+| S6 | **No route to real networks.** The simulator runs locally or in-process, makes no outbound network connection, uses only synthetic numbers, holds no real telco credentials, and cannot be configured as a production provider (gate PG-6). |
+| S7 | **Honest reporting.** Results are described as "verified against the simulator". Nothing claims telco compatibility, throughput, delivery rates or receipt timing; demos are labelled simulated. |
+| S8 | **Telco discovery continues** outside simulator-only development (checklist questions, PLDT Enterprise and Smart (D-112), direct or intermediary connectivity (D-118), whether to approach DITO). The answers are production prerequisites under PG-1 and PG-9. |
+
+### 15.2 Related owner decisions
+
+| Topic | Decision |
+| ----- | -------- |
+| **PG-9** (new production gate) | Every real adapter must pass the provider contract suite using the provider's **official specifications**, plus validation in the provider's **test environment** where one is available. If no test environment is available, the gap is documented and an alternative validation is explicitly approved by the owner. Recorded with PG-1 to PG-8 in the [MVP scope worksheet](../discovery/mvp-scope-worksheet.md#production-gates). |
+| **EX-7** (amended) | Telco technical discovery is **formally deferred** during simulator-only development. Unanswered questions remain **production prerequisites**; they are not marked as collected. |
+| **ADR-0012** | **Accepted — limited scope:** option B, limited to the provisional provider interface, capability declarations, adapter abstraction and simulator. No SMPP library selection and no real adapter implementation. |
+| **D-095** | **Remains open.** **Interim rule:** uncertain submissions remain uncertain and are **never automatically resubmitted or failed**. |
+
+### 15.3 Accepted risks and limitations
+
+The owner accepted these risks of building before any telco specification exists:
+
+- **Rework (R-36):** protocol, receipt format, message ID behaviour (D-114), error codes and retry rules (D-106),
+  and encoding and segment counting (D-105, D-117) may differ from the provisional interface and tests.
+- **Commercial uncertainty (R-02, R-08):** billing basis, rates, deposits and throughput terms are unknown.
+- **Segment counting:** the platform's own calculation may differ from a telco's (D-117) until confirmed
+  (`TODO(telco-confirm)`).
+- **Unresolved uncertain outcomes:** without provider capabilities (D-115), uncertain messages can only be held
+  (D-095, D-096 open).
+- **Hosting and connectivity:** VPN, static IP and allowlisting requirements are unknown (checklist §5, §6).
+- **No capacity evidence:** load results against the simulator measure only the platform; no capacity target is
+  derived from them (AGENTS.md §11.4).
+
+Limitations while simulator-only: no real SMS and no real telco connection in any environment; no telco-specific
+code, configuration, credentials, hostnames, ports, system IDs, encoding values or error mappings; no SMPP
+library; routing (MVP-25) points only at simulated providers and the usage summary (MVP-27) shows simulated usage
+only; network detection for ported numbers (D-070) and off-net routing (D-107) stay unknown.
+
+**Still open:** D-095 (final policy), D-096, D-097, D-098; all telco-dependent items (D-100 to D-119); EX-4
+(counsel); Phase 4 authorization and database role separation (RLS-4). Phase 2 remains open: EX-1, EX-3 and
+EX-13 are satisfied and EX-7 is deferred ([Phase 2 exit checklist](../discovery/phase2-exit-checklist.md)).

@@ -12,7 +12,7 @@
 | Current phase | **Phase 3 — Walking skeleton: complete (2026-11-26).** All eight groups are merged: 0 (decisions), 1 (Go API skeleton), 2 (PostgreSQL foundation), 3 (OpenAPI contract for the public messages API), 4 (Go API contract integration: Go types and Chi routes generated from the contract; no endpoint mounted), 5 (frontend foundation: client portal shell and shared UI package; no features, no API calls), 6 (local development stack and expanded CI, PR #10) and 7 (PostgreSQL Row-Level Security evaluation, PR #11; the owner accepted ADR-0010 for tenant-owned control-plane tables) (groups renumbered by the owner, [decision log §9](docs/engineering/decision-log.md#9-owner-decisions--go-contract-integration-phase-3-group-4-2026-11-25)). Closure: [decision log §13](docs/engineering/decision-log.md#13-phase-3-closure-2026-11-26). **Phase 4 is not authorized yet.** See [decision log §7](docs/engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25). |
 | Authorized scope | **Phase 3 walking skeleton only** (owner approval 2026-11-25), now complete. No later phase is authorized: Phase 4, and any group within it (including database role separation, RLS-4), needs explicit owner approval. Each implementation group starts only after the previous group is reviewed and merged. All other ADRs need separate owner approval. |
 | Decision authority | The project owner (a single human). Agents propose; the owner decides. |
-| Last updated | 2026-11-26 (Phase 3 closure; §12 MFA wording for owner decision D-021) |
+| Last updated | 2026-11-26 (Phase 3 closure; §12 MFA wording for owner decision D-021; §3.3 ADR-0012 status) |
 
 ---
 
@@ -240,7 +240,10 @@ Details and gaps: [product brief](docs/product/product-brief.md) and
 - **Modular monolith** in Go: one module, several executables, strict module boundaries (ADR-0003, **Accepted**).
 - **Control plane / data plane separation** — logical from the start, physical (separate processes)
   where justified (ADR-0009, Proposed).
-- **Provider abstraction** — every telco is an adapter behind one interface (ADR-0012, Proposed).
+- **Provider abstraction** — every telco is an adapter behind one interface (ADR-0012, **Accepted — limited scope**
+  2026-11-26: provisional interface, capability declarations, adapter abstraction and simulator; no SMPP library
+  or real adapter). Development and testing are **simulator-only** until a telco specification is received
+  (owner decision, [decision log §15](docs/engineering/decision-log.md#15-owner-decisions--simulator-only-development-phase-2-ex-3-2026-11-26)).
 - **PostgreSQL** as the system of record (ADR-0005, **Accepted**; PostgreSQL 18).
 - Kafka/Redpanda, Redis, ClickHouse are **candidates, deferred** until verified requirements justify them
   (ADR-0006/0007/0008, Proposed).

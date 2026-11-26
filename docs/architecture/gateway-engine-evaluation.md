@@ -567,7 +567,9 @@ The evidence is kept **outside this repository**, by owner decision, together wi
 
 No ADR status or text was changed by this evaluation or by the owner decision. Current statuses come from the [decision log](../engineering/decision-log.md):
 
-- ADR-0006, ADR-0007, ADR-0009 and ADR-0012 are **Proposed**;
+- ADR-0006, ADR-0007, ADR-0009 and ADR-0012 are **Proposed** (as of 2026-11-25; ADR-0012 was later accepted
+  with a limited scope on 2026-11-26 — provisional interface, capability declarations, adapter abstraction and
+  simulator, with the SMPP library still open; [decision log §15](../engineering/decision-log.md#15-owner-decisions--simulator-only-development-phase-2-ex-3-2026-11-26));
 - ADR-0021 is **Accepted — limited scope**.
 
 The table below replaces the pre-spike list "ADRs that may need revision". It records what the outcome means for each ADR, for use in the separate gateway architecture decision.
