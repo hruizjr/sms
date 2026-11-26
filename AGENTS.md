@@ -11,8 +11,8 @@
 | Project | Enterprise A2P SMS Platform (Philippines) |
 | Current phase | **Phase 3 — Walking skeleton: complete (2026-11-26).** All eight groups are merged: 0 (decisions), 1 (Go API skeleton), 2 (PostgreSQL foundation), 3 (OpenAPI contract for the public messages API), 4 (Go API contract integration: Go types and Chi routes generated from the contract; no endpoint mounted), 5 (frontend foundation: client portal shell and shared UI package; no features, no API calls), 6 (local development stack and expanded CI, PR #10) and 7 (PostgreSQL Row-Level Security evaluation, PR #11; the owner accepted ADR-0010 for tenant-owned control-plane tables) (groups renumbered by the owner, [decision log §9](docs/engineering/decision-log.md#9-owner-decisions--go-contract-integration-phase-3-group-4-2026-11-25)). Closure: [decision log §13](docs/engineering/decision-log.md#13-phase-3-closure-2026-11-26). **Phase 4 — Group 1 (database role separation, tenant-context helper, tenant registry, RLS catalog guard) authorized by the owner on 2026-11-26** ([decision log §18](docs/engineering/decision-log.md#18-owner-decisions--database-role-separation-and-tenant-registry-phase-4-group-1-2026-11-26)); no other Phase 4 group is authorized. |
 | Authorized scope | **Phase 3 walking skeleton** (owner approval 2026-11-25), complete, and **Phase 4 Group 1 only** (owner approval 2026-11-26; scope and exclusions in [decision log §18](docs/engineering/decision-log.md#18-owner-decisions--database-role-separation-and-tenant-registry-phase-4-group-1-2026-11-26)). Every other Phase 4 group needs explicit owner approval. Each implementation group starts only after the previous group is reviewed and merged. All other ADRs need separate owner approval. |
-| Decision authority | The project owner (a single human). Agents propose; the owner decides. |
-| Last updated | 2026-11-26 (Phase 3 closure; §12 MFA wording for owner decision D-021; §3.3 ADR-0012 status; Phase 4 Group 1: header, §1, §4, §7.1, §10.7) |
+| Decision authority | The project owner has decision authority over day-to-day project matters. Decisions affecting pricing, product scope, or launch require business-partner approval in addition to the project owner's approval. Both approvals, including their dates, must be recorded before a decision is labelled approved. Supporting approval records are kept outside Git. Agents propose; they never record a partner approval that the owner has not confirmed in writing ([decision log §17](docs/engineering/decision-log.md#17-owner-decisions--business-decisions-review-phase-2-ex-9-2026-11-26)). |
+| Last updated | 2026-11-26 (Phase 3 closure; §12 MFA wording for owner decision D-021; §3.3 ADR-0012 status; EX-9 governance, operating model and billing wording: header, §2 rule 21, §3.1, §11.9, §17; Phase 4 Group 1: header, §1, §4, §7.1, §10.7) |
 
 ---
 
@@ -174,7 +174,8 @@ Additional rules:
     same pull request.
 20. **Never use real personal data.** Test data must be synthetic. Do not paste customer data,
     phone numbers, or message content into prompts, logs, or fixtures.
-21. **Stop and ask** when a task would require a decision reserved for the project owner (§17), an
+21. **Stop and ask** when a task would require a decision reserved for the project owner or requiring
+    business-partner approval (§17), an
     action outside the repository (deployment, account creation, contacting third parties), or breaking
     a MUST rule. This includes any implementation that depends on an **open** item in the
     [discovery register](docs/requirements/discovery-register.md) or a **Proposed** ADR whose choice
@@ -213,12 +214,16 @@ We are building the software for a **Philippine A2P SMS aggregation business**. 
 passwords (OTPs), transaction alerts, appointment reminders, government advisories, and marketing.
 An **aggregator** connects many business customers to the mobile networks through one platform.
 
-Intended telco partners: **Smart Communications**, **Globe Telecom**, **PLDT Enterprise**, and
-possibly others later (the third mobile network operator, DITO, is not yet in scope — see the
-discovery register). Initial discussions have reportedly occurred with Smart, Globe, PLDT, and the
+**Operating model (D-160, owner-approved, pending partner ratification):** **direct SMS aggregation only**,
+through the business's own commercial agreements and direct technical integrations with telcos. No third-party
+SMS aggregator or intermediary may route messages (including the first live connection and any fallback), and
+there is no reseller or white-label model. **Coverage objective:** direct integration with the Philippine mobile
+network operators **Smart Communications**, **Globe Telecom** and **DITO Telecommunity** — an objective, not a
+promise of any network at launch. **PLDT Enterprise is not a separate mobile network**; it may be a commercial
+or enterprise contracting counterpart, and its relationship to Smart (same corporate group) must be clarified
+(D-112). Initial discussions have reportedly occurred with Smart, Globe, PLDT, and the
 **NTC** (National Telecommunications Commission, the Philippine regulator). **None of these are
-confirmed.** The relationship between PLDT Enterprise and Smart (same corporate group) must be
-clarified — they may or may not be separate technical integrations.
+confirmed.**
 
 The owner has reported a projected **~5 billion monthly traffic** figure. This is **unverified** and its
 unit is unknown (messages? segments? recipients? prospective totals?). **Do not size or design anything
@@ -725,8 +730,11 @@ The authoritative definitions are in [messaging reliability](docs/architecture/m
   being chargeable.
 - Reservation, settlement, release, refund, and reversal are separate ledger entries, each idempotent
   (unique key per message and entry type). Corrections are compensating entries, never edits.
-- Charges are based on **billable segments**, computed by one shared segmentation function used for the
-  estimate and the charge — not on the number of API requests.
+- Clients are charged **per message** (partner-approved direction). The **billable quantity** of a message is
+  its **segment count** — an owner proposal pending partner approval (decision log §17.4), not a settled rule.
+  Segments are always computed by **one shared segmentation function** used for the estimate, usage records and
+  any charge — never from the number of API requests. The charge event (provider acceptance, D-080) is also an
+  owner proposal pending partner approval.
 - Amounts, rates, and rounding follow [financial integrity](docs/architecture/financial-integrity.md);
   representation, scale, and rounding rules are open (ADR-0019, D-092, D-093).
 - Reconciliation compares our ledger, our message states, and telco billing records; discrepancies are
@@ -849,8 +857,14 @@ End every task with this report (also paste it into the PR description):
   as ADRs with status **Proposed**, **Accepted**, **Rejected**, **Superseded**, or **Deprecated**.
 - Only the project owner can change a status to **Accepted**. Agents MUST NOT mark their own proposals
   accepted.
+- **Pricing, product scope and launch** decisions also require **business-partner approval**, recorded by the
+  owner with its date and scope before the decision is labelled approved; silence is not approval, and supporting
+  records stay outside Git. Earlier owner decisions in these areas are labelled *owner-approved, pending partner
+  ratification*. The technical definitions of production gates are owner engineering decisions; authorizing
+  production launch needs partner approval as well ([decision log §17](docs/engineering/decision-log.md#17-owner-decisions--business-decisions-review-phase-2-ex-9-2026-11-26)).
 - To propose a decision, add an ADR with status *Proposed* following the template, explaining purpose,
   alternatives, trade-offs, recommendation, operational cost, missing information.
 - **Decisions reserved for the project owner** include: adopting new infrastructure components,
   adding dependencies, changing architectural constraints (§6), public API breaking changes, pricing
   and billing rules, retention periods, telco routing policy, and anything with legal or regulatory effect.
+  Of these, pricing and billing rules, product scope and launch also need business-partner approval.

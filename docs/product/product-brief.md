@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — pending owner review | Project owner | 2026-11-24 |
+| Draft — pending owner review; §1 and §4 updated for the EX-9 business-decisions review (2026-11-26) | Project owner | 2026-11-26 |
 
 > This brief describes **intent**, not confirmed facts. Items requiring verification are tracked in the
 > [discovery register](../requirements/discovery-register.md).
@@ -29,9 +29,9 @@ connections to Philippine telecommunications providers.
 | ----- | --------------- | --------- |
 | Smart Communications | Initial discussions reported | **No** |
 | Globe Telecom | Initial discussions reported | **No** |
-| PLDT Enterprise | Initial discussions reported | **No** — relationship to Smart (same group) to be clarified |
+| PLDT Enterprise | Initial discussions reported | **No** — not a separate mobile network; a possible commercial or enterprise contracting counterpart; relationship to Smart (same group) to be clarified (D-112) |
 | NTC | Initial discussions reported | **No** — required authorizations unknown |
-| DITO Telecommunity | Not mentioned | Not in scope; see discovery register |
+| DITO Telecommunity | Not mentioned | **No.** Included in the coverage objective (Smart, Globe, DITO) on 2026-11-26 — owner-approved, pending partner ratification; not promised at launch (D-002, D-160) |
 
 ## 2. Problem and value proposition (to be validated)
 
@@ -62,10 +62,10 @@ The competitive landscape (existing aggregators, pricing, differentiators) has n
 
 | Element | Current assumption | Decision needed |
 | ------- | ------------------ | --------------- |
-| Charging unit | Per segment | Per segment vs. per message; charge on submission vs. delivery |
+| Charging unit | **Per message** (partner-approved direction, D-162). Owner proposals pending partner approval: billable quantity = segment count; charge settled on provider acceptance (D-080) | Partner approval of the billable unit and the charge event ([decision log §17](../engineering/decision-log.md#17-owner-decisions--business-decisions-review-phase-2-ex-9-2026-11-26)) |
 | Payment model | Prepaid credits | Prepaid only, or postpaid for enterprise/government? |
-| Credit unit | Not decided | Peso-denominated balance vs. "SMS credits" |
-| Pricing | Client-specific price per segment, possibly per destination network | Volume tiers? Different rates for OTP vs. marketing? |
+| Credit unit | Owner proposal pending partner approval: balance in **PHP**, not SMS credits (D-081) | Partner approval; precision and rounding (EX-12); withdrawal or transfer of balance undecided |
+| Pricing | Owner proposal pending partner approval: one versioned rate per client per billable unit; no customer pricing dimensions in the MVP (D-084) | Partner approval; list versus negotiated rates deferred; additional fees undecided (D-162) |
 | Telco costs | Unknown | Telco rates, minimum commitments, deposits, settlement terms |
 | Taxes | Unknown | VAT treatment, official receipts/invoicing requirements |
 

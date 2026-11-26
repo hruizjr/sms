@@ -49,8 +49,9 @@ Phase 11 Scale-out and expansion (more telcos, analytics, broker, features)
 **Goal:** replace unknowns with facts and agree the architecture for the MVP.
 **Status:** Ongoing. Phase 2A (discovery preparation package) is merged (PR #2). The actual external
 discovery (telcos, counsel, customers) and Phase 2B (SRS, domain model, system architecture, threat model) are
-**not yet done**. Three acceptance criteria below are met (MVP scope, provisional traffic targets and the
-simulator-only decision, 2026-11-26); **Phase 2 is not complete**.
+**not yet done**. Two acceptance criteria below are met (provisional traffic targets and the simulator-only
+decision, 2026-11-26). The MVP scope is owner-approved, **pending partner ratification** (governance rule G1,
+[decision log §17](../engineering/decision-log.md#17-owner-decisions--business-decisions-review-phase-2-ex-9-2026-11-26)). **Phase 2 is not complete**.
 **Depends on:** owner and external parties (telcos, counsel, prospective customers).
 **Work:**
 - Collect traffic data (traffic capacity discovery); telco technical answers (checklist); regulatory
@@ -63,7 +64,8 @@ simulator-only decision, 2026-11-26); **Phase 2 is not complete**.
 **Discovery package:** [Phase 2 discovery guide](../discovery/phase2-discovery-guide.md); progress against the
 criteria below is tracked in the [Phase 2 exit checklist](../discovery/phase2-exit-checklist.md).
 **Acceptance criteria:**
-- [x] MVP scope approved in writing by the owner. **Met 2026-11-26:** all 34 capabilities decided (21 MVP,
+- [ ] MVP scope approved in writing by the owner. **Owner-approved 2026-11-26, pending partner ratification**
+      (product scope needs business-partner approval under governance rule G1; previously ticked as met): all 34 capabilities decided (21 MVP,
       8 Post-MVP, 5 Deferred) with production gates PG-1 to PG-8 ([MVP scope worksheet](../discovery/mvp-scope-worksheet.md#owner-approval-of-the-mvp-scope-2026-11-26);
       [decision log §14](../engineering/decision-log.md#14-owner-decisions--mvp-scope-phase-2-ex-1-2026-11-26)). Launch customers TBD until pilot discovery (EX-1 amended;
       D-061).

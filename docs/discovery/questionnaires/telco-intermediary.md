@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — not yet used; **use only if an intermediary is being considered** (D-118, D-160) | Project owner | 2026-11-24 |
+| **Not applicable — third-party SMS aggregator/intermediary connectivity is not an acceptable operating model under D-160.** (2026-11-26, EX-9 review; owner-approved, pending partner ratification; [decision log §17](../../engineering/decision-log.md#17-owner-decisions--business-decisions-review-phase-2-ex-9-2026-11-26)). Kept for the record; not deleted | Project owner | 2026-11-26 |
 
 **When to use:** if direct telco agreements are slow or unavailable, an existing aggregator or connectivity
 provider might carry our traffic (interim or permanent). This changes our margin, control, regulatory
