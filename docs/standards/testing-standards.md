@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — pending owner review | Project owner | 2026-11-26 (Row-Level Security standards added after the owner accepted ADR-0010; simulator-only provider testing rules added, §3.3) |
+| Draft — pending owner review | Project owner | 2026-11-26 (Row-Level Security standards added after the owner accepted ADR-0010; simulator-only provider testing rules added, §3.3; provisional load-test targets and synthetic simulator limits, §3.5) |
 
 **Authority:** this document is authoritative for test levels, required scenarios, and testing
 expectations, as defined in [`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts); `AGENTS.md` §13 summarizes it. Scenario lists owned by specialist
@@ -128,8 +128,13 @@ or **leak one customer's data to another** — so the most important behaviours 
 - **Purpose:** verify the system meets **verified** targets and find bottlenecks — not to guess capacity.
 - **Prerequisite:** targets from [traffic capacity discovery](../requirements/traffic-capacity-discovery.md).
   Until then, load tests establish *baselines* (e.g. the ceiling of the PostgreSQL-backed queue, ADR-0006).
+  **Provisional design targets** (owner decision 2026-11-26, EX-2) are in the
+  [traffic evidence worksheet §7](../discovery/traffic-evidence-worksheet.md#7-provisional-design-targets-owner-decision-2026-11-26-ex-2):
+  they are not verified demand. Tests drive and report **message submissions, segments and receipt events as
+  separate workloads**, and label every distribution synthetic or provisional.
 - **Tooling (proposed):** k6 for HTTP, plus Go-based load generators for the data plane; simulator
-  configured with realistic latency and telco TPS limits.
+  configured with latency and throughput limits that are **synthetic and labelled synthetic** until official
+  telco documentation exists (S2, [decision log §15](../engineering/decision-log.md#15-owner-decisions--simulator-only-development-phase-2-ex-3-2026-11-26)).
 - **Scenarios:** steady state, campaign burst, provider outage and recovery, DLR flood, slow database,
   soak (hours) to detect leaks.
 - **Measured:** throughput, latency percentiles (p50/p95/p99), queue age, error rates, resource usage,

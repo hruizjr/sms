@@ -87,6 +87,8 @@ the closure.
 **On 2026-11-26 the owner decided to proceed simulator-only** (Phase 2 exit criterion EX-3, see
 [§15](#15-owner-decisions--simulator-only-development-phase-2-ex-3-2026-11-26)) and **accepted ADR-0012 with a
 limited scope**: the provisional provider interface, capability declarations, adapter abstraction and simulator.
+**On 2026-11-26 the owner approved provisional traffic targets** (Phase 2 exit criterion EX-2, see
+[§16](#16-owner-decisions--provisional-traffic-targets-phase-2-ex-2-2026-11-26)). No ADR status changed.
 
 | ADR | Title | Status |
 | --- | ----- | ------ |
@@ -1352,3 +1354,39 @@ only; network detection for ported numbers (D-070) and off-net routing (D-107) s
 **Still open:** D-095 (final policy), D-096, D-097, D-098; all telco-dependent items (D-100 to D-119); EX-4
 (counsel); Phase 4 authorization and database role separation (RLS-4). Phase 2 remains open: EX-1, EX-3 and
 EX-13 are satisfied and EX-7 is deferred ([Phase 2 exit checklist](../discovery/phase2-exit-checklist.md)).
+
+---
+
+## 16. Owner decisions — provisional traffic targets (Phase 2, EX-2, 2026-11-26)
+
+On 2026-11-26 the owner decided to proceed with **provisional platform design targets**, satisfying Phase 2 exit
+criterion EX-2 by recorded owner decision. The targets, test workloads and distributions are recorded in full in
+the [traffic evidence worksheet §7](../discovery/traffic-evidence-worksheet.md#7-provisional-design-targets-owner-decision-2026-11-26-ex-2),
+which is the authoritative record; this section summarizes the decisions. **No ADR status changed.** The decision
+authorizes **no implementation**, does not close Phase 2 and does not authorize Phase 4.
+
+They are **platform capacity targets**, not evidence, not a demand forecast and not telco throughput. **No traffic
+evidence has been collected.** D-004 and D-060 remain **open and unused**: the targets are not derived from,
+compared with or checked against the unverified monthly figure.
+
+| # | Decision |
+| - | -------- |
+| TR-1 | **Tenants:** pilot 1–3; initial (first 6 months of production) up to 10; growth (12 months) up to 50. One tenant may generate up to 50 % of traffic |
+| TR-2 | **Messages per day:** 10,000 / 100,000 / 1,000,000 (about 300,000 / 3,000,000 / 30,000,000 per 30-day month) |
+| TR-3 | **Design peak submission rate**, sustained 15 minutes: 10 / 50 / 250 messages/s, which is **8× / 4× / 2×** headroom over the calculated rate (busiest hour 15 % of the day, bursts 3× the busiest-hour average). **Stress test:** 500 messages/s for 15 minutes |
+| TR-4 | **Segments:** 1.3 per message on average, 10 % UCS-2, peak segment rate 1.5 × the submission rate; counted by the platform's own calculation (D-117 open) |
+| TR-5 | **Distributions** (synthetic or provisional, never telco facts or demand forecasts): use case OTP 60 % / alerts 35 % / other 5 %; channel API 90 % / portal 10 %; 80 % of traffic 07:00–22:00 Asia/Manila; destination network split synthetic across two simulated providers; Philippines only; zero inbound messages |
+| TR-6 | **Scenarios and test workloads:** pilot, initial, growth and stress, with **message submissions, segments and receipt events defined and reported as separate workloads** (receipt events a synthetic upper bound of one per segment plus 10 % duplicates); revision triggers recorded in the worksheet §7.6 |
+| TR-7 | **Permitted uses:** test design, queue and partitioning evaluation (ADR-0006, ADR-0008), configured limits, placeholder alert thresholds, development and test environment sizing. **Not** telco negotiations, customer commitments, financial models or production infrastructure sizing |
+| TR-8 | **EX-2 satisfied** by the recorded provisional targets. D-062, D-074 and D-075 carry provisional answers, not confirmed ones; D-004 and D-060 remain open and unused |
+| TR-9 | **EX-6 deferred.** Traffic evidence collection continues during pilot discovery; the worksheet's evidence sections stay empty and nothing is marked collected |
+| PG-10 | **Gate:** before general production rollout, the targets are re-baselined against validated pilot-customer volume information (PG-8) and contracted telco limits (PG-1). Production infrastructure sizing requires this re-baseline |
+
+**Platform capacity versus telco throughput:** the targets are what the platform must accept, persist, queue,
+dispatch to the simulator and process. Telco throughput comes only from signed agreements and official
+documentation (D-101) and is unknown. In production, dispatch runs at the lower of the two, with excess queued
+under back-pressure.
+
+**Still open:** D-004, D-060, D-061, D-062, D-074, D-075 (for evidence), D-101, D-117; an OTP latency objective;
+storage sizing (D-073, D-124). Phase 2 remains open: EX-1, EX-2, EX-3 and EX-13 are satisfied and EX-6 and EX-7
+are deferred ([Phase 2 exit checklist](../discovery/phase2-exit-checklist.md)).

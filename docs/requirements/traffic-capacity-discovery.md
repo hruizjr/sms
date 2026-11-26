@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — awaiting data | Project owner | 2026-11-24 |
+| Draft — awaiting data (no evidence collected); provisional design targets recorded by owner decision 2026-11-26 (§7) | Project owner | 2026-11-26 |
 
 ## 1. Purpose
 
@@ -128,3 +128,19 @@ Until data is available:
 - Build load-testing capability early so that when targets are known they can be verified.
 - Treat telco contracted throughput as the most likely real ceiling — the platform does not need to
   accept traffic far faster than it can deliver it (beyond buffering bursts).
+
+## 7. Provisional design targets (owner decision 2026-11-26)
+
+The owner decided on 2026-11-26 to proceed with **provisional platform design targets** (Phase 2 EX-2,
+decisions TR-1 to TR-9, gate PG-10; [decision log §16](../engineering/decision-log.md#16-owner-decisions--provisional-traffic-targets-phase-2-ex-2-2026-11-26)).
+The targets, test workloads (message submissions, segments and receipt events, defined separately) and
+distributions are recorded in the [traffic evidence worksheet §7](../discovery/traffic-evidence-worksheet.md#7-provisional-design-targets-owner-decision-2026-11-26-ex-2).
+
+- They are **platform capacity targets**, not evidence, not a demand forecast and not telco throughput. Every
+  distribution in them is synthetic or provisional.
+- §5 above stays empty: **no traffic data has been collected** (EX-6 deferred). The questions in §3 remain open.
+- The rule in §1 still applies: D-004 and D-060 remain **open and unused**; nothing is sized on, compared with or
+  checked against the unverified monthly figure.
+- **Gate PG-10:** before general production rollout, the targets are re-baselined against validated
+  pilot-customer volume information and contracted telco limits; production infrastructure sizing requires this
+  re-baseline.
