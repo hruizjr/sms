@@ -370,11 +370,18 @@ GitHub's Windows runners cannot run Linux containers, so CI verifies the stack i
 repository root, that ports are bound to 127.0.0.1, and that a missing password is refused ("Local stack
 config (Windows)").
 
-**Last validation: 2026-11-26, by the owner. Completed with no failures reported.** Versions:
+**Last validation of this checklist: 2026-11-26, by the owner (Phase 3 Group 6). Completed with no failures
+reported.** Versions:
 
 - Docker Desktop 4.100.1;
 - Docker Engine 29.9.3;
 - Docker Compose 5.7.1.
+
+**Phase 4 Group 1 (role separation, tenant registry): see
+[`windows-validation.md`](windows-validation.md#validation-record).** On 2026-11-26 the owner reported:
+
+- **Part A (fresh database): passed.**
+- **Part B (upgrade of an existing volume): not tested.** No existing volume was present on the test computer.
 
 The boxes below are left unticked so the procedure can be reused. Repeat it after a change to the Compose file,
 the Dockerfile or the PostgreSQL image, and record the new result here.
@@ -403,13 +410,10 @@ report the result in the pull request or to the owner:
         `docker compose -f infra/local/compose.yaml exec postgres bash /docker-entrypoint-initdb.d/10-sms-roles.sh`
         prints the same line again (section 9, idempotent).
 
-> **Re-validation needed.** Phase 4 Group 1 changed the Compose file (role passwords and the
-> provisioning mount). The owner's validation above predates it. Re-validate with
-> [`windows-validation.md`](windows-validation.md), which covers:
+> **Phase 4 Group 1 changed the Compose file** (role passwords and the provisioning mount). For that change, use
+> [`windows-validation.md`](windows-validation.md) instead of items 1–11. It contains no destructive volume
+> command, unlike items 9 and 10 above.
 >
-> - a fresh database, in a throwaway project;
-> - the upgrade of an existing volume without deleting data;
-> - role verification, health, restart and persistence;
-> - the tenants migration.
->
-> Unlike items 9 and 10 above, it contains no destructive volume command.
+> - **Part A (fresh database):** passed on Windows on 2026-11-26.
+> - **Part B (existing-volume upgrade):** has **not** been run on Windows. It is verified on Linux only, by the
+>   local stack check in CI.

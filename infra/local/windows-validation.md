@@ -18,13 +18,34 @@ on Windows with Docker Desktop. It has two parts:
 - **Never paste password values** into the report. The commands below print variable **names** only. The API
   and `migrate` never print passwords.
 
+## Validation record
+
+| Date | Commit | Environment | Part A (fresh database) | Part B (existing-volume upgrade) |
+| ---- | ------ | ----------- | ----------------------- | -------------------------------- |
+| 2026-11-26 | `1ce253a` | The owner's Windows computer: Windows PowerShell 5.1.26100.9818, Docker Desktop 4.98.0 (245422), Docker Engine 29.9.2, Docker Compose v5.6.1 | **Passed**: steps 0.1–0.5 and A1–A11 | **Not tested.** The computer had no `sms-local_postgres-data` volume; no project database was modified |
+
+Notes from the owner's run:
+
+- **A7, fifth statement** (`SELECT count(*) FROM goose_db_version` as `sms_app`): it showed the expected
+  `permission denied` error, but its exit code was not separately echoed. The other four statements are
+  recorded as passed.
+- **Throwaway volume:** `sms-winval_postgres-data` was retained on purpose. It holds only the synthetic
+  validation tenant.
+- **Part B on Windows:** the existing-volume upgrade remains **unverified on Windows**. It is verified on
+  Linux only, by `scripts/local-stack-check.sh` in the "Local stack check" CI job and by the agent's
+  simulation described below. Run Part B on a Windows computer that has an existing volume before relying on
+  it there.
+
+## How to run
+
 Run everything in **PowerShell** (Windows PowerShell 5.1 or PowerShell 7), from the **repository root**, in one
 window, in order.
 
 **How this checklist was checked:** every Docker command, SQL query and expected result was run on Linux with
 Docker Engine and the same PostgreSQL 18.7 image, through the equivalent bash commands. Part B used a simulated
-pre-PR volume. The PowerShell syntax itself has **not** been executed: no PowerShell was available in the
-agent's environment. If a PowerShell line fails for a syntax reason, report it with the error. Report each step as *pass* or *fail*, using the results table at the end.
+pre-PR volume. The agent could not execute the PowerShell syntax itself, because no PowerShell was available in its
+environment. The owner's run on 2026-11-26 (Windows PowerShell 5.1) executed steps 0.1–0.5 and A1–A11
+without a syntax error. **Part B's PowerShell steps have not been executed.** Report each step as *pass* or *fail*, using the results table at the end.
 
 ## New environment variables (PR #17)
 

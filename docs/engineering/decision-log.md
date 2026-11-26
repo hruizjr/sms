@@ -1557,6 +1557,21 @@ after this one is reviewed and merged.
   the local stack check extended with role checks and the existing-volume upgrade. The required status-check
   names are unchanged.
 
+**Windows validation (owner, 2026-11-26):** run with the checklist
+[`infra/local/windows-validation.md`](../../infra/local/windows-validation.md#validation-record) on commit
+`1ce253a`.
+
+- **Environment:** Windows PowerShell 5.1, Docker Desktop 4.98.0, Engine 29.9.2, Compose v5.6.1.
+- **Part A (fresh database): passed.** Every step from 0.1 to A11 passed:
+  - role separation and role attributes;
+  - the tenants migration and its privileges;
+  - permission denials;
+  - unsafe-role refusal and repair by re-provisioning;
+  - health and readiness;
+  - restart and persistence.
+- **Part B (existing-volume upgrade): not tested on Windows.** No existing volume was present. It is verified on
+  Linux only, by the local stack check in CI.
+
 **Open follow-ups (not decided here):** the reporting role and the break-glass role (neither may receive a
 blanket `BYPASSRLS` without its own approved design); production role provisioning and credential management;
 the separately designed, controlled procedure for any future cross-tenant **data** migration (G1-9); the
