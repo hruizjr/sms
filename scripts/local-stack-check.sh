@@ -14,6 +14,8 @@
 #   infra/local/.env, like the stack itself.
 # - The upgrade test recreates, in this project's own throwaway volume only, the state of a volume
 #   created before role separation (it drops and recreates the application roles there).
+# - The unsafe-role tests change sms_app (BYPASSRLS, then a membership in sms_migrator) on this
+#   project's own server only, and restore the approved state before continuing.
 # - The failed-migration test writes one deliberately invalid migration into backend/migrations and
 #   always removes it again (also on failure or Ctrl+C).
 # - Uses only docker, curl and standard shell tools. Extra Compose files can be added with the
@@ -53,6 +55,14 @@ psql_value() { compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POS
 psql_app() { compose exec -T postgres sh -c 'PGPASSWORD="$SMS_APP_PASSWORD" psql -h 127.0.0.1 -U sms_app -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -Atc "$1"' _ "$1"; }
 provision_roles() { compose exec -T postgres bash /docker-entrypoint-initdb.d/10-sms-roles.sh; }
 fails() { ! "$@"; }
+# Runs the provisioning script while sms_app is a member of sms_migrator; succeeds if provisioning
+# refuses (fails closed, changing nothing) and names the membership as the reason. It checks
+# sms_migrator first, which then "has members".
+provisioning_refuses_membership() {
+  local out
+  out="$(provision_roles 2>&1)" && return 1
+  grep -q 'role sms_migrator is a member of another role, or has members' <<<"$out"
+}
 # Runs the API once as sms_migrator (a table owner); succeeds if the API refuses and says why.
 api_refuses_migrator_role() {
   local password out
@@ -111,6 +121,24 @@ expect "provisioning removed BYPASSRLS" equals "$(psql_value "SELECT rolbypassrl
 compose up -d --wait
 pass "api starts again after provisioning"
 expect "GET /readyz is 200" equals "$(http_code /readyz)" 200
+
+echo "== A role membership is refused; provisioning fails closed until it is revoked"
+# Provisioning never removes a membership itself: it refuses and names the role (provision.sql).
+# The recovery is the one its error message gives: REVOKE the membership, then provision again.
+membership_count="SELECT count(*) FROM pg_auth_members WHERE member IN ('sms_app'::regrole, 'sms_migrator'::regrole) OR roleid IN ('sms_app'::regrole, 'sms_migrator'::regrole)"
+psql_value "GRANT sms_migrator TO sms_app" >/dev/null
+compose stop api >/dev/null 2>&1
+if compose up -d --wait api >/dev/null 2>&1; then fail "api started although sms_app is a member of sms_migrator"; else pass "api does not start while sms_app is a member of sms_migrator"; fi
+expect "api logged the refusal" bash -c "docker compose logs --no-log-prefix api | grep -q 'as the application role: is a member of sms_migrator'"
+expect "provisioning refuses while the membership exists" provisioning_refuses_membership
+expect "the refused provisioning changed nothing (membership still present)" equals "$(psql_value "$membership_count")" 1
+psql_value "REVOKE sms_migrator FROM sms_app" >/dev/null
+expect "provisioning succeeds after the REVOKE" provision_roles
+expect "neither role has a membership" equals "$(psql_value "$membership_count")" 0
+compose up -d --wait
+pass "api starts again after the membership is revoked"
+expect "GET /readyz is 200" equals "$(http_code /readyz)" 200
+expect "the api's database sessions use sms_app" equals "$(api_sessions_as)" sms_app
 
 echo "== Security settings"
 for svc in api migrate; do
