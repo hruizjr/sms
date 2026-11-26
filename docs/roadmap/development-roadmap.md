@@ -49,7 +49,8 @@ Phase 11 Scale-out and expansion (more telcos, analytics, broker, features)
 **Goal:** replace unknowns with facts and agree the architecture for the MVP.
 **Status:** Ongoing. Phase 2A (discovery preparation package) is merged (PR #2). The actual external
 discovery (telcos, counsel, customers) and Phase 2B (SRS, domain model, system architecture, threat model) are
-**not yet done**. One acceptance criterion below is met (MVP scope, 2026-11-26); **Phase 2 is not complete**.
+**not yet done**. Two acceptance criteria below are met (MVP scope and the simulator-only decision, 2026-11-26);
+**Phase 2 is not complete**.
 **Depends on:** owner and external parties (telcos, counsel, prospective customers).
 **Work:**
 - Collect traffic data (traffic capacity discovery); telco technical answers (checklist); regulatory
@@ -68,8 +69,10 @@ criteria below is tracked in the [Phase 2 exit checklist](../discovery/phase2-ex
       D-061).
 - [ ] Traffic figures for launch customers recorded with sources, or an explicit decision to proceed with
       provisional targets.
-- [ ] At least one telco's technical specification received, or an explicit decision to proceed
-      simulator-only.
+- [x] At least one telco's technical specification received, or an explicit decision to proceed
+      simulator-only. **Met 2026-11-26 by owner decision:** simulator-only development and testing (S1–S8),
+      gate PG-9, telco discovery deferred (EX-7) ([decision log §15](../engineering/decision-log.md#15-owner-decisions--simulator-only-development-phase-2-ex-3-2026-11-26)). No telco
+      specification has been received.
 - [ ] Regulatory path documented by counsel (even if approvals are pending).
 - [ ] Architecture document and threat model approved.
 

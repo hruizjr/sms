@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — Phase 2A snapshot; ADR statuses are kept in the decision log (ADR-0018 and, with a limited scope, ADR-0021 accepted 2026-11-25) | Project owner | 2026-11-25 |
+| Draft — Phase 2A snapshot; ADR statuses are kept in the decision log (ADR-0018 and, with a limited scope, ADR-0021 accepted 2026-11-25; ADR-0010 and, with a limited scope, ADR-0012 accepted 2026-11-26) | Project owner | 2026-11-26 |
 
 This document classifies every Proposed ADR by **what it is waiting for**, so the owner can see which
 decisions are possible now and which must wait for discovery. It complements the review summary in the
@@ -65,7 +65,7 @@ Owner-preference decisions that should be made **before Phase 3 scaffolding**:
 | 0011 | Billing basis, credit unit, payment model, refund policy | Owner decisions after telco terms | D-080–D-084 |
 | 0019 | Real rate cards and pricing model; tax treatment | Telcos, owner, accountant | D-092, D-093, D-117, D-127 |
 | 0021 | Customer status labels; uncertain-message billing; telco receipt behaviour. **Update 2026-11-25:** status labels decided and ADR-0021 accepted with a limited scope; uncertain-message billing, webhook behaviour, and telco receipt behaviour still pending | Owner, telcos | D-095–D-099, D-104, D-114–D-116 |
-| 0012 (interface) | At least one official telco specification | Telcos | D-100, D-104–D-106, D-114, D-115 |
+| 0012 (interface) | At least one official telco specification. **Update 2026-11-26:** ADR-0012 accepted with a limited scope (provisional interface, capability declarations, adapter abstraction, simulator); the final interface and the SMPP library still wait for a telco specification | Telcos | D-100, D-104–D-106, D-114, D-115 |
 
 ## 4. Decisions not yet captured as ADRs
 

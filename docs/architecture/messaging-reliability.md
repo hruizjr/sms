@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — pending owner review (supports ADR-0020, ADR-0021); ADR-0021 accepted with limited scope 2026-11-25 (customer-visible statuses only) | Project owner | 2026-11-25 |
+| Draft — pending owner review (supports ADR-0020, ADR-0021); ADR-0021 accepted with limited scope 2026-11-25 (customer-visible statuses only); D-095 interim rule added 2026-11-26 (§4) | Project owner | 2026-11-26 |
 
 **This document is authoritative** for internal event-delivery guarantees, the transactional outbox,
 message lifecycle milestones, provider submission outcomes, and delivery receipt (DLR) handling, as
@@ -169,7 +169,9 @@ Requirements:
    official telco documentation.
 4. Only **retryable** outcomes are retried automatically (backoff with jitter, attempt limit, maximum message age).
 5. Resolving `SUBMIT_UNCERTAIN` follows a **per-provider, per-traffic-type policy** that is an owner
-   decision (discovery register D-095). Options include:
+   decision (discovery register D-095, **still open**). **Interim rule** (owner, 2026-11-26, EX-3
+   simulator-only decision): until D-095 is decided, an uncertain submission **remains uncertain** and is
+   **never automatically resubmitted or failed**. Options include:
    - never resubmit (risk: message lost);
    - resubmit only after confirming non-acceptance via a provider status-query capability, if one exists (D-115);
    - wait for a receipt referencing the attempt, then decide;

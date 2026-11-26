@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — no telco information received yet | Project owner | 2026-11-24 |
+| Draft — no telco information received yet; technical discovery formally deferred during simulator-only development (owner decision 2026-11-26, EX-3/EX-7). **No question below has been answered** | Project owner | 2026-11-26 |
 
 ## Purpose and rules
 
@@ -17,6 +17,24 @@ This checklist lists what we must learn from each telco before designing or buil
   explain *why* a question matters.
 - Before asking, clarify whether **PLDT Enterprise and Smart** are separate integrations or a single
   route/contract (they belong to the same corporate group). Also decide whether to approach **DITO**.
+
+## Simulator-only development (owner decision 2026-11-26)
+
+The owner decided on 2026-11-26 to proceed with **simulator-only development and testing** without a telco
+specification (Phase 2 EX-3, decisions S1–S8; [decision log §15](../engineering/decision-log.md#15-owner-decisions--simulator-only-development-phase-2-ex-3-2026-11-26)). Telco technical discovery is **formally deferred**
+during simulator-only development (EX-7 amended). This changes nothing below:
+
+- **Every question remains unanswered.** No item is ticked and no status in the matrix changes until a telco
+  answers in writing with a recorded source.
+- **The answers remain production prerequisites.** No real adapter is built without official documentation
+  and separate owner approval (gate PG-1), and every real adapter must pass the provider contract suite using
+  the provider's official specifications, plus validation in its test environment where available (§17); if
+  none is available, the gap is documented and an alternative validation is explicitly approved (gate PG-9).
+- **The simulator does not answer these questions.** Its settings are generic and synthetic (S2): it is not
+  named after, and does not emulate, Smart, Globe, PLDT Enterprise or DITO, and its capabilities are labelled
+  *synthetic* or *unknown*. Results against it are "verified against the simulator" only (S7).
+- **Discovery continues** outside simulator-only development (S8), including the PLDT Enterprise / Smart
+  question (D-112), direct or intermediary connectivity (D-118), and whether to approach DITO.
 
 ## Status matrix
 

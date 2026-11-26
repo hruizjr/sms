@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — pending owner review | Project owner | 2026-11-26 (Row-Level Security standards added after the owner accepted ADR-0010) |
+| Draft — pending owner review | Project owner | 2026-11-26 (Row-Level Security standards added after the owner accepted ADR-0010; simulator-only provider testing rules added, §3.3) |
 
 **Authority:** this document is authoritative for test levels, required scenarios, and testing
 expectations, as defined in [`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts); `AGENTS.md` §13 summarizes it. Scenario lists owned by specialist
@@ -104,6 +104,14 @@ or **leak one customer's data to another** — so the most important behaviours 
   submit, throttling, permanent errors, ambiguous timeouts, receipt variations including late, duplicate,
   and out-of-order receipts, status mapping, reconnect after session loss). Simulator profiles must cite the
   telco documentation they emulate; undocumented behaviour is not simulated as fact.
+  **Simulator-only development** (owner decision 2026-11-26, [decision log §15](../engineering/decision-log.md#15-owner-decisions--simulator-only-development-phase-2-ex-3-2026-11-26)):
+  until a telco specification is received, simulator settings are **generic and synthetic** (for example
+  `synthetic-default`), never named after or emulating a real telco, with every capability labelled
+  *synthetic* or *unknown* (S2). They cover nine scenarios: acceptance, rejection, timeout (ambiguous),
+  delayed, duplicate, out-of-order and missing receipts, throttling, and session loss and reconnect (S3).
+  Results are reported as "verified against the simulator" only (S7). Before production, every real adapter
+  passes this suite using the provider's official specifications, plus validation in the provider's test
+  environment where available, or an explicitly approved alternative (gate PG-9).
 - **Webhook contracts:** payload shape and signature verification.
 
 ### 3.4 End-to-end tests
