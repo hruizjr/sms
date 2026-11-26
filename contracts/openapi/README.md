@@ -27,9 +27,10 @@ provider adapters ([messaging reliability §5.1](../../docs/architecture/messagi
 ## 2. Acceptance is not submission, and not delivery
 
 **Provider** means the platform's **immediate upstream SMS provider**: the party the platform hands a
-message to. Depending on routing (D-118), that may be a mobile network operator or an intermediary
-connectivity provider. So a provider's acknowledgment is **not necessarily** acceptance by the
-recipient's mobile network, and delivery outcomes are the provider's **reports**, which the platform
+message to. Under the operating model (D-160: direct aggregation only, pending partner ratification), that is a
+mobile network operator with which the business integrates directly. Even so, a provider's acknowledgment is
+**not necessarily** acceptance by the recipient's mobile network (for example, for a ported or off-network
+number), and delivery outcomes are the provider's **reports**, which the platform
 relays but cannot independently verify.
 
 The API reports milestones from [messaging reliability §3](../../docs/architecture/messaging-reliability.md#3-message-lifecycle-milestones)

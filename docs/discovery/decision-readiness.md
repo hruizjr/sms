@@ -75,7 +75,7 @@ created for them in Phase 2A** because their inputs are missing.
 | Future decision | Alternatives (illustrative) | Depends on |
 | --------------- | --------------------------- | ---------- |
 | Hosting and telco connectivity model | Public cloud with static egress IPs and VPN to telcos · Philippine colocation/data centre · Hybrid (connectors near telcos, rest in cloud) | D-102, D-068, D-129, D-090, D-044 |
-| Direct vs. intermediary connectivity | Direct to each telco · Via intermediary · Hybrid (intermediary first). The provider abstraction (ADR-0012) supports all three technically; the trade-offs are commercial and regulatory | D-160, D-118, D-113, D-120 |
+| Direct vs. intermediary connectivity | **Resolved 2026-11-26 (EX-9 review): direct aggregation only** — owner-approved, pending partner ratification (D-160, D-118). Earlier options (via intermediary, hybrid) are not acceptable | D-160, D-118, D-113, D-120 |
 | Routing and network identification | Prefix tables · Porting/lookup data from telcos · Rely on telco off-net delivery | D-070, D-107, D-119 |
 | SMPP (or other protocol) client implementation | Library vs. in-house implementation | D-100 and the official specification |
 | Data retention schedule | Per data class, per legal requirement | D-124, D-073, D-121 |

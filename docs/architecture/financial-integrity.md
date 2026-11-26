@@ -80,8 +80,13 @@ so the estimate the customer sees and the actual charge cannot diverge through d
 
 ## 5. Segment-based billing
 
-- Billable segments are computed by **one shared segmentation function** (encoding detection, GSM-7
-  extended characters, UCS-2, concatenation overhead) used for estimate, reservation, and charge.
+- Segments are computed by **one shared segmentation function** (encoding detection, GSM-7
+  extended characters, UCS-2, concatenation overhead) used for estimate, reservation, usage records and charge.
+- **Billing basis (EX-9 review, 2026-11-26, [decision log §17](../engineering/decision-log.md#17-owner-decisions--business-decisions-review-phase-2-ex-9-2026-11-26)):** clients are
+  charged **per message** (partner-approved direction). The billable quantity of a message equal to its
+  **segment count**, the charge on provider acceptance and the **PHP** balance are **owner proposals pending
+  partner approval**, not approved rules. Precision, rounding and storage representation remain open (ADR-0019,
+  D-092, D-093).
 - The telco's own segment count may differ (e.g. different concatenation handling). Differences are
   detected by **reconciliation** with telco records, not by silently changing past charges.
 - Segmentation rules per provider must come from telco documentation (telco checklist §10).

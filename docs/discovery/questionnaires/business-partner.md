@@ -11,7 +11,7 @@ This is usually the **first** conversation on the critical path.
 
 | # | Question | Register IDs | P |
 | - | -------- | ------------ | - |
-| BP-01 | What operating model do we intend: our own direct telco connections, reselling another aggregator's service, using an intermediary for connectivity, or starting as a reseller and moving to direct later? Why? | D-160, D-001, D-118 | P0 |
+| BP-01 | What operating model do we intend: our own direct telco connections, reselling another aggregator's service, using an intermediary for connectivity, or starting as a reseller and moving to direct later? Why? **Answered 2026-11-26 (EX-9 review):** direct aggregation only (D-160, owner-approved, pending partner ratification). | D-160, D-001, D-118 | P0 |
 | BP-02 | Which legal entity will sign telco and customer contracts? Is it already registered? Who are the shareholders, and who has final decision authority? | D-161, D-047 | P0 |
 | BP-03 | Where does the "about 5 billion per month" figure come from? Who produced it, when, and is there a spreadsheet or document behind it? | D-004 | P0 |
 | BP-04 | Does that figure count messages, recipients, billable segments, delivery attempts, delivered messages, or something else? Is it monthly or annual? Is it one customer's traffic or a total across many? | D-004 | P0 |
