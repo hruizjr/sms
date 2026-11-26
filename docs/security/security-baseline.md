@@ -71,7 +71,10 @@ program; §11 lists the security engineering still required. Nothing here is leg
   - **Tenant context.** It is set transaction-locally by one application helper that rejects missing or
     invalid tenant IDs, and never per pooled session.
   - **Roles.** The application role must not own tables, be a superuser, or hold `BYPASSRLS`. Database role
-    separation is a prerequisite (RLS-4). `BYPASSRLS` is reserved for the migration and break-glass roles.
+    separation is a prerequisite (RLS-4), implemented in Phase 4 Group 1: the API connects as `sms_app` and
+    refuses an unsafe role; migrations run as `sms_migrator`, which owns the tables and, by owner decision
+    (decision log §18, G1-5), has no `BYPASSRLS` either. `BYPASSRLS` is reserved for the migration and
+    break-glass roles; none is granted today.
   - **Policies** fail closed when the context is missing (the `NULLIF` form).
   - **Cross-tenant access** uses a dedicated, read-only reporting role, and is audited in the application.
   - **Threat model limit.** RLS protects against application query mistakes and missing tenant filters,

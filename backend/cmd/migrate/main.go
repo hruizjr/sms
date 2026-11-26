@@ -38,6 +38,10 @@ Commands:
 
 Configuration is read from the same environment variables as the API (DB_HOST, DB_PORT,
 DB_NAME, DB_USER, DB_PASSWORD, DB_SSLMODE, ...). See backend/README.md.
+
+DB_USER must be the migration role (sms_migrator): every command is refused when the
+connected role is a superuser, has BYPASSRLS, CREATEROLE, CREATEDB or REPLICATION, or is a
+member of another role.
 `
 
 // Exit codes.
@@ -178,6 +182,12 @@ func execute(ctx context.Context, command string, cfg config.DatabaseConfig, std
 	err = db.Ping(pingCtx)
 	cancel()
 	if err != nil {
+		return err
+	}
+
+	// Migrations run only as the dedicated migration role (sms_migrator), never as a superuser or
+	// another privileged role, so that every table is owned by that role (decision log §18).
+	if err := database.CheckMigrationRole(ctx, db.Pool()); err != nil {
 		return err
 	}
 

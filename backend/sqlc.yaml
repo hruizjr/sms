@@ -1,14 +1,12 @@
-# sqlc configuration (ADR-0014: pgx/v5 + sqlc). Run from backend/: `sqlc generate`.
+# sqlc configuration (ADR-0014: pgx/v5 + sqlc). Regenerate from backend/ with the version locked in
+# tools/go.mod: `go generate ./internal/database/...` (CI fails if the committed code differs).
 #
 # Schema: sqlc reads the goose migrations in migrations/ (it understands the goose annotations and
 # ignores the Down sections), so the generated code always matches the migrated schema.
 # Queries: hand-written, reviewed SQL in queries/*.sql, one `-- name: <Name> :<one|many|exec|...>`
 # comment per query.
 # Output: the dedicated package internal/database/sqlcgen, which contains only generated code.
-#
-# There are deliberately no queries yet: the walking skeleton has no business tables (decision log
-# §7.3), and sqlc refuses to run without at least one query ("no queries contained in paths"). The
-# first approved business feature adds the first query; see backend/README.md, "sqlc".
+# Queries are grouped in one file per module (queries/tenancy.sql: the tenancy module, Phase 4 Group 1).
 version: "2"
 sql:
   - engine: postgresql

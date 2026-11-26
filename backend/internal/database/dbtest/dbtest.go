@@ -17,6 +17,7 @@ import (
 
 	"github.com/hruizjr/sms/backend/internal/config"
 	"github.com/hruizjr/sms/backend/internal/database"
+	"github.com/hruizjr/sms/backend/internal/database/dbroles"
 )
 
 const adminTimeout = 30 * time.Second
@@ -34,8 +35,13 @@ func ServerConfig(t testing.TB) config.DatabaseConfig {
 	return cfg
 }
 
-// NewDatabase creates an empty database with a random name and returns settings that point to it.
-// The database is dropped (terminating any remaining connections) during test cleanup.
+// NewDatabase creates an empty database with a random name and returns settings that point to it,
+// as the configured DB_USER (the server's bootstrap superuser). The database is dropped (terminating
+// any remaining connections) during test cleanup.
+//
+// The application roles are provisioned in it exactly as in the local stack (dbroles.ProvisionSQL):
+// sms_migrator and sms_app are created on the server if they do not exist yet (without a password)
+// and receive their privileges in the new database. Use RoleConfig to connect as one of them.
 func NewDatabase(t testing.TB) config.DatabaseConfig {
 	t.Helper()
 	server := ServerConfig(t)
@@ -56,6 +62,34 @@ func NewDatabase(t testing.TB) config.DatabaseConfig {
 
 	cfg := server
 	cfg.Name = name
+	exec(t, cfg, dbroles.ProvisionSQL)
+	return cfg
+}
+
+// RoleConfig returns cfg with the user and password of an application role: dbroles.Migrator
+// (password from DB_MIGRATOR_PASSWORD) or dbroles.App (password from DB_APP_PASSWORD). The roles'
+// passwords are set once per server by the provisioning script (infra/local/postgres-init/
+// 10-sms-roles.sh; in CI, the "Provision database roles" step); tests never change them, because
+// the server may be a developer's local stack. It fails the test with setup instructions when the
+// variable is not set.
+func RoleConfig(t testing.TB, cfg config.DatabaseConfig, role string) config.DatabaseConfig {
+	t.Helper()
+	var env string
+	switch role {
+	case dbroles.Migrator:
+		env = EnvMigratorPassword
+	case dbroles.App:
+		env = EnvAppPassword
+	default:
+		t.Fatalf("RoleConfig: unknown role %q", role)
+	}
+	password, ok := os.LookupEnv(env)
+	if !ok || password == "" {
+		t.Fatalf("%s is not set. Integration tests that connect as %s need the role's password, as set by the "+
+			"role provisioning script (see backend/README.md, \"Testing\").", env, role)
+	}
+	cfg.User = role
+	cfg.Password = config.Secret(password)
 	return cfg
 }
 

@@ -1,14 +1,16 @@
 # infra/local/
 
 The local development stack, defined in [`compose.yaml`](compose.yaml) (Phase 3 Groups 2 and 6;
-[decision log §11](../../docs/engineering/decision-log.md#11-owner-decisions--local-development-stack-and-expanded-ci-phase-3-group-6-2026-11-26)).
+[decision log §11](../../docs/engineering/decision-log.md#11-owner-decisions--local-development-stack-and-expanded-ci-phase-3-group-6-2026-11-26);
+database roles from Phase 4 Group 1,
+[decision log §18](../../docs/engineering/decision-log.md#18-owner-decisions--database-role-separation-and-tenant-registry-phase-4-group-1-2026-11-26)).
 It is for local development only and is never used in production.
 
 | Service | What it is | Published on your machine |
 | ------- | ---------- | ------------------------- |
-| `postgres` | PostgreSQL 18 (`postgres:18.7-trixie`, pinned by digest; the same image as backend CI). Data in the named volume `sms-local_postgres-data` | `127.0.0.1:${DB_PORT}` (default 5432) |
-| `migrate` | One-off: runs `migrate up` once PostgreSQL is healthy, then exits | Nothing |
-| `api` | The Go API. Starts only after `migrate` has **completed successfully**. Health check: `/readyz` | `127.0.0.1:${API_PORT}` (default 8080) |
+| `postgres` | PostgreSQL 18 (`postgres:18.7-trixie`, pinned by digest; the same image as backend CI). Data in the named volume `sms-local_postgres-data`. `DB_USER` (`sms`) is its bootstrap superuser | `127.0.0.1:${DB_PORT}` (default 5432) |
+| `migrate` | One-off: runs `migrate up` as the migration role **`sms_migrator`** once PostgreSQL is healthy, then exits | Nothing |
+| `api` | The Go API, connected as the application role **`sms_app`**. Starts only after `migrate` has **completed successfully**. Health check: `/readyz` | `127.0.0.1:${API_PORT}` (default 8080) |
 
 - **Client portal:** not containerised. It runs natively with `pnpm dev` and reaches the API through
   its development proxy (see [section 4](#4-start-the-client-portal-optional)).
@@ -18,6 +20,8 @@ It is for local development only and is never used in production.
 - **Images:** `migrate` and `api` use one image, `sms-local-backend:dev`, built from
   [`infra/docker/backend.Dockerfile`](../docker/backend.Dockerfile). It holds three static binaries
   (`api`, `migrate`, `healthcheck`) on a distroless base image.
+- **Database roles:** `migrate` and `api` never use the bootstrap superuser. See
+  [section 9](#9-database-roles-and-upgrading-an-existing-database-volume).
 - **Container security:** both run as the unprivileged user 65532, with a read-only filesystem, no Linux
   capabilities and `no-new-privileges`. PostgreSQL also runs with `no-new-privileges`; Group 6 verified
   that the image still initialises, restarts and serves with it.
@@ -51,11 +55,12 @@ to `compose.yaml`.
 
 ## 1. One-time setup
 
-Create your local settings file and choose a local-only password:
+Create your local settings file and choose **three** different local-only passwords: `DB_PASSWORD` (the
+bootstrap superuser), `DB_MIGRATOR_PASSWORD` (`sms_migrator`) and `DB_APP_PASSWORD` (`sms_app`):
 
 ```powershell
 Copy-Item infra/local/.env.example infra/local/.env
-notepad infra/local/.env      # change DB_PASSWORD; change DB_PORT or API_PORT if already in use
+notepad infra/local/.env      # change the three passwords; change DB_PORT or API_PORT if already in use
 ```
 
 ```bash
@@ -65,9 +70,12 @@ ${EDITOR:-nano} infra/local/.env
 
 - `infra/local/.env` is ignored by Git. Never commit it, and never put a real (shared, staging or
   production) password in it.
-- `DB_PASSWORD` has **no default**: without it, Compose refuses to start and says so.
+- The passwords have **no defaults**: without any of them, Compose refuses to start and says so.
 - PostgreSQL reads `DB_PASSWORD` only when the database volume is first created. If you change it
-  later, the API and `migrate` fail to authenticate until you reset the volume (section 7b).
+  later, role provisioning cannot authenticate until you restore it or reset the volume (section 7b).
+- The two role passwords are set when a new volume is initialised. To change them later, or if your
+  volume existed before role separation, follow [section 9](#9-database-roles-and-upgrading-an-existing-database-volume)
+  (no data is lost).
 
 ## 2. Start the stack (one command)
 
@@ -78,7 +86,9 @@ docker compose -f infra/local/compose.yaml up -d --build --wait
 What happens:
 1. The backend image is built. The first time this also downloads the base images and Go modules,
    which takes a few minutes; later builds reuse the cache.
-2. `postgres` starts and becomes healthy.
+2. `postgres` starts and becomes healthy. On a **new** volume it first runs
+   [`postgres-init/10-sms-roles.sh`](postgres-init/10-sms-roles.sh), which creates `sms_migrator` and
+   `sms_app` (logged as `sms-roles: sms_migrator and sms_app provisioned`).
 3. `migrate` applies any pending migrations and exits.
 4. `api` starts and becomes healthy.
 
@@ -222,6 +232,59 @@ docker compose -f infra/local/compose.yaml up -d --wait postgres
 Stop the containerised API first (`docker compose -f infra/local/compose.yaml stop api`) if it is
 running, because both use port 8080.
 
+## 9. Database roles and upgrading an existing database volume
+
+The stack uses three PostgreSQL roles (Phase 4 Group 1, owner decision RLS-4):
+
+| Role | Used by | What it may do |
+| ---- | ------- | -------------- |
+| `sms` (`DB_USER`, bootstrap superuser) | the `postgres` container, role provisioning, `psql` for inspection | Everything. Never used by `migrate` or `api`. |
+| `sms_migrator` | `migrate` | Owns the application tables and creates them. Not a superuser; no `BYPASSRLS`, `CREATEROLE` or `CREATEDB`. |
+| `sms_app` | `api` | Reads and writes only what each migration grants. Owns nothing, cannot create objects, never `TRUNCATE`. |
+
+Both roles are defined by one idempotent script,
+[`backend/internal/database/dbroles/provision.sql`](../../backend/internal/database/dbroles/provision.sql),
+run by [`postgres-init/10-sms-roles.sh`](postgres-init/10-sms-roles.sh), which also sets their passwords
+from `DB_MIGRATOR_PASSWORD` and `DB_APP_PASSWORD`. The script never drops a role, a table or any data.
+
+**New volume:** nothing to do. The PostgreSQL image runs the script once, when it initialises the empty
+volume.
+
+**Existing volume** (created before role separation, or after changing a role password in `.env`): the
+image never runs initialisation scripts again, so run the script once yourself. Your data is kept: the
+script only creates or corrects the two roles, sets their privileges, and hands goose's version table
+(`goose_db_version`, created earlier by `sms`) to `sms_migrator`.
+
+1. Add `DB_MIGRATOR_PASSWORD` and `DB_APP_PASSWORD` to `infra/local/.env` (see `.env.example`).
+2. Recreate only the `postgres` container with the new settings (the volume and its data are kept):
+
+   ```powershell
+   docker compose -f infra/local/compose.yaml up -d --wait postgres
+   ```
+
+3. Run the provisioning script inside it (it prints `sms-roles: sms_migrator and sms_app provisioned`):
+
+   ```powershell
+   docker compose -f infra/local/compose.yaml exec postgres bash /docker-entrypoint-initdb.d/10-sms-roles.sh
+   ```
+
+4. Start the stack as usual; `migrate` applies the new migrations as `sms_migrator`:
+
+   ```powershell
+   docker compose -f infra/local/compose.yaml up -d --build --wait
+   ```
+
+Running step 3 again is always safe. If it reports objects in `public` that `sms_migrator` does not own, it
+has changed nothing; see "Troubleshooting".
+
+**Alternative: start from an empty database instead.** Only if you do not need anything in your local
+database, you can reset it (section 7b); the new volume then gets the roles automatically.
+
+> **WARNING — the reset permanently deletes all data in your local database** (the named volume
+> `sms-local_postgres-data`). There is no undo. Nothing in this repository runs it for you: it happens
+> only if you type the `down -v` command yourself. The upgrade above keeps your data and is the
+> recommended path.
+
 ## Inspect the database
 
 Open `psql` inside the container (no local PostgreSQL client needed):
@@ -230,8 +293,9 @@ Open `psql` inside the container (no local PostgreSQL client needed):
 docker compose -f infra/local/compose.yaml exec postgres psql -U sms -d sms
 ```
 
-Useful commands inside `psql`: `\dt` (tables), `SELECT * FROM goose_db_version;` (applied migrations),
-`\q` (quit). Replace `sms` if you changed `DB_USER` or `DB_NAME`.
+Useful commands inside `psql`: `\dt` (tables and their owners), `\du` (roles),
+`SELECT * FROM goose_db_version;` (applied migrations), `\q` (quit). This connects as the bootstrap
+superuser; replace `sms` if you changed `DB_USER` or `DB_NAME`.
 
 ## Integration tests and this database
 
@@ -239,7 +303,9 @@ The backend integration tests run natively and connect to the published port. Th
 `sms` database**: each test creates its own database named `sms_test_<random>` and drops it when the
 test finishes, even if it fails. They run only with `APP_ENV=test` and `DB_HOST` set to a loopback IP
 (`127.0.0.1`), and refuse to start otherwise (see [`backend/README.md`](../../backend/README.md),
-"Testing"):
+"Testing"). They connect as the bootstrap superuser (`DB_USER`, `DB_PASSWORD`) to create their databases,
+and as `sms_migrator` and `sms_app` with `DB_MIGRATOR_PASSWORD` and `DB_APP_PASSWORD`; load all of them
+from `infra/local/.env` first (backend README, step 3). They never change a role's password or attributes:
 
 ```powershell
 $env:APP_ENV = "test"; $env:DB_HOST = "127.0.0.1"
@@ -270,12 +336,15 @@ bash scripts/local-stack-check.sh
 
 What it checks:
 - fresh start;
+- database roles: created on a new volume, table ownership, the API's role, what `sms_app` cannot do;
+- the API refusing an unsafe role, and provisioning repairing a changed role;
 - security settings and published ports;
 - idempotent restart;
 - refused in-container rollback;
 - a failed migration blocking the API;
 - persistence;
-- volume reset.
+- volume reset;
+- the upgrade of a volume created before role separation (section 9), with its data kept.
 
 It uses its own project, `sms-local-check`, and deletes only that project's containers, volume and
 image. It never touches your `sms-local` data.
@@ -285,7 +354,11 @@ image. It never touches your `sms-local` data.
 | Symptom | Cause and fix |
 | ------- | ------------- |
 | `required variable DB_PASSWORD is missing a value` | `infra/local/.env` is missing or has no `DB_PASSWORD`. Do section 1. |
-| `migrate` exits 1 with `password authentication failed` | `DB_PASSWORD` changed after the volume was created. Restore the old value, or reset (7b). |
+| `required variable DB_MIGRATOR_PASSWORD is missing a value` (or `DB_APP_PASSWORD`) | Your `infra/local/.env` predates role separation. Add both passwords, then follow section 9. |
+| `migrate` exits 1 with `password authentication failed for user "sms_migrator"` (or `role "sms_migrator" does not exist`) | The volume existed before role separation, or a role password changed. Run the provisioning command in section 9; no data is lost. |
+| `migrate` exits 1 with `refusing to use database role ... as the migration role` | `migrate` was started with a privileged `DB_USER` (for example the bootstrap superuser). Use `sms_migrator`. |
+| `api` exits 1 with `refusing to use database role ... as the application role: ...` | The API's role is unsafe (the message lists why, for example `has BYPASSRLS` or `owns tables`). Use `sms_app`; if `sms_app` itself was changed, run the provisioning command in section 9, which restores its attributes. |
+| Provisioning fails with `objects in schema public are not owned by sms_migrator: ...` | Something in `public` was created by another role (for example by hand as `sms`). Nothing was changed. Transfer it (`ALTER TABLE ... OWNER TO sms_migrator`) or drop it if it is disposable, then run the command again. |
 | `Bind for 127.0.0.1:5432 failed: port is already allocated` (or 8080) | Another PostgreSQL or API is running. Stop it, or set `DB_PORT` / `API_PORT` in `.env`. Changing `API_PORT` breaks the portal's development proxy, which expects 8080. |
 | `up --wait` ends with `service "migrate" didn't complete successfully` | A migration failed and the API was not started. Read `logs migrate` (section 5). |
 | `unknown flag: --wait` or the start never returns | Compose is older than the minimum version in "Requirements". Update Docker Desktop or the Compose plugin. |
@@ -311,13 +384,13 @@ report the result in the pull request or to the owner:
 
 1. [ ] `docker compose version` reports at least the minimum version in "Requirements".
 2. [ ] Without `infra/local/.env`, `docker compose -f infra/local/compose.yaml config` fails with
-       `DB_PASSWORD is not set`.
+       `DB_PASSWORD is not set` (or another required password).
 3. [ ] After section 1, `docker compose -f infra/local/compose.yaml up -d --build --wait` exits without
        an error.
 4. [ ] `docker compose -f infra/local/compose.yaml ps -a` shows `postgres` and `api` healthy, `migrate`
        `Exited (0)`, and only `127.0.0.1:` ports.
 5. [ ] `Invoke-RestMethod http://127.0.0.1:8080/readyz` returns `status: ready`.
-6. [ ] `docker compose -f infra/local/compose.yaml run --rm migrate status` lists the baseline as applied.
+6. [ ] `docker compose -f infra/local/compose.yaml run --rm migrate status` lists every migration as applied.
 7. [ ] From `frontend/`, `pnpm dev`, then http://localhost:5173/readyz in a browser shows
        `{"status":"ready"}`.
 8. [ ] `docker compose -f infra/local/compose.yaml stop`, then section 2 again: the start succeeds and
@@ -325,3 +398,11 @@ report the result in the pull request or to the owner:
 9. [ ] `docker compose -f infra/local/compose.yaml down -v`, then section 2 again: a fresh database is
        created and migrated.
 10. [ ] `docker compose -f infra/local/compose.yaml down -v --rmi local` cleans up.
+11. [ ] (Phase 4 Group 1) After step 3, `docker compose -f infra/local/compose.yaml logs postgres` contains
+        `sms-roles: sms_migrator and sms_app provisioned`, and
+        `docker compose -f infra/local/compose.yaml exec postgres bash /docker-entrypoint-initdb.d/10-sms-roles.sh`
+        prints the same line again (section 9, idempotent).
+
+> **Re-validation needed.** Phase 4 Group 1 changed the Compose file (role passwords and the
+> provisioning mount). The owner's validation above predates it; the checklist, including item 11 and an
+> upgrade of an existing volume (section 9), has not been run on Windows since.

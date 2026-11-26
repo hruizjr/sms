@@ -16,3 +16,5 @@
 # Generated files: collapsed in pull request diffs. Never edit them by hand; regenerate
 # (backend/README.md, "OpenAPI code generation").
 backend/internal/publicapi/*.gen.go linguist-generated=true
+# sqlc output (backend/README.md, "sqlc").
+backend/internal/database/sqlcgen/*.go linguist-generated=true

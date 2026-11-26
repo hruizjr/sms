@@ -6,23 +6,29 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 	"testing"
 	"testing/fstest"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/lock"
 
 	"github.com/hruizjr/sms/backend/internal/config"
 	"github.com/hruizjr/sms/backend/internal/database"
+	"github.com/hruizjr/sms/backend/internal/database/dbroles"
 	"github.com/hruizjr/sms/backend/internal/database/dbtest"
 	"github.com/hruizjr/sms/backend/internal/migration"
 	"github.com/hruizjr/sms/backend/migrations"
 )
 
-// baselineVersion is the version of migrations/20261125041208_baseline.sql.
-const baselineVersion = 20261125041208
+// Versions of the embedded migrations.
+const (
+	baselineVersion = 20261125041208 // migrations/20261125041208_baseline.sql
+	latestVersion   = 20261126175603 // migrations/20261126175603_create_tenants.sql
+)
 
 func testContext(t *testing.T) context.Context {
 	t.Helper()
@@ -61,10 +67,12 @@ func newRunner(t *testing.T, sdb *sql.DB, fsys fstest.MapFS) *migration.Runner {
 	return r
 }
 
+// TestIntegrationEmbeddedMigrations applies, rolls back and re-applies the real migrations as the
+// migration role, as the migrate command does, and checks the resulting tables and their owner.
 func TestIntegrationEmbeddedMigrations(t *testing.T) {
 	t.Parallel()
 	ctx := testContext(t)
-	db, sdb := sqlDB(t, dbtest.NewDatabase(t))
+	db, sdb := sqlDB(t, dbtest.RoleConfig(t, dbtest.NewDatabase(t), dbroles.Migrator))
 	runner := newRunner(t, sdb, nil)
 
 	statuses, err := runner.Status(ctx)
@@ -82,7 +90,7 @@ func TestIntegrationEmbeddedMigrations(t *testing.T) {
 	if len(results) != len(statuses) {
 		t.Errorf("Up() applied %d migrations, want %d", len(results), len(statuses))
 	}
-	assertVersion(t, ctx, runner, baselineVersion)
+	assertVersion(t, ctx, runner, latestVersion)
 
 	statuses, err = runner.Status(ctx)
 	if err != nil {
@@ -94,28 +102,11 @@ func TestIntegrationEmbeddedMigrations(t *testing.T) {
 		}
 	}
 
-	// The walking skeleton has no business tables (decision log §7.3): the only table is goose's
-	// version table. This test must be updated deliberately when the first business migration lands.
-	var tables []string
-	rows, err := db.Pool().Query(ctx, `
-		SELECT table_schema || '.' || table_name FROM information_schema.tables
-		WHERE table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY 1`)
-	if err != nil {
-		t.Fatalf("list tables: %v", err)
-	}
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			t.Fatalf("scan table name: %v", err)
-		}
-		tables = append(tables, name)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		t.Fatalf("list tables: %v", err)
-	}
-	if len(tables) != 1 || tables[0] != "public.goose_db_version" {
-		t.Errorf("tables after migrating = %v, want only public.goose_db_version", tables)
+	// The complete list of tables, each owned by the migration role. Update this list deliberately
+	// with every migration that adds or removes a table.
+	want := []string{"public.goose_db_version sms_migrator", "public.tenants sms_migrator"}
+	if got := tablesAndOwners(t, ctx, db); !slices.Equal(got, want) {
+		t.Errorf("tables after migrating = %v, want %v", got, want)
 	}
 
 	// Up is idempotent.
@@ -124,7 +115,15 @@ func TestIntegrationEmbeddedMigrations(t *testing.T) {
 		t.Errorf("second Up() = %d results, %v; want 0, nil", len(again), err)
 	}
 
-	// Down rolls back the most recent migration; rolling back past zero is reported.
+	// Down rolls back one migration at a time (local development and tests only): first the tenants
+	// table, then the baseline. Rolling back past zero is reported.
+	if _, err := runner.Down(ctx); err != nil {
+		t.Fatalf("Down() error: %v", err)
+	}
+	assertVersion(t, ctx, runner, baselineVersion)
+	if got := tablesAndOwners(t, ctx, db); !slices.Equal(got, want[:1]) {
+		t.Errorf("tables after rolling back the tenants migration = %v, want %v", got, want[:1])
+	}
 	if _, err := runner.Down(ctx); err != nil {
 		t.Fatalf("Down() error: %v", err)
 	}
@@ -137,7 +136,26 @@ func TestIntegrationEmbeddedMigrations(t *testing.T) {
 	if _, err := runner.Up(ctx); err != nil {
 		t.Fatalf("Up() after Down() error: %v", err)
 	}
-	assertVersion(t, ctx, runner, baselineVersion)
+	assertVersion(t, ctx, runner, latestVersion)
+	if got := tablesAndOwners(t, ctx, db); !slices.Equal(got, want) {
+		t.Errorf("tables after re-applying = %v, want %v", got, want)
+	}
+}
+
+// tablesAndOwners lists "schema.table owner" for every table outside the system schemas.
+func tablesAndOwners(t *testing.T, ctx context.Context, db *database.DB) []string {
+	t.Helper()
+	rows, err := db.Pool().Query(ctx, `
+		SELECT schemaname || '.' || tablename || ' ' || tableowner FROM pg_tables
+		WHERE schemaname NOT IN ('pg_catalog', 'information_schema') ORDER BY 1`)
+	if err != nil {
+		t.Fatalf("list tables: %v", err)
+	}
+	tables, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatalf("list tables: %v", err)
+	}
+	return tables
 }
 
 func assertVersion(t *testing.T, ctx context.Context, r *migration.Runner, want int64) {
@@ -251,5 +269,5 @@ func TestIntegrationUpWaitsForMigrationLock(t *testing.T) {
 	case <-time.After(20 * time.Second):
 		t.Fatal("Up() did not proceed after the lock was released")
 	}
-	assertVersion(t, ctx, runner, baselineVersion)
+	assertVersion(t, ctx, runner, latestVersion)
 }

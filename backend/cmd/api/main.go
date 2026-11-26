@@ -2,12 +2,14 @@
 //
 // It serves /healthz and /readyz on the application listener and Prometheus metrics on a
 // separate, loopback-only listener. /readyz checks PostgreSQL connectivity. The API never runs
-// database migrations; use the migrate command. It shuts down gracefully on SIGINT or SIGTERM,
+// database migrations; use the migrate command. It connects as the application role (sms_app) and
+// refuses to start, or to use any connection, if that role is unsafe (database.RequireApplicationRole). It shuts down gracefully on SIGINT or SIGTERM,
 // closing the database pool after in-flight requests have finished.
 package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -50,7 +52,9 @@ func run() error {
 		"db_max_conns", cfg.Database.MaxConns,
 	)
 
-	db, err := database.Open(ctx, cfg.Database, "sms-api")
+	// Every new connection is checked: the API never uses a superuser, a role with BYPASSRLS, a
+	// table owner, or a role that can create objects or truncate tables (decision log §18).
+	db, err := database.Open(ctx, cfg.Database, "sms-api", database.RequireApplicationRole())
 	if err != nil {
 		return err
 	}
@@ -61,12 +65,18 @@ func run() error {
 	}()
 
 	// A database outage at startup is not fatal: the API starts, /readyz reports 503, and the
-	// pool connects once PostgreSQL is reachable.
+	// pool connects once PostgreSQL is reachable. An unsafe database role is fatal: the API
+	// refuses to start. (If the database is unreachable at startup, the same check runs on every
+	// later connection, so an unsafe role can never serve a query; /readyz then stays 503.)
 	pingCtx, cancel := context.WithTimeout(ctx, cfg.Database.ConnectTimeout)
-	if err := db.Ping(pingCtx); err != nil {
+	err = db.Ping(pingCtx)
+	cancel()
+	if errors.Is(err, database.ErrUnsafeRole) {
+		return err
+	}
+	if err != nil {
 		logger.Warn("database not reachable at startup; /readyz will report not ready", "error", err.Error())
 	}
-	cancel()
 
 	metrics := observability.NewMetrics()
 	readiness := &httpserver.Readiness{}

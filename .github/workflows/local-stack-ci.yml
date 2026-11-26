@@ -7,8 +7,9 @@
 #                                   itself is verified on Linux only (owner decision L8).
 #
 # Security: least-privilege token (read-only contents), actions pinned to full commit SHAs, no
-# repository secrets used, credentials not persisted after checkout. The database password is a
-# random throwaway value generated inside the job, masked in logs, and never stored. Published ports
+# repository secrets used, credentials not persisted after checkout. The database passwords (bootstrap,
+# migration role, application role) are random throwaway values generated inside the job, masked in
+# logs, and never stored. Published ports
 # are bound to the runner's loopback interface only.
 name: Local Stack CI
 
@@ -75,14 +76,29 @@ jobs:
           set -euo pipefail
           test ! -e infra/local/.env
           password="$(openssl rand -hex 24)"
+          migrator_password="$(openssl rand -hex 24)"
+          app_password="$(openssl rand -hex 24)"
           echo "::add-mask::${password}"
-          sed "s/^DB_PASSWORD=.*/DB_PASSWORD=${password}/" infra/local/.env.example > infra/local/.env
+          echo "::add-mask::${migrator_password}"
+          echo "::add-mask::${app_password}"
+          sed -e "s/^DB_PASSWORD=.*/DB_PASSWORD=${password}/" \
+              -e "s/^DB_MIGRATOR_PASSWORD=.*/DB_MIGRATOR_PASSWORD=${migrator_password}/" \
+              -e "s/^DB_APP_PASSWORD=.*/DB_APP_PASSWORD=${app_password}/" \
+              infra/local/.env.example > infra/local/.env
           # Compose refuses to start without a password (no default).
           if docker compose -f infra/local/compose.yaml --env-file /dev/null config --quiet 2>/dev/null; then
             echo "Compose accepted a configuration without DB_PASSWORD"; exit 1
           fi
+          # ... and without either role password (an older infra/local/.env that lacks them).
+          for name in DB_MIGRATOR_PASSWORD DB_APP_PASSWORD; do
+            grep -v "^${name}=" infra/local/.env > "${RUNNER_TEMP}/partial.env"
+            if docker compose -f infra/local/compose.yaml --env-file "${RUNNER_TEMP}/partial.env" config --quiet 2>/dev/null; then
+              echo "Compose accepted a configuration without ${name}"; exit 1
+            fi
+          done
+          rm -f "${RUNNER_TEMP}/partial.env"
 
-      - name: Run the local stack check (lifecycle, security settings, failed migration, persistence, reset)
+      - name: Run the local stack check (lifecycle, roles, security settings, failed migration, persistence, reset, upgrade)
         env:
           KEEP_STACK: "1" # leave the stack running for the development proxy check below
         run: bash scripts/local-stack-check.sh
@@ -154,14 +170,25 @@ jobs:
       - name: From the repository root, Compose finds infra/local/.env (documented PowerShell steps)
         run: |
           Copy-Item infra/local/.env.example infra/local/.env
-          $password = -join ((1..24) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) })
+          function New-Password { -join ((1..24) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) }) }
+          $password = New-Password
+          $migratorPassword = New-Password
+          $appPassword = New-Password
           "::add-mask::$password"
-          (Get-Content infra/local/.env) -replace '^DB_PASSWORD=.*', "DB_PASSWORD=$password" |
+          "::add-mask::$migratorPassword"
+          "::add-mask::$appPassword"
+          (Get-Content infra/local/.env) -replace '^DB_PASSWORD=.*', "DB_PASSWORD=$password" `
+            -replace '^DB_MIGRATOR_PASSWORD=.*', "DB_MIGRATOR_PASSWORD=$migratorPassword" `
+            -replace '^DB_APP_PASSWORD=.*', "DB_APP_PASSWORD=$appPassword" |
             Set-Content -Encoding utf8NoBOM infra/local/.env
           $model = docker compose -f infra/local/compose.yaml config --format json | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0) { throw "docker compose config failed" }
           if ($model.services.postgres.environment.POSTGRES_PASSWORD -ne $password) { throw "postgres did not get DB_PASSWORD from infra/local/.env" }
-          if ($model.services.api.environment.DB_PASSWORD -ne $password) { throw "api did not get DB_PASSWORD from infra/local/.env" }
+          if ($model.services.postgres.environment.SMS_MIGRATOR_PASSWORD -ne $migratorPassword) { throw "postgres did not get DB_MIGRATOR_PASSWORD" }
+          if ($model.services.postgres.environment.SMS_APP_PASSWORD -ne $appPassword) { throw "postgres did not get DB_APP_PASSWORD" }
+          # Each backend service connects as its own role (Phase 4 Group 1), never as the bootstrap superuser.
+          if ($model.services.migrate.environment.DB_USER -ne 'sms_migrator' -or $model.services.migrate.environment.DB_PASSWORD -ne $migratorPassword) { throw "migrate does not connect as sms_migrator" }
+          if ($model.services.api.environment.DB_USER -ne 'sms_app' -or $model.services.api.environment.DB_PASSWORD -ne $appPassword) { throw "api does not connect as sms_app" }
           foreach ($svc in 'postgres', 'api') {
             foreach ($port in $model.services.$svc.ports) {
               if ($port.host_ip -ne '127.0.0.1') { throw "$svc publishes a port on '$($port.host_ip)', not 127.0.0.1" }

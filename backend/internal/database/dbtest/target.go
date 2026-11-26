@@ -22,6 +22,15 @@ import (
 // prefix are ever dropped.
 const NamePrefix = "sms_test_"
 
+// Environment variables holding the passwords of the application roles for integration tests. They
+// have the same names, and on a local stack the same values, as in infra/local/.env.
+//
+//nolint:gosec // G101 false positive: these are environment variable names, not credentials.
+const (
+	EnvMigratorPassword = "DB_MIGRATOR_PASSWORD"
+	EnvAppPassword      = "DB_APP_PASSWORD"
+)
+
 // ErrUnsafeTarget is returned when the environment is not an explicit, local test setup.
 var ErrUnsafeTarget = errors.New("refusing to create integration-test databases")
 

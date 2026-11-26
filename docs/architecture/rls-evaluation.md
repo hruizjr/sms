@@ -203,13 +203,12 @@ Results:
 
 ## 10. Conditions of adoption (adopted by the owner, RLS-1)
 
-The owner adopted RLS on 2026-11-26 **conditional on all of these requirements**. They apply to tenant-owned control-plane tables (RLS-5 defers data-plane tables). None is implemented yet.
+The owner adopted RLS on 2026-11-26 **conditional on all of these requirements**. They apply to tenant-owned control-plane tables (RLS-5 defers data-plane tables). **Status (Phase 4 Group 1, [decision log §18](../engineering/decision-log.md#18-owner-decisions--database-role-separation-and-tenant-registry-phase-4-group-1-2026-11-26)):** condition 1 (roles), the helper of condition 3 and the catalog guard are implemented; no tenant-owned table exists yet, so conditions 2 and 4 to 8 apply from the first one.
 
-1. **Separate database roles first.** This is already a backend README follow-up.
-   - A migration role owns schemas and tables (DDL) and has `BYPASSRLS` for data migrations on forced tables.
-   - An application runtime role has `LOGIN, NOSUPERUSER, NOBYPASSRLS`, is not the owner, and has only `SELECT, INSERT, UPDATE, DELETE` on the tables it uses. It gets no TRUNCATE, REFERENCES, TRIGGER or ownership.
-   - The bootstrap superuser is not used by the API.
-   - This changes Compose, CI and configuration, so it needs its own approved task, ideally before or with the first tenant table.
+1. **Separate database roles first.** Implemented in Phase 4 Group 1 (`sms_migrator`, `sms_app`).
+   - A migration role owns the tables (DDL). The evaluation proposed giving it `BYPASSRLS` for data migrations on forced tables; **the owner decided otherwise on 2026-11-26** (Phase 4 Group 1, G1-5): `sms_migrator` has **no** `BYPASSRLS`, does not own the schema, and cannot create roles. A data migration on tenant-owned rows therefore needs its own approved approach (an open follow-up in decision log §18).
+   - An application runtime role has `LOGIN, NOSUPERUSER, NOBYPASSRLS`, is not the owner, and has at most `SELECT, INSERT, UPDATE, DELETE` on the tables it uses. It gets no TRUNCATE, REFERENCES, TRIGGER or ownership. (`sms_app` has exactly what each migration grants; for `tenants`: `SELECT`, `INSERT (display_name)`, `UPDATE (status, updated_at)`.)
+   - The bootstrap superuser is not used by the API (the API refuses an unsafe role).
 2. **Every tenant-owned table** has `ENABLE` and `FORCE ROW LEVEL SECURITY` and a `NULLIF`-form policy with matching `USING` and `WITH CHECK`, all written in its migration.
 3. **Context is transaction-scoped only,** set by one application helper as the first statement of the transaction. The helper rejects missing or invalid tenant IDs before any tenant query runs (RLS-2). Session-level settings are never used.
 4. **Application tenant filters stay mandatory** (AGENTS.md §10.7). RLS is the backstop, not the mechanism.
@@ -240,7 +239,7 @@ and [decision log §12.1](../engineering/decision-log.md#121-owner-decisions-on-
 | RLS-1 | **Adopt option B:** RLS as defense-in-depth for tenant-owned control-plane tables, on top of mandatory application tenant filtering, conditional on all of §10 | As recommended |
 | RLS-2 | **`NULLIF` policy expression**, with equivalent `USING` and `WITH CHECK`. Context set transaction-locally by one application helper, which **rejects missing or invalid tenant IDs before any tenant query**. Never session-level | As recommended. The owner made the helper's validation an explicit requirement. The `require_tenant_id()` alternative was not adopted |
 | RLS-3 | **Explicit cross-tenant policies** on a dedicated reporting role with its own credentials and pool; read-only policies; minimum table and column privileges. Cross-tenant writes need separate approval and narrow policies. `BYPASSRLS` only for the migration role and a separately controlled break-glass role. Cross-tenant admin operations audited in the application | As recommended |
-| RLS-4 | **Role separation is a prerequisite**, in a separate, explicitly approved group, before or alongside the first tenant-owned business table. The API must not use the bootstrap superuser | As recommended. **Implementation pending:** not part of Group 7 |
+| RLS-4 | **Role separation is a prerequisite**, in a separate, explicitly approved group, before or alongside the first tenant-owned business table. The API must not use the bootstrap superuser | As recommended. **Implemented in Phase 4 Group 1** (decision log §18), with the migration role **without** `BYPASSRLS` (owner decision G1-5) |
 
 **Deferred:**
 
