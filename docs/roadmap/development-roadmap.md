@@ -49,7 +49,7 @@ Phase 11 Scale-out and expansion (more telcos, analytics, broker, features)
 **Goal:** replace unknowns with facts and agree the architecture for the MVP.
 **Status:** Ongoing. Phase 2A (discovery preparation package) is merged (PR #2). The actual external
 discovery (telcos, counsel, customers) and Phase 2B (SRS, domain model, system architecture, threat model) are
-**not yet done**; no acceptance criterion below is met.
+**not yet done**. One acceptance criterion below is met (MVP scope, 2026-11-26); **Phase 2 is not complete**.
 **Depends on:** owner and external parties (telcos, counsel, prospective customers).
 **Work:**
 - Collect traffic data (traffic capacity discovery); telco technical answers (checklist); regulatory
@@ -62,7 +62,10 @@ discovery (telcos, counsel, customers) and Phase 2B (SRS, domain model, system a
 **Discovery package:** [Phase 2 discovery guide](../discovery/phase2-discovery-guide.md); progress against the
 criteria below is tracked in the [Phase 2 exit checklist](../discovery/phase2-exit-checklist.md).
 **Acceptance criteria:**
-- [ ] MVP scope approved in writing by the owner.
+- [x] MVP scope approved in writing by the owner. **Met 2026-11-26:** all 34 capabilities decided (21 MVP,
+      8 Post-MVP, 5 Deferred) with production gates PG-1 to PG-8 ([MVP scope worksheet](../discovery/mvp-scope-worksheet.md#owner-approval-of-the-mvp-scope-2026-11-26);
+      [decision log §14](../engineering/decision-log.md#14-owner-decisions--mvp-scope-phase-2-ex-1-2026-11-26)). Launch customers TBD until pilot discovery (EX-1 amended;
+      D-061).
 - [ ] Traffic figures for launch customers recorded with sources, or an explicit decision to proceed with
       provisional targets.
 - [ ] At least one telco's technical specification received, or an explicit decision to proceed

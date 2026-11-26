@@ -12,7 +12,7 @@
 | Current phase | **Phase 3 — Walking skeleton: complete (2026-11-26).** All eight groups are merged: 0 (decisions), 1 (Go API skeleton), 2 (PostgreSQL foundation), 3 (OpenAPI contract for the public messages API), 4 (Go API contract integration: Go types and Chi routes generated from the contract; no endpoint mounted), 5 (frontend foundation: client portal shell and shared UI package; no features, no API calls), 6 (local development stack and expanded CI, PR #10) and 7 (PostgreSQL Row-Level Security evaluation, PR #11; the owner accepted ADR-0010 for tenant-owned control-plane tables) (groups renumbered by the owner, [decision log §9](docs/engineering/decision-log.md#9-owner-decisions--go-contract-integration-phase-3-group-4-2026-11-25)). Closure: [decision log §13](docs/engineering/decision-log.md#13-phase-3-closure-2026-11-26). **Phase 4 is not authorized yet.** See [decision log §7](docs/engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25). |
 | Authorized scope | **Phase 3 walking skeleton only** (owner approval 2026-11-25), now complete. No later phase is authorized: Phase 4, and any group within it (including database role separation, RLS-4), needs explicit owner approval. Each implementation group starts only after the previous group is reviewed and merged. All other ADRs need separate owner approval. |
 | Decision authority | The project owner (a single human). Agents propose; the owner decides. |
-| Last updated | 2026-11-26 (Phase 3 closure) |
+| Last updated | 2026-11-26 (Phase 3 closure; §12 MFA wording for owner decision D-021) |
 
 ---
 
@@ -726,8 +726,9 @@ Authoritative detail: [security baseline](docs/security/security-baseline.md) (s
   or a secret manager at runtime. `.env` files are git-ignored; only `.env.example` with placeholders is
   committed. A leaked secret is rotated, not just deleted from git.
 - **Authentication:** portal users via secure sessions (HttpOnly, Secure, SameSite cookies); passwords
-  hashed with a modern adaptive algorithm (Argon2id proposed); **MFA mandatory for all Super Admin
-  users** and available for clients. API clients use API keys, stored only as hashes and shown once.
+  hashed with a modern adaptive algorithm (Argon2id proposed); **MFA mandatory for all human internal
+  admin accounts** (Super Admin, Operations, Finance; D-021) and available for clients. API clients use
+  API keys, stored only as hashes and shown once.
 - **Authorization:** deny by default; role-based permissions checked server-side on every request;
   the frontend hides controls for convenience only — it is never the security boundary.
 - **Input validation:** validate type, length, format, and range at every boundary (HTTP, file imports,
