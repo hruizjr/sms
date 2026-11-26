@@ -175,7 +175,7 @@ Use the [MVP scope worksheet](mvp-scope-worksheet.md) to classify capabilities.
 | D-078 | Who reviews **abuse alerts, sender IDs, and campaign approvals** day to day? | Manual approval workflows need staff. | Unknown. Campaign approvals not needed in the MVP (MVP-13 deferred, 2026-11-25). | Staffing plan. | Owner, [Ops](questionnaires/operations.md) | P1 | MVP scope |
 | D-077 | **Security responsibility split** and incident escalation between us, telcos, and customers. | Incident handling and contracts. | Unknown. | Telco and customer contract terms; owner policy. | [Ops](questionnaires/operations.md), [Telcos](questionnaires/telco-core.md) | P2 | Launch |
 | D-079 | **Customer support** model (hours, channels, tiers). | Staffing and tooling. | Unknown. | Owner decision. | Owner, [Ops](questionnaires/operations.md) | P2 | Launch |
-| D-141 | Adopt PostgreSQL Row-Level Security? | Defense-in-depth for tenant isolation. | Evaluation planned in Phase 3 (ADR-0010). | Evaluation results; owner decision. | Owner | P2 | Architecture |
+| D-141 | Adopt PostgreSQL Row-Level Security? | Defense-in-depth for tenant isolation. | Evaluation submitted 2026-11-26 ([RLS evaluation](../architecture/rls-evaluation.md)); recommendation: adopt with conditions. | Owner decision (RLS-1 to RLS-5). | Owner | P2 | Architecture |
 
 ## G. Items needing no external discovery
 

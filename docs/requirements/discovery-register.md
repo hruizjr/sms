@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — living document | Project owner | 2026-11-26 (2026-11-26: D-089 updated for MVP-11 and MVP-12. 2026-11-25: owner decisions recorded on D-023, D-025 and D-087 (campaign approval deferred from the MVP; policy open), D-089 (bulk sending deferred; one recipient per portal send; MVP-13 deferred), D-094a–e, D-096 (customer-visible part), D-099 (status part), D-143–D-147 for the public API contract; ADR-0018 accepted and ADR-0021 accepted with a limited scope — see the decision log) |
+| Draft — living document | Project owner | 2026-11-26 (2026-11-26: D-141 evaluation submitted (still open). D-089 updated for MVP-11 and MVP-12. 2026-11-25: owner decisions recorded on D-023, D-025 and D-087 (campaign approval deferred from the MVP; policy open), D-089 (bulk sending deferred; one recipient per portal send; MVP-13 deferred), D-094a–e, D-096 (customer-visible part), D-099 (status part), D-143–D-147 for the public API contract; ADR-0018 accepted and ADR-0021 accepted with a limited scope — see the decision log) |
 
 This register lists everything we know, assume, or still need to find out. **It is the authority on
 what is known.** AI agents must not treat any item as confirmed unless it is in §1 with evidence.
@@ -189,7 +189,7 @@ is legal advice. Public sources consulted so far are listed in the
 | ID | Decision | Notes |
 | -- | -------- | ----- |
 | D-140 | Selection of a headless accessible UI primitives library (if any) for complex interactions. | Direction in ADR-0013 (accepted 2026-11-25); evaluate maintenance, accessibility, licence, compatibility, footprint. **Owner decision 2026-11-25: deferred.** No package added until approved. |
-| D-141 | Adoption of PostgreSQL Row-Level Security after evaluation. | ADR-0010 lists the evaluation requirements (pooling, transaction-scoped context, roles, performance, tests). |
+| D-141 | Adoption of PostgreSQL Row-Level Security after evaluation. | ADR-0010 lists the evaluation requirements (pooling, transaction-scoped context, roles, performance, tests). **Evaluation submitted 2026-11-26 (Phase 3 Group 7):** [RLS evaluation](../architecture/rls-evaluation.md). The requirements were met with pgxpool on PostgreSQL 18.7, under conditions (separate roles, forced RLS, transaction-scoped context); external poolers were not tested. The agent recommends adopting option B with conditions. **Open: owner decision** (RLS-1 to RLS-5); ADR-0010 remains Proposed. |
 | D-142 | Acceptance of each Proposed ADR. | See the review summary in the [decision log](../engineering/decision-log.md#5-review-summary-2026-11-24). |
 | D-143 | **Public API key presentation and permission names**: `Authorization: Bearer <key>` vs. a custom header such as `X-API-Key`; permission names. | **Owner decision 2026-11-25 (PR #7 review):** Bearer API key authentication (`Authorization: Bearer <key>`) with the permissions `messages:send` and `messages:read`. Other API key design details remain in security baseline S-2/S-3. |
 | D-144 | **Maximum message length**: maximum segments per message accepted by the public API. | **Owner decision 2026-11-25 (PR #7 review):** maximum API message length 1,600 characters. The maximum SMS segment count is **deferred** to product/provider policy (depends on D-105); above it the API returns `422 message-too-long`. |

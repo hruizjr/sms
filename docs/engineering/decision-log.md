@@ -75,6 +75,9 @@ changed.
 **In Phase 3 Group 6 (2026-11-26) the owner approved the local development stack and expanded CI** (see
 [§11](#11-owner-decisions--local-development-stack-and-expanded-ci-phase-3-group-6-2026-11-26)); no ADR
 status changed.
+**In Phase 3 Group 7 (2026-11-26) the owner approved the PostgreSQL Row-Level Security evaluation spike**
+(see [§12](#12-owner-decisions--rls-evaluation-spike-phase-3-group-7-2026-11-26)). The evaluation is
+submitted for review; **ADR-0010 remains Proposed** until the owner's adoption decision.
 
 | ADR | Title | Status |
 | --- | ----- | ------ |
@@ -433,6 +436,10 @@ spike). D remains an option only if a customer contract requires dedicated infra
 
 **Operational cost** — Low to moderate. **Missing information** — RLS evaluation results; dedicated
 infrastructure requirements; sub-account/reseller hierarchy (D-064).
+
+**Evaluation (2026-11-26, Phase 3 Group 7):** results and a recommendation are in
+[RLS evaluation](../architecture/rls-evaluation.md), submitted for the owner's review. This ADR's status
+is unchanged (Proposed) until the owner decides (§12).
 
 ---
 
@@ -1080,3 +1087,63 @@ in CI; Compose v5.7.1, 2026-11-26), all passed:
 **Sandbox note.** The agent's environment intercepts HTTPS with its own certificate authority. Local image
 builds therefore used an uncommitted Compose override that adds that certificate to the *build* stage
 only. CI builds the committed Dockerfile unchanged.
+
+---
+
+## 12. Owner decisions — RLS evaluation spike (Phase 3 Group 7, 2026-11-26)
+
+Recorded from the owner's approval of the Group 7 proposal. **The approval covers the evaluation only.**
+No ADR status changed: **ADR-0010 remains Proposed**, and D-141 stays open until the owner reviews the
+evaluation and decides on adoption. No dependency was added; no migration, business table, runtime role,
+configuration, API, contract or frontend change was made.
+
+**Approved scope:** a PostgreSQL 18.7 RLS evaluation as a Phase 3 group, with committed, reproducible
+integration-tagged tests on synthetic, test-only tables. It covers:
+
+- transaction-scoped tenant context and pgxpool connection reuse;
+- fail-closed behaviour and RLS bypass conditions;
+- cross-tenant access models and the documented RLS pitfalls;
+- pgx statement-cache behaviour relevant to future sqlc queries, without adding sqlc product queries.
+
+It also includes a manual, indicative performance evaluation that is never a CI gate. PgBouncer and other external poolers are documented as not tested. The outdated Group 6 status references are corrected.
+
+**Additional requirements and how they were met:**
+
+| ID | Requirement | Implementation |
+| -- | ----------- | -------------- |
+| A | Test isolation: roles are server-wide, so local runs use a separate disposable instance, never the Compose stack's persistent volume; roles are NOLOGIN, uniquely named, cleaned up and verified absent; existing roles and persistent objects are never modified | The tests need the build tags `integration,rlseval` and `RLS_EVAL_DISPOSABLE_SERVER=1`, and refuse a server whose maintenance database has been migrated. `scripts/rls-evaluation.sh` starts a throwaway, tmpfs-backed container; CI uses its ephemeral service. Roles are `rlseval_<run>_<fixture>_<purpose>`, NOLOGIN, dropped in cleanup; `TestMain`, the script and CI fail if any remain ([evaluation §2](../architecture/rls-evaluation.md#2-method-and-test-isolation)) |
+| B | Threat model: the tenant GUC is controlled by trusted application code; a compromised credential or arbitrary SQL can set another tenant | [Evaluation §3](../architecture/rls-evaluation.md#3-threat-model-owner-requirement-b), with a test demonstrating it |
+| C | Compare explicit cross-tenant policies with a dedicated BYPASSRLS role; recommend least privilege; document auditing; implement neither in product code | [Evaluation §6](../architecture/rls-evaluation.md#6-cross-tenant-access-owner-requirement-c) |
+| D | Performance manual and indicative; no CI threshold | `BenchmarkRLSOverhead`, run only with `-bench` through the script ([evaluation §12](../architecture/rls-evaluation.md#12-performance-owner-requirement-d-indicative-only)) |
+
+**Restrictions honoured:**
+
+- no business tables or production migrations;
+- no runtime role or configuration changes;
+- no tenant, identity, authentication, RBAC, billing or messaging code;
+- no API or frontend changes;
+- no new infrastructure;
+- no product-code `WithTenant` helper (a test-only sketch exists);
+- the testing standards are not updated as though RLS were adopted. The proposed changes are recorded in [evaluation §10](../architecture/rls-evaluation.md#10-proposed-conditions-for-adoption-r).
+
+**CI change:** the "Go test and build" job runs the evaluation tests against its own PostgreSQL service
+and checks that no test role remains. `go vet` and golangci-lint also cover the `rlseval` build tag. The
+required-check names are unchanged.
+
+**Evaluation results (summary; details in the [evaluation](../architecture/rls-evaluation.md)):**
+
+- **Context and pooling:** transaction-scoped context with pgxpool is safe. Session-level context leaks between requests and must never be used.
+- **Fail closed:** the `NULLIF` policy form fails closed consistently.
+- **Who bypasses RLS:** superusers, owners of unforced tables and BYPASSRLS roles bypass it. The application role cannot.
+- **The current setup gets no protection.** The API currently connects as the bootstrap superuser, so RLS would give no protection until roles are separated.
+- **Pitfalls found:** unique constraints, foreign keys, views, `SECURITY DEFINER` functions and `TRUNCATE` need the mitigations listed in the evaluation.
+- **Caching:** the statement and plan caches follow the context in all pgx execution modes.
+- **Performance:** no measurable policy overhead in an indicative 1-million-row test; one extra statement per transaction to set the context.
+
+**Pending owner decisions** RLS-1 to RLS-5 ([evaluation §11](../architecture/rls-evaluation.md#11-owner-decisions-requested)):
+
+- whether to adopt (the agent recommends option B with conditions);
+- the policy expression;
+- the cross-tenant model;
+- scheduling of the role separation;
+- the data-plane tables.

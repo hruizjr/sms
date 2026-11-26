@@ -4,9 +4,11 @@ version: "2"
 
 run:
   timeout: 5m
-  # Also lint the database integration tests (files with //go:build integration).
+  # Also lint the database integration tests (files with //go:build integration) and the RLS
+  # evaluation tests (//go:build integration && rlseval; Phase 3 Group 7).
   build-tags:
     - integration
+    - rlseval
 
 linters:
   default: standard # errcheck, govet, ineffassign, staticcheck, unused

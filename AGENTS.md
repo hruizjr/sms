@@ -9,10 +9,10 @@
 | Field | Value |
 | ----- | ----- |
 | Project | Enterprise A2P SMS Platform (Philippines) |
-| Current phase | **Phase 3 — Walking skeleton: authorized and in progress.** Groups 0 (decisions), 1 (Go API skeleton), 2 (PostgreSQL foundation), and 3 (OpenAPI contract for the public messages API) are merged, as are Group 4 (Go API contract integration: Go types and Chi routes generated from the contract; no endpoint mounted) and Group 5 (frontend foundation: client portal shell and shared UI package; no features, no API calls). Group 6 (local development stack and expanded CI: Docker Compose with PostgreSQL, a one-off migration service and the API; secret scanning and dependency review) is submitted for owner review (groups renumbered by the owner, [decision log §9](docs/engineering/decision-log.md#9-owner-decisions--go-contract-integration-phase-3-group-4-2026-11-25)). See [decision log §7](docs/engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25). |
+| Current phase | **Phase 3 — Walking skeleton: authorized and in progress.** Groups 0 (decisions), 1 (Go API skeleton), 2 (PostgreSQL foundation), and 3 (OpenAPI contract for the public messages API) are merged, as are Group 4 (Go API contract integration: Go types and Chi routes generated from the contract; no endpoint mounted) and Group 5 (frontend foundation: client portal shell and shared UI package; no features, no API calls). Group 6 (local development stack and expanded CI: Docker Compose with PostgreSQL, a one-off migration service and the API; secret scanning and dependency review) is merged (PR #10). Group 7 (PostgreSQL Row-Level Security evaluation spike, ADR-0010 / D-141: tests on synthetic tables and a written evaluation; no product code; ADR-0010 remains Proposed) is submitted for owner review (groups renumbered by the owner, [decision log §9](docs/engineering/decision-log.md#9-owner-decisions--go-contract-integration-phase-3-group-4-2026-11-25)). See [decision log §7](docs/engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25). |
 | Authorized scope | **Phase 3 walking skeleton only** (owner approval 2026-11-25). Each implementation group starts only after the previous group is reviewed and merged. Later phases and all other ADRs need separate owner approval. |
 | Decision authority | The project owner (a single human). Agents propose; the owner decides. |
-| Last updated | 2026-11-26 (Phase 3 Group 6: local development stack and expanded CI) |
+| Last updated | 2026-11-26 (Phase 3 Group 7: RLS evaluation spike) |
 
 ---
 
@@ -50,8 +50,9 @@ business tables, local Docker Compose database, integration tests), the draft Op
 public messages API in `contracts/openapi/`, Go types and Chi routes generated from that contract in
 `backend/internal/publicapi/` (no `/v1` endpoint is mounted or implemented), the frontend foundation in
 `frontend/` (client portal shell with one placeholder page, shared UI package, no features, no API calls),
-and — once Group 6 is merged — a local Docker Compose stack in `infra/` (PostgreSQL, a one-off migration
-service, the API) with expanded CI (stack check, secret scan, dependency review). The Phase 3 walking skeleton (technical
+a local Docker Compose stack in `infra/` (PostgreSQL, a one-off migration service, the API) with expanded
+CI (stack check, secret scan, dependency review), and — in review as Group 7 — the Row-Level Security
+evaluation tests in `backend/internal/database/rlseval/` (synthetic test-only tables; no product code). The Phase 3 walking skeleton (technical
 foundation only) is added one reviewed group at a time. **No business functionality exists or is authorized.**
 
 **Verified facts:** almost none. The business *intends* to become an A2P SMS aggregator. No telco
@@ -273,7 +274,7 @@ frontend/          React applications (pnpm workspace)                   — cli
 contracts/         OpenAPI specs, event and webhook schemas              — draft public API v1 (Group 3)
 backend/internal/publicapi/  Go code GENERATED from contracts/openapi/  — never edit by hand (Group 4)
 infra/             Docker, local dev stack, observability config         — backend image + Compose stack (Group 6)
-scripts/           Helper scripts                                        — local stack check (Group 6)
+scripts/           Helper scripts                                        — local stack check (Group 6), RLS evaluation (Group 7)
 tests/             E2E, load, provider-contract suites                   — empty
 docs/              All project documentation (index: docs/README.md)
 .github/           PR template, task template

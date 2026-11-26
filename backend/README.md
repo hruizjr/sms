@@ -30,7 +30,8 @@ backend/
 └── internal/
     ├── config/                 Environment configuration: parsing, defaults, validation
     ├── database/               PostgreSQL pool (pgxpool): Open, Ping, InTx, Close
-    │   └── dbtest/             Integration-test helper: throwaway databases (build tag "integration")
+    │   ├── dbtest/             Integration-test helper: throwaway databases (build tag "integration")
+    │   └── rlseval/            RLS evaluation spike: tests and benchmark only, synthetic tables (tags "integration,rlseval")
     ├── migration/              goose runner: advisory lock, one transaction per migration
     ├── httpserver/             Router, /healthz and /readyz, problem responses, listeners, shutdown;
     │                           mountPublicAPI (generated /v1 routes; not called by the production router)
@@ -442,6 +443,13 @@ curl -s http://127.0.0.1:9090/metrics | grep sms_http
   tables), `/readyz` with the database available and unavailable, and the `migrate` command end to end.
 - CI runs both, against a PostgreSQL 18.7 service container, plus smoke tests of the built `migrate`
   and `api` binaries.
+- **RLS evaluation tests** (`internal/database/rlseval/`, Phase 3 Group 7) are the evidence for the
+  owner's Row-Level Security decision ([RLS evaluation](../docs/architecture/rls-evaluation.md)); they are
+  not product code. They create server-wide NOLOGIN roles, so they need the build tags
+  `integration,rlseval`, `RLS_EVAL_DISPOSABLE_SERVER=1` and a never-migrated maintenance database, and they
+  are **never** run against the Compose stack's database. Run them with `bash scripts/rls-evaluation.sh`
+  from the repository root: it starts and removes its own disposable PostgreSQL container. CI runs them
+  against its ephemeral service container. `RUN_BENCHMARKS=1` adds the manual, indicative benchmark.
 
 ## Checks (same commands as CI)
 
@@ -449,10 +457,11 @@ Run from `backend/`. CI uses the pinned versions below (see `.github/workflows/b
 
 ```bash
 gofmt -l .                                   # must print nothing
-go vet ./... && go vet -tags integration ./...
+go vet ./... && go vet -tags integration ./... && go vet -tags integration,rlseval ./...
 go test ./...
 go test -race ./...                          # needs a C compiler (cgo); on Windows, run in CI or WSL
 APP_ENV=test go test -tags integration -race ./...   # needs local PostgreSQL and the DB_* variables
+bash ../scripts/rls-evaluation.sh                     # RLS evaluation tests; needs Docker (own disposable server)
 go build -o bin/api ./cmd/api && go build -o bin/migrate ./cmd/migrate
 go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 run ./...
 go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
