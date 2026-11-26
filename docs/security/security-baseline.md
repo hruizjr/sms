@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — pending owner review | Project owner | 2026-11-24 |
+| Draft — pending owner review (MFA, MVP roles and API key scopes in §3 updated for owner decisions of 2026-11-26) | Project owner | 2026-11-26 |
 
 This baseline sets the minimum security principles for all work. It is **not** a complete security
 program; §11 lists the security engineering still required. Nothing here is legal advice.
@@ -42,11 +42,18 @@ program; §11 lists the security engineering still required. Nothing here is leg
   idle timeout; re-authentication for sensitive actions (credit adjustment, API key creation, pricing).
 - **Passwords:** hashed with Argon2id (proposed) using parameters from current guidance; breached-password
   and minimum-length checks; rate-limited login with lockout/backoff.
-- **MFA:** mandatory for every Super Admin account; available (possibly mandatory by policy) for clients.
+- **MFA:** mandatory for **every human internal admin account** — Super Admin, Operations and Finance (owner
+  decision D-021, widened on 2026-11-26, MVP-04); available (possibly mandatory by policy) for clients.
 - **API keys:** random, high-entropy, with a visible prefix for identification; stored only as hashes;
-  shown once; scoped (permissions, optional IP allowlist); revocable; last-used tracking.
+  shown once; scoped (permissions, optional IP allowlist); revocable; last-used tracking. **MVP** (owner,
+  2026-11-26, MVP-06): create, label, show once, store hashed and revoke, with the contract scopes
+  `messages:send` and `messages:read`; IP allowlisting and advanced scope management are deferred.
 - **Authorization:** RBAC with deny-by-default; every endpoint declares its required permission; checks
-  happen server-side in a central mechanism, plus tenant scoping. Role design is an open task.
+  happen server-side in a central mechanism, plus tenant scoping. Role design is an open task. **MVP roles**
+  (owner, 2026-11-26): client **Owner** (manages users and API keys), **Sender** (sending functions) and
+  **Viewer** (read-only), with no separate Billing role (MVP-03); internal **Super Admin**, **Operations** and
+  **Finance**, with least privilege (MVP-04). Client financial history is initially visible to client Owners
+  and authorized Finance staff only (MVP-22). Detailed permissions belong in the RBAC design (Phase 2B).
 - **Admin access to tenant data:** read access is logged; any "act as customer" (impersonation) feature
   requires explicit justification, is time-limited, and is audited.
 - **Separation of duties (proposed):** large credit adjustments and pricing changes may require a second

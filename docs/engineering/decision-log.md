@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Living document — nine ADRs accepted 2026-11-25; others Proposed | Project owner | 2026-11-25 |
+| Living document — twelve ADRs accepted (2026-11-25 and ADR-0010 on 2026-11-26); others Proposed | Project owner | 2026-11-26 |
 
 ## 1. What an ADR is and why we use them
 
@@ -82,6 +82,8 @@ evaluation, the owner accepted ADR-0010 on 2026-11-26** (decisions RLS-1 to RLS-
 RLS strategy for high-volume **data-plane** tables remains deferred.
 **Phase 3 was closed on 2026-11-26** (see [§13](#13-phase-3-closure-2026-11-26)). No ADR status changed with
 the closure.
+**On 2026-11-26 the owner approved the MVP scope** (Phase 2 exit criterion EX-1, see
+[§14](#14-owner-decisions--mvp-scope-phase-2-ex-1-2026-11-26)). No ADR status changed.
 
 | ADR | Title | Status |
 | --- | ----- | ------ |
@@ -1239,3 +1241,33 @@ reported, using Docker Desktop 4.100.1, Docker Engine 29.9.3 and Docker Compose 
 - **Phase 2 exit criteria:** still open ([Phase 2 exit checklist](../discovery/phase2-exit-checklist.md)).
 - **Native Windows PowerShell steps** in `backend/README.md`: not separately validated.
 - **Phase 4:** needs explicit owner authorization (`AGENTS.md`, "Authorized scope").
+
+---
+
+## 14. Owner decisions — MVP scope (Phase 2, EX-1, 2026-11-26)
+
+On 2026-11-26 the owner reviewed the 25 capabilities still undecided in the
+[MVP scope worksheet](../discovery/mvp-scope-worksheet.md) in five batches and approved all 34 MVP capability
+decisions, the related discovery-register recordings, an amendment to Phase 2 exit criterion EX-1 and the
+production gates. The worksheet's
+[Owner approval of the MVP scope](../discovery/mvp-scope-worksheet.md#owner-approval-of-the-mvp-scope-2026-11-26)
+section is the authoritative record of the scope; this section summarizes it. **No ADR status changed.** This
+is a scope decision only: it does not authorize implementation or Phase 4, and it does not close Phase 2.
+
+| Topic | Decision |
+| ----- | -------- |
+| Scope | **21 MVP** (MVP-01, 03, 04, 05, 06, 07, 09, 10, 14, 16, 20, 21, 22, 25, 27, 28, 29, 30, 32, 33, 34), **8 Post-MVP** (MVP-02, 11, 12, 15, 17, 18, 19, 23), **5 Deferred** (MVP-08, 13, 24, 26, 31). MVP-13 counts as Deferred |
+| Client roles (MVP-03) | Owner (manages users and API keys), Sender (sending functions), Viewer (read-only); no separate Billing role in the MVP |
+| Internal roles (MVP-04) | Super Admin, Operations, Finance; least privilege; **MFA mandatory for all human internal admin accounts** (D-021, widened) |
+| Public API (MVP-06, MVP-07) | Core API keys with the `messages:send` and `messages:read` scopes; single-message submission with a mandatory idempotency key; the same key with a different payload is rejected; no promise of exactly-once provider delivery |
+| Money (MVP-10, 20, 21, 22) | Prepaid only with an immutable credit ledger and manual Finance top-ups; one versioned per-segment rate per client; one authoritative segment calculation for preview and billing; financial history for client Owners and authorized Finance staff. **The billing rules stay open** (D-080, D-081, D-083, D-092, D-093, D-096; ADR-0011, ADR-0019) and block implementation |
+| Providers (MVP-25, 26, 27, 33) | Simulator first; Operations-controlled routing; no real telco adapter without separate approval; no automatic failover; internal usage summary, with actual telco reconciliation before production billed traffic |
+| Data (MVP-16, 34) | Append-only status history, masked numbers, no message content by default; retention classes from the first table, automated expiry before production with legally approved periods |
+| EX-1 amendment | Launch customers may remain **TBD until pilot discovery**; at least one validated pilot customer before production onboarding or traffic. D-061 stays open with this trigger |
+| Production gates | **PG-1** no real telco adapter without approval and official documentation · **PG-2** production provider integration gated by the regulatory decisions · **PG-3** actual telco reconciliation before production billed traffic · **PG-4** automated retention expiry before production · **PG-5** no sending with a missing or unapproved rate · **PG-6** the simulator never serves production customer traffic or generates customer-billable usage · **PG-7** production-critical alert coverage and D-066 ownership resolved before production (no automatic 24/7 staffing requirement) · **PG-8** at least one validated pilot customer |
+| Discovery register | Approved: D-020, D-021 (widened), D-024, D-026, D-029. Partly decided: D-064, D-065, D-073, D-078, D-082, D-084. D-089 decided for scope. Notes: D-061, D-063, D-066, D-088, D-091, D-099 |
+
+**Still open** (not decided here): the billing rules above; D-095 and D-097; webhook semantics (D-099); legal
+questions (D-122, D-124, D-130, D-088, D-113; EX-4); launch-customer identity (D-061); D-066 and D-078 staffing.
+Phase 2 remains open: EX-1 and EX-13 are satisfied
+([Phase 2 exit checklist](../discovery/phase2-exit-checklist.md)).

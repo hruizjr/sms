@@ -562,6 +562,9 @@ test('MVP-11 saved contacts/groups and MVP-12 campaign scheduling are deferred (
   assert.match(brief, /\*\*Campaign scheduling\*\* — deferred .* A separate scheduled-single-message feature is not ruled out/);
   const register = docText('../docs/requirements/discovery-register.md');
   assert.match(register.split('\n').find((l) => l.startsWith('| D-089 |')), /Owner decision 2026-11-26/);
-  // D-078 (reviewer and operational ownership) stays open and unchanged by these decisions.
-  assert.doesNotMatch(register.split('\n').find((l) => l.startsWith('| D-078 |')), /2026-11-26/);
+  // D-078 (reviewer and operational ownership) stays open: MVP-11/12 did not decide it, and the EX-1 scope
+  // approval of 2026-11-26 only names the internal roles (MVP-04).
+  const d078 = register.split('\n').find((l) => l.startsWith('| D-078 |'));
+  assert.match(d078, /Item remains open\./);
+  assert.match(d078, /Staff numbers and turnaround remain open\. \|$/);
 });
