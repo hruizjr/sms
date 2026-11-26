@@ -8,6 +8,15 @@
 // GO-2026-6785 (fixed in v0.149.0); all are crashes or panics on crafted input. The generated output
 // is byte-identical with v0.142.0, v0.148.0 and v0.149.0. Drop this override when the generator itself
 // requires a fixed version.
+//
+// sqlc v1.31.1 (Phase 4 Group 1, decision log §18) is pinned as a second tool. Four of its indirect
+// dependencies are raised to their first releases fixing known advisories, so that govulncheck and the
+// "Dependency review" job report nothing: golang.org/x/net v0.62.0 (GO-2026-6603, -6610, -6611, -6612,
+// -6617, -6860, -6866), google.golang.org/grpc v1.83.2 (GO-2026-6061, -6348, -6443 /
+// GHSA-2v4p-qf9q-27wj), github.com/google/cel-go v0.30.0 (GO-2026-6094 / GHSA-gcjh-h69q-9w9g), and
+// golang.org/x/text (GO-2026-6629; v0.43.0 is what x/net v0.62.0 requires). Other golang.org/x
+// modules moved with them by minimum version selection. The oapi-codegen output is byte-identical,
+// and sqlc's output is checked by CI. Drop these overrides when sqlc itself requires fixed versions.
 
 module github.com/hruizjr/sms/backend/tools
 
@@ -33,7 +42,7 @@ require (
 	github.com/go-openapi/jsonpointer v0.23.1 // indirect
 	github.com/go-openapi/swag/jsonname v0.26.0 // indirect
 	github.com/go-sql-driver/mysql v1.9.3 // indirect
-	github.com/google/cel-go v0.28.0 // indirect
+	github.com/google/cel-go v0.30.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
@@ -68,14 +77,14 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b // indirect
 	golang.org/x/mod v0.41.0 // indirect
-	golang.org/x/net v0.60.0 // indirect
-	golang.org/x/sync v0.23.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/text v0.42.0 // indirect
-	golang.org/x/tools v0.49.0 // indirect
+	golang.org/x/net v0.62.0 // indirect
+	golang.org/x/sync v0.24.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/tools v0.51.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
-	google.golang.org/grpc v1.83.1 // indirect
+	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

@@ -1434,10 +1434,11 @@ after this one is reviewed and merged. (This section follows §17, which is reco
   refuses (changing nothing) if a role has memberships, owns the database or a schema, or if `public` contains
   objects owned by another role. It transfers only goose's version table on old volumes.
 - **sqlc pin:** sqlc v1.31.1 in `backend/tools/go.mod` (builds without cgo, so the generation command also runs
-  on Windows). As with kin-openapi (decision log §9), three of its indirect dependencies are raised to their
-  first fixed releases so that `govulncheck` reports nothing: `golang.org/x/net` v0.60.0, `golang.org/x/text`
-  v0.42.0 and `google.golang.org/grpc` v1.83.1. The oapi-codegen output is byte-identical. Nothing in
-  `backend/tools` is linked into the API or migrate binaries.
+  on Windows). As with kin-openapi (decision log §9), four of its indirect dependencies are raised to their
+  first fixed releases so that `govulncheck` and the "Dependency review" job report nothing:
+  `golang.org/x/net` v0.62.0, `google.golang.org/grpc` v1.83.2, `github.com/google/cel-go` v0.30.0 and
+  `golang.org/x/text` v0.43.0 (advisories listed in `backend/tools/go.mod`). The oapi-codegen output is
+  byte-identical. Nothing in `backend/tools` is linked into the API or migrate binaries.
 - **CI:** role provisioning (run twice), sqlc regeneration and determinism check (Linux and Windows), the RLS
   catalog guard as a named step, `migrate` smoke-tested as `sms_migrator` and refused as the superuser, the API
   smoke-tested as `sms_app` and refused as the superuser and as `sms_migrator`, a govulncheck scan of sqlc, and
