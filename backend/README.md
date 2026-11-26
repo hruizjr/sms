@@ -444,8 +444,8 @@ curl -s http://127.0.0.1:9090/metrics | grep sms_http
 - CI runs both, against a PostgreSQL 18.7 service container, plus smoke tests of the built `migrate`
   and `api` binaries.
 - **RLS evaluation tests** (`internal/database/rlseval/`, Phase 3 Group 7) are the evidence for the
-  owner's Row-Level Security decision ([RLS evaluation](../docs/architecture/rls-evaluation.md)); they are
-  not product code. They create server-wide NOLOGIN roles, so they need the build tags
+  owner's Row-Level Security decision ([RLS evaluation](../docs/architecture/rls-evaluation.md); ADR-0010
+  accepted 2026-11-26); they are not product code. They create server-wide NOLOGIN roles, so they need the build tags
   `integration,rlseval`, `RLS_EVAL_DISPOSABLE_SERVER=1` and a never-migrated maintenance database, and they
   are **never** run against the Compose stack's database. Run them with `bash scripts/rls-evaluation.sh`
   from the repository root: it starts and removes its own disposable PostgreSQL container. CI runs them
@@ -478,9 +478,15 @@ govulncheck reports type errors in the standard library rather than results.
   [`infra/local/README.md`](../infra/local/README.md), with Docker Desktop.
 - **Readiness logging:** review the access-log severity of `/readyz` 503 responses (currently `ERROR`,
   per the Group 1 rule for status ≥ 500).
-- **Database roles:** before any production business schema, separate the migration role (DDL) from the
-  runtime role used by the API (DML only, least privilege). Today both executables use the same
-  `DB_USER`.
+- **Database roles (required, owner decision RLS-4, 2026-11-26):** RLS is adopted for tenant-owned
+  control-plane tables (ADR-0010). Before or alongside the first tenant-owned table, a separately approved
+  group must separate:
+  - the migration role (DDL, table owner, `BYPASSRLS`);
+  - the application runtime role (DML only; not owner, superuser or `BYPASSRLS`);
+  - the reporting role.
+
+  Today both executables connect as the same `DB_USER`, which in Compose and CI is the PostgreSQL bootstrap
+  superuser. The API must not keep doing so.
 
 ## Rules
 

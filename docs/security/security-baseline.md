@@ -55,11 +55,21 @@ program; §11 lists the security engineering still required. Nothing here is leg
 ## 4. Tenant isolation
 
 - Tenant derived from the authenticated identity only.
-- Database scoping by `tenant_id` on every tenant-owned record; Row-Level Security as defense-in-depth
-  **if adopted after evaluation** (ADR-0010). RLS is **not** a substitute for application authorization:
-  it only filters rows and knows nothing about roles or permissions. If adopted, tenant context is set per
-  transaction (never per pooled session), the application role must not own tables, be a superuser, or
-  hold `BYPASSRLS`, and policies must fail closed when context is missing.
+- Database scoping by `tenant_id` on every tenant-owned record.
+- **Row-Level Security is adopted** as defense-in-depth for **tenant-owned control-plane tables** (ADR-0010
+  accepted 2026-11-26, after the [RLS evaluation](../architecture/rls-evaluation.md)). High-volume data-plane
+  tables are deferred (RLS-5).
+  - **What RLS is not.** It is **not** a substitute for application authorization: it only filters rows and
+    knows nothing about roles or permissions.
+  - **Tenant context.** It is set transaction-locally by one application helper that rejects missing or
+    invalid tenant IDs, and never per pooled session.
+  - **Roles.** The application role must not own tables, be a superuser, or hold `BYPASSRLS`. Database role
+    separation is a prerequisite (RLS-4). `BYPASSRLS` is reserved for the migration and break-glass roles.
+  - **Policies** fail closed when the context is missing (the `NULLIF` form).
+  - **Cross-tenant access** uses a dedicated, read-only reporting role, and is audited in the application.
+  - **Threat model limit.** RLS protects against application query mistakes and missing tenant filters,
+    **not** against a compromised application database credential or arbitrary SQL execution, which can set
+    any tenant ([evaluation §3](../architecture/rls-evaluation.md#3-threat-model-owner-requirement-b)).
 - Opaque, non-sequential identifiers.
 - Exports, reports, caches, and background jobs are tenant-scoped too.
 - Automated cross-tenant tests for every tenant-scoped feature.

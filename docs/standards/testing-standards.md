@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — pending owner review | Project owner | 2026-11-24 |
+| Draft — pending owner review | Project owner | 2026-11-26 (Row-Level Security standards added after the owner accepted ADR-0010) |
 
 **Authority:** this document is authoritative for test levels, required scenarios, and testing
 expectations, as defined in [`AGENTS.md` §1.1](../../AGENTS.md#11-document-authority-and-conflicts); `AGENTS.md` §13 summarizes it. Scenario lists owned by specialist
@@ -49,8 +49,33 @@ or **leak one customer's data to another** — so the most important behaviours 
     failure, balance equals ledger sum, rounding per the decided rules, no update/delete of entries
     (scenarios FI-1 to FI-10 in [financial integrity §7](../architecture/financial-integrity.md#7-representative-test-scenarios-documentation-not-code)).
   - Tenant isolation: tenant A cannot read/update/delete tenant B's resources via repository **and** API.
-    If RLS is adopted: missing tenant context returns no rows, and a reused pooled connection cannot see
-    the previous tenant's data (ADR-0010).
+  - Row-Level Security for **every tenant-owned control-plane table**. RLS was adopted by the owner on
+    2026-11-26 (ADR-0010 option B, decisions RLS-1 to RLS-5 in the decision log §12.1). The rules come from
+    the [RLS evaluation](../architecture/rls-evaluation.md#10-conditions-of-adoption-adopted-by-the-owner-rls-1),
+    and the evaluation's tests in `backend/internal/database/rlseval/` show each pattern.
+
+    **Who the tests run as.** They run as the **application runtime role**, never as a superuser, the table
+    owner, or a `BYPASSRLS` role, because those bypass RLS and would make the tests pass vacuously.
+
+    **What they must prove:**
+    - **No tenant context:**
+      - SELECT returns no rows;
+      - INSERT is refused;
+      - UPDATE and DELETE affect zero rows.
+    - **Wrong tenant:**
+      - in tenant A's context, tenant B's rows cannot be read, updated or deleted;
+      - `WITH CHECK` refuses inserting a row for tenant B, and refuses moving a row to tenant B.
+    - **The application tenant helper:**
+      - it rejects a missing or invalid tenant ID before any tenant query runs;
+      - it sets the context transaction-locally.
+    - **Pooled connections:** a connection reused from the pool does not carry the previous transaction's
+      tenant into the next one, both after commit and after a failed transaction.
+    - **Cross-tenant reporting role:** where a table has a reporting policy, the role can read across
+      tenants but cannot write. Writes are refused even where a privilege exists, unless a separately
+      approved write policy covers them.
+
+    **Data-plane tables.** High-volume data-plane tables are excluded until their own RLS evaluation
+    (RLS-5). Their tenant isolation is still tested at the repository and API levels.
   - API idempotency: same key + same body replays; same key + different body is rejected; concurrent
     duplicates produce one operation and one reservation (scenarios IK-1 to IK-11 in
     [API idempotency §4](../architecture/api-idempotency.md#4-representative-test-scenarios-documentation-not-code)).
@@ -124,6 +149,7 @@ or **leak one customer's data to another** — so the most important behaviours 
 | Ambiguous provider submissions | Unit + provider contract |
 | DLR anomalies (late, missing, duplicate, out-of-order, conflicting) | Unit + integration |
 | Tenant isolation | Integration + API |
+| Row-Level Security (tenant-owned control-plane tables) | Integration (as the application role) + CI catalog guard |
 | Authorization (RBAC) | Unit + API matrix |
 | Segmentation / encoding | Unit (exhaustive boundaries) |
 | Message state machine and DLR correlation | Unit + integration |
@@ -142,3 +168,17 @@ module once code exists.
 Every PR runs: formatting check, lint, unit tests (with `-race` for Go), integration tests, contract
 checks, frontend type check and tests, dependency vulnerability scan, secret scan. A PR cannot merge
 while required checks fail.
+
+**Row-Level Security catalog guard** (owner decision RLS-1, 2026-11-26):
+
+- **What it checks.** After the migrations are applied, CI fails if any table with a `tenant_id` column
+  in an application schema:
+  - does not have row-level security both **enabled and forced**; or
+  - has **no policy**.
+- **Exceptions.** A table is exempt only if it is on an explicit, owner-approved exception list, kept in the
+  repository with the reason for each entry. Deferred data-plane tables (RLS-5) go on that list rather than
+  being silently skipped.
+- **Reference query.** `TestCatalogGuardFindsUnprotectedTables` in `backend/internal/database/rlseval/`
+  holds the catalog query the guard is based on.
+- **When it is introduced.** The guard is added with the first tenant-owned table, together with or after
+  database role separation (RLS-4). No tenant-owned table exists yet.

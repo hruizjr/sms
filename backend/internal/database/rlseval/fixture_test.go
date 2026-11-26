@@ -35,7 +35,7 @@ var seededLabels = map[string][]string{
 	tenantB: {"b1", "b2"},
 }
 
-// tenantPolicy is the fail-closed tenant expression proposed in ADR-0010: the transaction-local
+// tenantPolicy is the fail-closed tenant expression adopted in ADR-0010 (RLS-2): the transaction-local
 // setting app.tenant_id, read with missing_ok = true. NULLIF turns the empty string that PostgreSQL
 // returns once the setting has been used on a connection (see context_test.go) into NULL, so a
 // missing context compares as NULL and matches no row.

@@ -9,7 +9,7 @@
 | Field | Value |
 | ----- | ----- |
 | Project | Enterprise A2P SMS Platform (Philippines) |
-| Current phase | **Phase 3 — Walking skeleton: authorized and in progress.** Groups 0 (decisions), 1 (Go API skeleton), 2 (PostgreSQL foundation), and 3 (OpenAPI contract for the public messages API) are merged, as are Group 4 (Go API contract integration: Go types and Chi routes generated from the contract; no endpoint mounted) and Group 5 (frontend foundation: client portal shell and shared UI package; no features, no API calls). Group 6 (local development stack and expanded CI: Docker Compose with PostgreSQL, a one-off migration service and the API; secret scanning and dependency review) is merged (PR #10). Group 7 (PostgreSQL Row-Level Security evaluation spike, ADR-0010 / D-141: tests on synthetic tables and a written evaluation; no product code; ADR-0010 remains Proposed) is submitted for owner review (groups renumbered by the owner, [decision log §9](docs/engineering/decision-log.md#9-owner-decisions--go-contract-integration-phase-3-group-4-2026-11-25)). See [decision log §7](docs/engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25). |
+| Current phase | **Phase 3 — Walking skeleton: authorized and in progress.** Groups 0 (decisions), 1 (Go API skeleton), 2 (PostgreSQL foundation), and 3 (OpenAPI contract for the public messages API) are merged, as are Group 4 (Go API contract integration: Go types and Chi routes generated from the contract; no endpoint mounted) and Group 5 (frontend foundation: client portal shell and shared UI package; no features, no API calls). Group 6 (local development stack and expanded CI: Docker Compose with PostgreSQL, a one-off migration service and the API; secret scanning and dependency review) is merged (PR #10). Group 7 (PostgreSQL Row-Level Security evaluation spike, ADR-0010 / D-141: tests on synthetic tables and a written evaluation; no product code) is submitted for owner review; after reviewing it, the owner **accepted ADR-0010** (RLS for tenant-owned control-plane tables, 2026-11-26) (groups renumbered by the owner, [decision log §9](docs/engineering/decision-log.md#9-owner-decisions--go-contract-integration-phase-3-group-4-2026-11-25)). See [decision log §7](docs/engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25). |
 | Authorized scope | **Phase 3 walking skeleton only** (owner approval 2026-11-25). Each implementation group starts only after the previous group is reviewed and merged. Later phases and all other ADRs need separate owner approval. |
 | Decision authority | The project owner (a single human). Agents propose; the owner decides. |
 | Last updated | 2026-11-26 (Phase 3 Group 7: RLS evaluation spike) |
@@ -596,9 +596,25 @@ Proposed; its item below is marked as proposed.)
 - Every tenant-owned table has `tenant_id NOT NULL`.
 - Every query on tenant data filters by `tenant_id` derived from the authenticated principal.
 - Prefer composite keys/constraints that include `tenant_id` so cross-tenant references are impossible.
-- PostgreSQL Row-Level Security as defense-in-depth is proposed, **subject to evaluation** (ADR-0010).
-  RLS never replaces application authorization; if adopted, tenant context is set per transaction, never
-  per pooled session.
+- **PostgreSQL Row-Level Security is adopted** as defense-in-depth for **tenant-owned control-plane tables**
+  (ADR-0010 accepted 2026-11-26; decisions RLS-1 to RLS-5, decision log §12.1). It is added **on top of** the
+  application tenant filters above, never instead of them, and it never replaces application authorization.
+  Conditions ([RLS evaluation §10](docs/architecture/rls-evaluation.md#10-conditions-of-adoption-adopted-by-the-owner-rls-1)):
+  - **Tables and policies:** every such table has RLS **enabled and forced**, with the policy
+    `tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid` in both `USING` and `WITH CHECK`.
+  - **Tenant context:** it is set **transaction-locally** by one application helper, which rejects missing or
+    invalid tenant IDs before any tenant query. It is **never** set as a session-level setting.
+  - **Application role:** the application connects as a role that is not a superuser, not a table owner and
+    has no `BYPASSRLS`. **Database role separation is a prerequisite** in its own approved group (RLS-4); the
+    API must not use the bootstrap superuser.
+  - **Cross-tenant access:** it uses a dedicated reporting role with its own credentials and pool and
+    explicit read-only policies, and is audited in the application. `BYPASSRLS` is only for the migration
+    and break-glass roles.
+  - **Schema rules:** unique constraints and foreign keys on tenant data include `tenant_id`; views use
+    `security_invoker = true`; there is no `SECURITY DEFINER` over tenant tables without review; the
+    application role is never granted `TRUNCATE`.
+  - **Data-plane tables:** high-volume data-plane tables are **not covered** by this decision; their RLS
+    strategy is deferred (RLS-5).
 - Every tenant-scoped repository has a test proving tenant A cannot read or modify tenant B's data.
 
 ### 10.8 Data retention

@@ -2,7 +2,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Status | **Submitted for owner review.** The recommendation below is a proposal. **ADR-0010 remains Proposed**, and D-141 stays open until the owner decides. Nothing in this document is adopted. |
+| Status | **Concluded: owner decisions taken 2026-11-26** (§11). **ADR-0010 is Accepted**: option B for tenant-owned **control-plane** tables, under the conditions in §10. D-141 is resolved. The RLS strategy for high-volume **data-plane** tables is **deferred** (RLS-5). Nothing is implemented yet: database role separation (RLS-4) comes first, in a separately approved group. |
 | Date | 2026-11-26 (Phase 3 Group 7) |
 | Scope | The six evaluation requirements in [ADR-0010](../engineering/decision-log.md#adr-0010-multi-tenancy--shared-schema-with-tenant_id-rls-as-evaluated-defense-in-depth), plus the owner's requirements A–D for this group ([decision log §12](../engineering/decision-log.md#12-owner-decisions--rls-evaluation-spike-phase-3-group-7-2026-11-26)) |
 | Evidence base | PostgreSQL **18.7** (`postgres:18.7-trixie@sha256:c699303802144847d238196173655dbbecf7a96aeca1565f2b02eb671a1f0b6b`, the image used by Compose and backend CI); Go 1.27.4; `github.com/jackc/pgx/v5` v5.13.0 (pgxpool). Tests: [`backend/internal/database/rlseval/`](../../backend/internal/database/rlseval/), 22 tests, run with `-race` |
@@ -29,7 +29,8 @@ Labels used:
 2. **The current setup would get no protection from RLS.** Today the API and `migrate` both connect as `sms`, which is the PostgreSQL image's bootstrap **superuser**. Superusers always bypass RLS **[T]**. Adopting RLS therefore requires separate database roles first (§10). This group changes no runtime role.
 3. **It protects against mistakes, not against a compromised application.** RLS here guards against application query mistakes and missing tenant filters. Code that can run arbitrary SQL as the application role can choose any tenant **[T]** (§3).
 4. **The cost was not measurable in these indicative tests.** The policy is used as an index condition, or evaluated once per query as a one-time filter, and the differences were within run-to-run noise. Setting the context costs one extra statement, and therefore one extra round trip, per transaction (§12).
-5. **[R] Recommendation: adopt ADR-0010 option B, with the conditions in §10.** Option B is RLS as defense-in-depth on top of mandatory application tenant filters. It would apply to tenant-owned control-plane tables, starting with the first tenant table. High-volume data-plane tables would be decided when they are designed. The owner decides (§11).
+5. **[R] Recommendation: adopt ADR-0010 option B, with the conditions in §10.** Option B is RLS as defense-in-depth on top of mandatory application tenant filters. It would apply to tenant-owned control-plane tables, starting with the first tenant table. High-volume data-plane tables would be decided when they are designed.
+   **Owner decision (2026-11-26): adopted as recommended for control-plane tables; data-plane tables deferred** (§11).
 
 ## 2. Method and test isolation
 
@@ -123,7 +124,7 @@ Results for requirement 6:
 | `tenant_id = rlseval.require_tenant_id()` (PL/pgSQL, raises if unset) | Error P0001 | Error P0001 | Tenant's rows |
 
 - **The raw cast behaves inconsistently.** It sometimes returns nothing and sometimes errors, depending on the connection's history. It should not be used.
-- **[R] Use the `NULLIF` form.** It is consistent, it is the form that was benchmarked, and the planner uses it as an index condition (§12). A missing context is a programming error, but this form doesn't surface it, so the application helper must always set the context.
+- **[R] Use the `NULLIF` form** (adopted by the owner, RLS-2). It is consistent, it is the form that was benchmarked, and the planner uses it as an index condition (§12). A missing context is a programming error, but this form doesn't surface it, so the application helper must always set the context.
 - **The `require_tenant_id()` form** fails loudly, which surfaces bugs at once. Its performance was **not** benchmarked **[NT]**. It is an alternative for the owner to consider.
 - **[T] UPDATE and DELETE fail silently.** On rows the role cannot see, or with no context, they affect zero rows and raise no error. **[R]** Repositories should treat "0 rows affected" on a targeted UPDATE or DELETE as "not found", as they would without RLS.
 
@@ -140,7 +141,7 @@ Admin reporting, reconciliation and background jobs may legitimately need to wor
 | **Review** | Each new policy is visible in the migration diff | One attribute grants everything. Easy to over-use |
 | **Cost** | One policy per table and command; more migration text | Minimal setup |
 
-**[R] Recommended least-privilege model:**
+**[R] Recommended least-privilege model** (adopted by the owner, RLS-3):
 
 1. **Cross-tenant work uses its own role, credential and connection pool.** It never uses the application pool. Reporting gets model 1: **read-only explicit policies**, added table by table in migrations, with column grants where some data must not be exposed. Cross-tenant writes, such as reconciliation corrections, get narrowly scoped write policies only when an approved feature needs them.
 2. **`BYPASSRLS` is reserved for the migration role.** It needs it anyway to run data migrations on forced tables (§10), and a break-glass role would also have it. It is never used by any application or worker pool.
@@ -200,9 +201,9 @@ Results:
   - prepared statements, which pgx caches by default, under the pooler's prepared-statement support. Otherwise pgx would need `QueryExecModeExec` or `SimpleProtocol`, both of which passed in §8;
   - statement-mode pooling, which breaks multi-statement transactions and is **incompatible** with this design.
 
-## 10. Proposed conditions for adoption [R]
+## 10. Conditions of adoption (adopted by the owner, RLS-1)
 
-These are proposals for the owner. None is implemented.
+The owner adopted RLS on 2026-11-26 **conditional on all of these requirements**. They apply to tenant-owned control-plane tables (RLS-5 defers data-plane tables). None is implemented yet.
 
 1. **Separate database roles first.** This is already a backend README follow-up.
    - A migration role owns schemas and tables (DDL) and has `BYPASSRLS` for data migrations on forced tables.
@@ -210,31 +211,42 @@ These are proposals for the owner. None is implemented.
    - The bootstrap superuser is not used by the API.
    - This changes Compose, CI and configuration, so it needs its own approved task, ideally before or with the first tenant table.
 2. **Every tenant-owned table** has `ENABLE` and `FORCE ROW LEVEL SECURITY` and a `NULLIF`-form policy with matching `USING` and `WITH CHECK`, all written in its migration.
-3. **Context is transaction-scoped only,** set by one helper as the first statement of the transaction. Session-level settings are never used.
+3. **Context is transaction-scoped only,** set by one application helper as the first statement of the transaction. The helper rejects missing or invalid tenant IDs before any tenant query runs (RLS-2). Session-level settings are never used.
 4. **Application tenant filters stay mandatory** (AGENTS.md §10.7). RLS is the backstop, not the mechanism.
 5. **Keys include `tenant_id`.** Unique constraints and foreign keys on tenant data include it; views use `security_invoker = true`; there is no `SECURITY DEFINER` over tenant tables without review.
 6. **Cross-tenant access follows §6:** explicit read-only policies on a separate role and pool, audited in the application; `BYPASSRLS` only for the migration and break-glass roles.
 7. **A catalog CI check** fails if any table with `tenant_id` is unprotected (§7).
 8. **Re-evaluate** before introducing an external pooler (§9), and when designing high-volume or partitioned data-plane tables (policy cost at scale, partition behaviour) **[NT]**.
 
-**Proposed test-standard changes, recorded separately here and not applied** (owner restriction: the testing standards are not updated as though RLS were adopted). If the owner adopts RLS, `docs/standards/testing-standards.md` would gain:
+**Test-standard changes.** These were proposed here while the decision was pending. Following the adoption decision, they are now project standards in [testing standards §3.2](../standards/testing-standards.md#32-integration-tests):
 
 - for every tenant-scoped table, a test that the runtime role sees no rows without context;
 - a test that `WITH CHECK` rejects cross-tenant writes;
 - the catalog guard as a CI check;
 - a pooled-connection reuse test for the transaction helper.
 
-The current text there, "If RLS is adopted: …", already anticipates the first two.
+The standards also require a test that the helper rejects missing or invalid tenant IDs (RLS-2), and that the reporting role cannot write (RLS-3).
 
-## 11. Owner decisions requested
+## 11. Owner decisions (2026-11-26)
 
-| ID | Decision | Recommendation |
-| -- | -------- | -------------- |
-| RLS-1 | Adopt ADR-0010 option B (RLS as defense-in-depth), keep option A only, or defer | **Adopt option B** with the conditions in §10, for tenant-owned control-plane tables |
-| RLS-2 | Policy expression | `NULLIF` form (§5); the `require_tenant_id()` form is an alternative if the owner prefers loud failures (it needs a benchmark) |
-| RLS-3 | Cross-tenant model | Model 1 (explicit read-only policies, separate role and pool); BYPASSRLS for migration and break-glass only (§6) |
-| RLS-4 | Role separation | Schedule it as its own approved task, before or with the first tenant table (§10.1) |
-| RLS-5 | Data-plane tables | Decide when they are designed, with a benchmark at representative volume |
+The owner reviewed this evaluation and decided as follows. The authoritative record is
+[ADR-0010](../engineering/decision-log.md#adr-0010-multi-tenancy--shared-schema-with-tenant_id-rls-as-evaluated-defense-in-depth)
+and [decision log §12.1](../engineering/decision-log.md#121-owner-decisions-on-rls-adoption-2026-11-26).
+
+**Accepted:**
+
+| ID | Decision | Compared with the recommendation |
+| -- | -------- | -------------------------------- |
+| RLS-1 | **Adopt option B:** RLS as defense-in-depth for tenant-owned control-plane tables, on top of mandatory application tenant filtering, conditional on all of §10 | As recommended |
+| RLS-2 | **`NULLIF` policy expression**, with equivalent `USING` and `WITH CHECK`. Context set transaction-locally by one application helper, which **rejects missing or invalid tenant IDs before any tenant query**. Never session-level | As recommended. The owner made the helper's validation an explicit requirement. The `require_tenant_id()` alternative was not adopted |
+| RLS-3 | **Explicit cross-tenant policies** on a dedicated reporting role with its own credentials and pool; read-only policies; minimum table and column privileges. Cross-tenant writes need separate approval and narrow policies. `BYPASSRLS` only for the migration role and a separately controlled break-glass role. Cross-tenant admin operations audited in the application | As recommended |
+| RLS-4 | **Role separation is a prerequisite**, in a separate, explicitly approved group, before or alongside the first tenant-owned business table. The API must not use the bootstrap superuser | As recommended. **Implementation pending:** not part of Group 7 |
+
+**Deferred:**
+
+| ID | Decision | What it needs |
+| -- | -------- | ------------- |
+| RLS-5 | **High-volume data-plane (message) tables** are excluded from the adoption. The control-plane decision is not extended to them automatically | A separate evaluation once their design and workload are known: write throughput, partitioning, query patterns, representative volume |
 
 ## 12. Performance (owner requirement D): indicative only
 

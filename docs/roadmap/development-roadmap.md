@@ -89,7 +89,7 @@ separate spike before Phase 4, was approved by the owner as Group 7 on 2026-11-2
 | 4 | Go API contract integration: Go types and Chi routes generated from the contract (oapi-codegen), reproducible generation and CI checks; no endpoint mounted | Merged (PR #8) |
 | 5 | Frontend foundation (Group 4 before the renumbering): pnpm workspace, client portal shell (one page), shared UI package with tokens, Button and Card, lint, type check, tests, build, Linux and Windows CI ([decision log §10](../engineering/decision-log.md#10-owner-decisions--frontend-foundation-phase-3-group-5-2026-11-25)) | Merged (PR #9) |
 | 6 | Local development stack and expanded CI (Group 5 before the renumbering): Docker Compose with PostgreSQL, a one-off migration service and the API; client portal development proxy; Local stack check, secret scan and dependency review in CI ([decision log §11](../engineering/decision-log.md#11-owner-decisions--local-development-stack-and-expanded-ci-phase-3-group-6-2026-11-26)) | Merged (PR #10) |
-| 7 | PostgreSQL Row-Level Security evaluation spike (ADR-0010, D-141): integration-tagged tests on synthetic, test-only tables against a disposable PostgreSQL 18.7; written [evaluation](../architecture/rls-evaluation.md) with threat model, cross-tenant models, pitfalls and indicative performance; no product code; ADR-0010 remains Proposed ([decision log §12](../engineering/decision-log.md#12-owner-decisions--rls-evaluation-spike-phase-3-group-7-2026-11-26)) | Submitted — awaiting owner review and merge |
+| 7 | PostgreSQL Row-Level Security evaluation spike (ADR-0010, D-141): integration-tagged tests on synthetic, test-only tables against a disposable PostgreSQL 18.7; written [evaluation](../architecture/rls-evaluation.md) with threat model, cross-tenant models, pitfalls and indicative performance; no product code. After review, the owner **accepted ADR-0010** (option B for tenant-owned control-plane tables; data-plane tables deferred) on 2026-11-26 ([decision log §12](../engineering/decision-log.md#12-owner-decisions--rls-evaluation-spike-phase-3-group-7-2026-11-26)) | Submitted — awaiting owner review and merge |
 
 **Depends on:** ADR-0002/0003/0004/0005/0013/0014/0015/0016/0017 — accepted 2026-11-25; owner repository
 actions — done (git-workflow §0).
@@ -102,11 +102,15 @@ CI (format, lint, test, type check, vulnerability and secret scan); OpenAPI skel
 - [x] Branch protection configured on `main` (owner-confirmed 2026-11-25; required CI checks to be added once
       workflows exist).
 - [ ] Health endpoint served; frontend shell renders; tokens applied; all tests pass.
-- [ ] RLS evaluation completed and documented (ADR-0010, D-141), before Phase 4. Submitted for review in
-      Group 7 ([RLS evaluation](../architecture/rls-evaluation.md)); the adoption decision is the owner's.
+- [x] RLS evaluation completed and documented (ADR-0010, D-141), before Phase 4. Done in Group 7
+      ([RLS evaluation](../architecture/rls-evaluation.md)); owner decision 2026-11-26: RLS adopted for tenant-owned
+      control-plane tables, data-plane tables deferred (RLS-5).
 
 ### Phase 4 — Control-plane core
 **Goal:** tenants, users, authentication (with admin MFA), RBAC, audit log.
+**Depends on:** database role separation (owner decision RLS-4, 2026-11-26), delivered in its own approved group
+before or alongside the first tenant-owned table; the API must not use the bootstrap PostgreSQL superuser. Tenant
+tables follow the adopted RLS conditions (ADR-0010).
 **Acceptance criteria:**
 - [ ] Admin can create tenants and users; users can log in; MFA enforced for admins.
 - [ ] Permission checks on every endpoint; authorization matrix tests pass.
