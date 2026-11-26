@@ -15,8 +15,8 @@ helps resolve; routing and priorities are in the [owner discovery workbook](../o
 | Smart | [telco-smart.md](telco-smart.md) + core | C |
 | Globe | [telco-globe.md](telco-globe.md) + core | C |
 | PLDT Enterprise | [telco-pldt-enterprise.md](telco-pldt-enterprise.md) + core | C |
-| DITO (if coverage requires) | [telco-dito.md](telco-dito.md) + core | C |
-| Intermediary aggregator / connectivity provider | [telco-intermediary.md](telco-intermediary.md) | C, A |
+| DITO (in the coverage objective, D-002, pending partner ratification) | [telco-dito.md](telco-dito.md) + core | C |
+| Intermediary aggregator / connectivity provider | [telco-intermediary.md](telco-intermediary.md) — **not applicable** under D-160 (direct aggregation only; pending partner ratification) | C, A |
 | Prospective enterprise customers | [enterprise-customer.md](enterprise-customer.md) | B, E, F |
 | Legal counsel (and tax adviser) | [legal-counsel.md](legal-counsel.md) | D |
 | Internal operations stakeholders | [operations.md](operations.md) | F |

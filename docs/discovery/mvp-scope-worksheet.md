@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| **Owner-approved (2026-11-26)** — all 34 capabilities decided (21 MVP, 8 Post-MVP, 5 Deferred) with production gates PG-1 to PG-8 (PG-9 added 2026-11-26 with the EX-3 simulator-only decision; PG-10 with the EX-2 provisional traffic targets); launch customers TBD until pilot discovery (D-061, EX-1 amended). Earlier decisions: MVP-01, 05, 08, 09, 13, 29, 30 (2026-11-25); MVP-11, 12 (2026-11-26) | Project owner | 2026-11-26 |
+| **Owner-approved, pending partner ratification (PR)** — product scope and pricing need business-partner approval under governance rule G1 ([decision log §17](../engineering/decision-log.md#17-owner-decisions--business-decisions-review-phase-2-ex-9-2026-11-26)); none has been ratified yet. All 34 capabilities decided by the owner (21 MVP, 8 Post-MVP, 5 Deferred) with production gates PG-1 to PG-8 (PG-9 added 2026-11-26 with the EX-3 simulator-only decision; PG-10 with the EX-2 provisional traffic targets); launch customers TBD until pilot discovery (D-061, EX-1 amended). Earlier decisions: MVP-01, 05, 08, 09, 13, 29, 30 (2026-11-25); MVP-11, 12 (2026-11-26) | Project owner | 2026-11-26 |
 
 This worksheet helps the owner decide what launches first (D-089, D-020). Every capability from the
 original product expectations (D-007) is listed and classified:
@@ -45,7 +45,7 @@ The approved scope, the production gates and the decisions that remain open are 
 | MVP-18 | Webhooks for status updates | Developer | Deferrable* | **Post-MVP** — API polling initially; no webhook infrastructure (owner, 2026-11-26) |
 | MVP-19 | Analytics dashboards | Client user | Deferrable | **Post-MVP** — basic status counts may be part of MVP-16 (owner, 2026-11-26) |
 | MVP-20 | Prepaid credit balance, admin top-up, credit ledger | Client, admin | Essential | **MVP (prepaid only)** — immutable credit ledger, manual Finance top-ups, reservations, charges, releases; implementation blocked until the billing rules are decided (owner, 2026-11-26) |
-| MVP-21 | Client-specific pricing configuration | Admin | Essential | **MVP (flat)** — one versioned per-segment rate per client; never send with a missing or unapproved rate (owner, 2026-11-26) |
+| MVP-21 | Client-specific pricing configuration | Admin | Essential | **MVP (flat)** — one versioned rate per client **per billable unit** (unit pending partner approval, EX-9); never send with a missing or unapproved rate (owner, 2026-11-26; pending partner ratification) |
 | MVP-22 | Transaction history and statements | Client, admin | Essential | **MVP (history only)** — top-ups, reservations, charges, releases; client Owners and authorized Finance staff only (owner, 2026-11-26) |
 | MVP-23 | Postpaid accounts and invoicing | Admin | Deferrable | **Post-MVP** — launch prepaid-only (owner, 2026-11-26) |
 | MVP-24 | Online payments | Client | Future | **Deferred** — manual Finance top-ups; no payment gateway (owner, 2026-11-26) |
@@ -72,6 +72,14 @@ and the production gates below. This approval is the written record that EX-1 re
 It approves **scope only**: it does not authorize implementation, Phase 4, or any change to the billing rules,
 legal questions or launch-customer identity listed under "Still open" below.
 
+> **Status update (2026-11-26, EX-9 review, [decision log §17](../engineering/decision-log.md#17-owner-decisions--business-decisions-review-phase-2-ex-9-2026-11-26)):** under governance rule G1, decisions affecting
+> **pricing, product scope or launch** need business-partner approval in addition to the owner's. The 34
+> capability decisions and the pricing decisions in this worksheet are therefore **owner-approved, pending partner
+> ratification (PR)**; no partner approval has been recorded. Development may proceed against this provisional
+> scope. The production gates below are owner engineering decisions (G4); **authorizing production launch also
+> requires partner approval**. Where this worksheet says "per-segment rate", read "rate per **billable unit**"
+> (§17.4: billable quantity = segment count, an owner proposal pending partner approval).
+
 ### Approved scope
 
 | Owner decision | Count | Capabilities |
@@ -95,7 +103,9 @@ with this trigger; no launch customer is named or assumed here.
 ### Production gates
 
 None of these is met today. Each must be met before the activity it names; they are in addition to, not
-instead of, the Phase 2 exit criteria and any later phase approvals.
+instead of, the Phase 2 exit criteria and any later phase approvals. Their technical definitions and acceptance
+criteria are owner engineering decisions; the decision to authorize production launch also requires
+business-partner approval ([decision log §17](../engineering/decision-log.md#17-owner-decisions--business-decisions-review-phase-2-ex-9-2026-11-26), G4).
 
 | Gate | Requirement | Source |
 | ---- | ----------- | ------ |
@@ -256,6 +266,9 @@ Choosing a capability for the MVP does not make it buildable. These decisions or
 - **Owner decision (2026-11-26, EX-1 review):** **MVP (full).** Display encoding, segment count and estimated cost. One authoritative
   segment calculation is used for both the preview and billing. Only approved client rate cards are used;
   prices are never invented (PG-5). Representation and rounding stay open (ADR-0019, D-092, D-093).
+- **Update (2026-11-26, EX-9 review, [decision log §17](../engineering/decision-log.md#17-owner-decisions--business-decisions-review-phase-2-ex-9-2026-11-26)):** pending partner ratification. The estimate shows the
+  segment count and the estimated charge; the billable quantity equal to the segment count is an owner proposal
+  pending partner approval, not an approved billing rule.
 
 ### MVP-11 — Contact book, groups, segmentation
 - **Problem:** repeat senders manage audiences.
@@ -383,6 +396,10 @@ Choosing a capability for the MVP does not make it buildable. These decisions or
 - **Owner decision (2026-11-26, EX-1 review):** **MVP (prepaid only).** An immutable credit ledger, manual top-ups by Finance, reservations,
   charges and releases. **Implementation remains blocked until the required billing rules are decided**
   (ADR-0011, ADR-0019, D-080, D-081, D-083, D-092, D-093, D-096); this scope decision does not decide them.
+- **Update (2026-11-26, EX-9 review, [decision log §17](../engineering/decision-log.md#17-owner-decisions--business-decisions-review-phase-2-ex-9-2026-11-26)):** pending partner ratification. Owner proposals pending
+  partner approval (OP): charge settled on provider acceptance (D-080); refund and release rules (D-083); balance
+  denominated in **PHP**, not SMS credits (D-081), not described as withdrawable, transferable or an e-wallet
+  (undecided). Precision and rounding: EX-12.
 
 ### MVP-21 — Client-specific pricing
 - **Problem:** clients negotiate different rates.
@@ -394,6 +411,12 @@ Choosing a capability for the MVP does not make it buildable. These decisions or
 - **Open questions:** pricing dimensions (D-084).
 - **Owner decision (2026-11-26, EX-1 review):** **MVP (flat).** One versioned per-segment rate per client. Pricing by network, by message
   type and by volume tier is deferred. **No message is sent with a missing or unapproved rate** (PG-5).
+- **Update (2026-11-26, EX-9 review, [decision log §17](../engineering/decision-log.md#17-owner-decisions--business-decisions-review-phase-2-ex-9-2026-11-26)):** pending partner ratification. Read "one versioned rate per
+  client **per billable unit**". Owner proposals pending partner approval (OP): billable quantity = segment count;
+  rates effective-dated and applied to new messages only, each accepted message keeping its rate version; client
+  rates approved by owner and partners until a partner-approved pricing policy exists (entering a rate is not
+  approving it). Customer pricing dimensions stay deferred; actual telco costs may be recorded internally by
+  network, route, encoding and segment. List versus negotiated rates: deferred.
 
 ### MVP-22 — Transaction history and statements
 - **Problem:** clients and finance need records of top-ups and charges.
@@ -450,6 +473,8 @@ Choosing a capability for the MVP does not make it buildable. These decisions or
 - **Open questions:** is failover contractually allowed?
 - **Owner decision (2026-11-26, EX-1 review):** **Deferred.** No automatic failover. Messages with an uncertain submission outcome are never
   blindly retried. Manual route changes (MVP-25) apply to new submissions only.
+- **Update (2026-11-26, EX-9 review, D-160, pending partner ratification):** any future failover is **between
+  direct telco connections only**; never through a third-party aggregator or intermediary.
 
 ### MVP-27 — Telco usage reconciliation report
 - **Problem:** telco invoices must match our records (R-08, R-32).

@@ -176,3 +176,14 @@ requires this re-baseline.**
 Still dependent: launch customers and their volumes (D-061, D-074); telco throughput and segment-counting basis
 (D-101, D-117); an OTP latency objective (a separate service-level decision, needed before ADR-0006's queue-latency
 criterion can be applied); storage sizing (record size and retention periods, D-073, D-124).
+
+### 7.7 Initial build capacity and owner planning estimate (2026-11-26, EX-9 review)
+
+Recorded in the EX-9 business-decisions review ([decision log §17](../engineering/decision-log.md#17-owner-decisions--business-decisions-review-phase-2-ex-9-2026-11-26)).
+**TR-1 to TR-6 are unchanged.**
+
+| Item | Record | Label |
+| ---- | ------ | ----- |
+| Initial build capacity | The initial production build is designed and load-tested for the existing **growth capacity of 1,000,000 messages per day**, using the existing **250 messages/s** design peak and **500 messages/s** stress test (§7.1, §7.2). The scenarios still describe expected traffic, not what is built | Owner decision |
+| Planning estimate | About **5,000,000 messages per day**, provided by the owner. **Unverified**: not evidence, not verified demand, not a binding volume commitment and not a requirement for the initial launch. It does not change any target and is not entered in §2 to §6. It is recorded separately from D-004 and D-060, which remain open and unused | Provisional estimate |
+| Scaling | Scaling toward the estimate follows actual usage and performance evidence, through the revision triggers (§7.6) and the PG-10 re-baseline | Owner decision |

@@ -21,7 +21,8 @@ resolution.
 1. **Propose:** anyone (agent or owner) adds an ADR using the template below with status `Proposed`.
 2. **Review:** the project owner reviews. Questions are added to the ADR's "Missing information".
 3. **Decide:** **only the project owner** changes the status to `Accepted` or `Rejected`, recording the
-   date.
+   date. A decision affecting **pricing, product scope or launch** also requires **business-partner approval**,
+   recorded with its date before the decision is labelled approved (governance rule G1, [§17.1](#17-owner-decisions--business-decisions-review-phase-2-ex-9-2026-11-26)).
 4. **Change:** an accepted ADR is never rewritten. To change it, write a new ADR that *supersedes* it and
    set the old one to `Superseded by ADR-XXXX`.
 
@@ -89,6 +90,9 @@ the closure.
 limited scope**: the provisional provider interface, capability declarations, adapter abstraction and simulator.
 **On 2026-11-26 the owner approved provisional traffic targets** (Phase 2 exit criterion EX-2, see
 [§16](#16-owner-decisions--provisional-traffic-targets-phase-2-ex-2-2026-11-26)). No ADR status changed.
+**On 2026-11-26 the owner completed the EX-9 business-decisions review** (see
+[§17](#17-owner-decisions--business-decisions-review-phase-2-ex-9-2026-11-26)): governance rules G1–G4, owner proposals pending partner approval, and earlier
+product-scope and pricing decisions relabelled as pending partner ratification. No ADR status changed.
 
 | ADR | Title | Status |
 | --- | ----- | ------ |
@@ -1280,6 +1284,12 @@ production gates. The worksheet's
 section is the authoritative record of the scope; this section summarizes it. **No ADR status changed.** This
 is a scope decision only: it does not authorize implementation or Phase 4, and it does not close Phase 2.
 
+> **Status update (2026-11-26, EX-9 review, [§17](#17-owner-decisions--business-decisions-review-phase-2-ex-9-2026-11-26)):** the scope and pricing decisions in
+> this section are **owner-approved, pending partner ratification (PR)** under governance rule G1. The production
+> gates are owner engineering decisions (G4). Where this section says "one versioned per-segment rate per client",
+> read "one versioned rate per client **per billable unit**"; the billable unit (segment count) is an owner
+> proposal pending partner approval (§17.4).
+
 | Topic | Decision |
 | ----- | -------- |
 | Scope | **21 MVP** (MVP-01, 03, 04, 05, 06, 07, 09, 10, 14, 16, 20, 21, 22, 25, 27, 28, 29, 30, 32, 33, 34), **8 Post-MVP** (MVP-02, 11, 12, 15, 17, 18, 19, 23), **5 Deferred** (MVP-08, 13, 24, 26, 31). MVP-13 counts as Deferred |
@@ -1320,7 +1330,7 @@ Phase 2, and does not authorize Phase 4.
 | S5 | **Provisional provider interface.** Built under ADR-0012 option B (accepted with a limited scope, below), labelled provisional, and expected to change when the first telco specification arrives. The SMPP client library remains a separate ADR made with specifications in hand. |
 | S6 | **No route to real networks.** The simulator runs locally or in-process, makes no outbound network connection, uses only synthetic numbers, holds no real telco credentials, and cannot be configured as a production provider (gate PG-6). |
 | S7 | **Honest reporting.** Results are described as "verified against the simulator". Nothing claims telco compatibility, throughput, delivery rates or receipt timing; demos are labelled simulated. |
-| S8 | **Telco discovery continues** outside simulator-only development (checklist questions, PLDT Enterprise and Smart (D-112), direct or intermediary connectivity (D-118), whether to approach DITO). The answers are production prerequisites under PG-1 and PG-9. |
+| S8 | **Telco discovery continues** outside simulator-only development (checklist questions, PLDT Enterprise and Smart (D-112), direct or intermediary connectivity (D-118), whether to approach DITO). The answers are production prerequisites under PG-1 and PG-9. **Update 2026-11-26 (EX-9, §17.3):** D-118 resolved as direct aggregation only and DITO included in the coverage objective (Smart, Globe, DITO), both pending partner ratification (PR); PLDT Enterprise is a possible commercial counterpart, not a separate network. |
 
 ### 15.2 Related owner decisions
 
@@ -1390,3 +1400,99 @@ under back-pressure.
 **Still open:** D-004, D-060, D-061, D-062, D-074, D-075 (for evidence), D-101, D-117; an OTP latency objective;
 storage sizing (D-073, D-124). Phase 2 remains open: EX-1, EX-2, EX-3 and EX-13 are satisfied and EX-6 and EX-7
 are deferred ([Phase 2 exit checklist](../discovery/phase2-exit-checklist.md)).
+
+---
+
+## 17. Owner decisions — business decisions review (Phase 2, EX-9, 2026-11-26)
+
+On 2026-11-26 the owner completed the review of the Phase 2 business decisions (EX-9: D-080 to D-084 and D-160
+to D-163) in three batches, and recorded a governance rule for decisions reserved to the business partners. This
+section is the authoritative record of that review. **No ADR status changed.** **Partner approval has been
+established only where this section says PD.** Nothing here is approved merely because the owner reviewed it,
+because time has passed, or because the partners have not objected. The review authorizes no implementation and
+does not close Phase 2. **EX-9 status: owner review complete, partner approval pending.**
+
+**Labels used in this section and in the records that cite it:**
+
+| Label | Meaning |
+| ----- | ------- |
+| **OD** | Owner decision on a day-to-day project matter (the owner has authority) |
+| **PD** | Partner-approved decision, confirmed in writing by the owner |
+| **OP** | Owner proposal, **pending partner approval** |
+| **PR** | Owner-approved, **pending partner ratification** (recorded earlier as an owner decision) |
+| **F** | Fact provided by the owner |
+| **P** | Provisional planning estimate |
+| **D** | Deferred, with a revisit trigger |
+
+### 17.1 Governance (G1–G4)
+
+| # | Decision | Label |
+| - | -------- | ----- |
+| G1 | "The project owner has decision authority over day-to-day project matters. Decisions affecting pricing, product scope, or launch require business-partner approval in addition to the project owner's approval. Both approvals, including their dates, must be recorded before a decision is labelled approved. Supporting approval records are kept outside Git." | OD |
+| G2 | **Evidence of partner approval:** the owner records written confirmation that the relevant business partners approved the decision, with the approval date, its scope and, where applicable, a non-sensitive reference to the meeting record or written confirmation. Minutes, messages and other private documents stay outside Git. **Silence or lack of objection is not approval.** No quorum or voting mechanism is defined here: approval follows the partners' agreed governance arrangement. | OD |
+| G3 | Product-scope and pricing decisions recorded earlier as owner decisions are relabelled **PR** (list in §17.2). Development may proceed against the provisional scope; partner ratification is required for final approval of those decisions and before production launch. | OD |
+| G4 | **Production gates and launch.** The technical definitions and acceptance criteria of production gates PG-1 to PG-10 are **engineering decisions under the owner's authority (OD)**. The **decision to authorize production launch** requires partner approval in addition to satisfaction of the gates. The partners' launch right does **not** require separate partner approval of each ordinary technical readiness criterion or implementation choice. | OD |
+
+### 17.2 Classification of earlier records
+
+| Record | Label |
+| ------ | ----- |
+| EX-1: all 34 MVP capability decisions ([MVP scope worksheet](../discovery/mvp-scope-worksheet.md)), including the decisions of 2026-11-25 (MVP-01, 05, 08, 09, 13, 29, 30) and 2026-11-26 (MVP-11, 12) | **PR** |
+| Pricing records: MVP-20 (prepaid), MVP-21 (client rate), the D-082 and D-084 partial decisions | **PR** |
+| D-021, D-024, D-026 and D-029 approvals, as product-scope decisions | **PR** |
+| D-160 (operating model) and its dependants: D-118 resolution, intermediary questionnaire status; the DITO coverage change | **PR** |
+| Production gates PG-1 to PG-10, including the validated-pilot gate (PG-8): definitions and acceptance criteria | **OD** (G4) |
+| EX-2 traffic and test-planning decisions TR-1 to TR-9 | **OD** |
+| EX-3 development approach S1 to S8 | **OD** |
+| ADR-0010, ADR-0012 (limited scope) and the RLS decisions RLS-1 to RLS-5 | **OD** |
+
+### 17.3 Operating model and business facts
+
+| Item | Decision or fact | Label |
+| ---- | ---------------- | ----- |
+| **D-160** | **Direct SMS aggregation only**, through the business's own commercial agreements and direct technical integrations with telcos. **No third-party SMS aggregator or intermediary may route messages**, for the first live connection or any fallback route. **No reseller or white-label operating model.** | **PR** |
+| D-160 | **Coverage objective:** direct integration with the Philippine mobile network operators **Smart, Globe and DITO**. PLDT Enterprise is **not a separate mobile network operator**; it may be a commercial or enterprise contracting counterpart (its relationship to Smart is D-112). The objective is **not a promise of any network at launch**; each integration is subject to that operator's technical, commercial and regulatory requirements. Including DITO is a product-scope change. | **PR** |
+| D-118 | Resolved as **direct aggregation only** (depends on D-160) | **PR** |
+| D-161 | One registered legal entity is intended (confirms D-047) | F |
+| D-161 | The business partners hold formal approval rights over **pricing, product scope and launch** | F |
+| D-161 | Legal-entity identifiers stay out of Git; the appropriate legal structure is subject to counsel's advice (EX-4) | OD; D (counsel) |
+| D-162 | **Clients are charged per message** (general direction) | **PD** |
+| D-162 | No additional fee is decided; setup, sender ID, platform or other fees are not assumed | F |
+| D-162 | Numeric gross-margin target deferred until actual telco rate cards are available (D-108) | D |
+| D-162 | The technical model distinguishes a submitted message from its segments and keeps segment-level usage records | OD |
+| D-163 | No binding launch-date, pricing, volume, exclusivity or service-level commitment to customers, investors or telcos has been reported | F |
+| D-163 | About **5,000,000 messages per day**: an owner-provided, **unverified planning estimate**, not verified demand, a commitment or an initial-launch requirement; recorded separately from D-004 and D-060, which remain open and unused | P |
+| D-163 | Traffic targets TR-1 to TR-6 unchanged. The initial production build is designed and load-tested for the existing **1,000,000 messages/day growth capacity** (250 messages/s design peak, 500 messages/s stress). Scaling toward the estimate follows actual usage and performance evidence and the PG-10 re-baseline | OD |
+
+### 17.4 Charging, refunds, balance and pricing (all pending partner approval)
+
+| Item | Proposal | Label |
+| ---- | -------- | ----- |
+| **D-080** | The charge is **settled on provider acceptance** (`provider_accepted`). A platform-side rejection before provider acceptance never produces a settled charge. Recognizing a charge does not depend on final delivery receipts. The charge event is separate from the billable unit. Provisional: revisit when the telco billing basis is known (D-108) | **OP** |
+| **D-083** 1 | Rejected or failed before provider acceptance: release the reservation; no charge | **OP** |
+| D-083 2 | Provider-accepted, then `undelivered`: no automatic refund while the telco still charges us. Where the telco does not charge us or credits us for the message, the benefit is passed to the client as a balance credit; **the client credit is not assumed to equal the telco's wholesale credit** — its amount follows the partner-approved pricing and refund policy and the partial-delivery rules (D-097). Exceptional manual Finance adjustments with a reason and audit record. Revisit under D-108 | **OP** |
+| D-083 3 | `submission_uncertain`: the reservation stays held; never automatically settled, released, failed or resubmitted; final treatment under D-096 (EX-14) | **OP** |
+| D-083 4 | Provider-accepted with no final receipt (`unknown`): refund treatment under D-096 (EX-14) | D |
+| D-083 5 | Confirmed platform-caused duplicate: manual Finance credit through an auditable compensating ledger entry with a reason; the client does not bear the cost | **OP** |
+| D-083 6 | Duplicate or late receipts never cause a duplicate charge or refund (existing rule) | Existing rule |
+| D-083 7 | Cash refund of unused prepaid balance: **undecided**, outside D-083; neither allowed nor prohibited; needs a separate partner decision | Open |
+| **D-162 / B3-1** | **Billable unit:** one submitted message, with **billable quantity equal to its SMS segment count** (one segment = 1; three segments = 3). The client sees and manages one message; the pre-send estimate shows the segment count and the estimated charge. Provisional: revisit when telco rate cards and billing rules are known (D-108, D-117) | **OP** |
+| **D-081** | The client's prepaid service balance is denominated in **Philippine pesos (PHP)**, not SMS credits. Precision, rounding and storage representation are not settled (EX-12). The balance is **not** described as cash-withdrawable, transferable or a general-purpose e-wallet; those matters are undecided | **OP** |
+| **D-082** | Prepaid only for the MVP; postpaid is Post-MVP and not in the initial implementation; revisit when a credible enterprise or government customer requirement creates a business case for monthly invoicing; postpaid would need an approved credit-risk policy, tax-compliant invoicing and partner approval | **OP** (the existing prepaid-only record is **PR**) |
+| **D-084** 1 | One versioned rate per client **per billable unit**; no customer pricing dimensions by destination network, encoding, message type or volume tier (deferred until telco rate cards and operating costs justify them). The platform may record actual telco costs internally by network, route, encoding and segment for cost attribution and margin analysis (OD) | **OP** |
+| D-084 2 | Rates are versioned and effective-dated and apply to new messages only; each accepted message keeps a reference or snapshot of the rate version assigned at acceptance, so a later change never alters the price of an accepted or queued message. Any client-notice period is a contractual matter for the partners | **OP** |
+| D-084 3 | Client-rate approval, staged: until a partner-approved pricing policy exists, each client rate needs owner and partner approval; afterwards Finance may set rates within the policy's boundaries, and rates outside it need owner and partner approval. **Entering a rate in the platform is not approving it.** Evidence follows G1 and G2. "Approved rate" in gate PG-5 means approved under this rule | **OP** |
+| D-084 4 | Standard list rate versus negotiated rates: deferred until the partners approve the initial go-to-market pricing approach; no public list price or negotiated-only policy is assumed; does not block the pricing data model | D |
+
+### 17.5 Dependencies and status
+
+- **Partner approval** of every OP item and ratification of every PR item, evidenced under G2.
+- **Separate partner decisions:** cash refunds of balance; client-notice period for rate changes; list versus
+  negotiated rates; additional fees; balance transferability or withdrawal.
+- **EX-4** (counsel): legal structure and regulatory path. **EX-12** (ADR-0019, D-092, D-093): currency handling,
+  precision, rounding and storage. **EX-11** (ADR-0011, ledger). **EX-14** (D-095 final policy, D-096, D-097,
+  D-098, D-099). **D-108 and D-117** (telco billing basis, rate cards, segment counting) as revisit triggers.
+- **Phase 2 status:** EX-1 is **owner-approved, pending partner ratification**; EX-9 is **owner review complete,
+  partner approval pending**; EX-2, EX-3 and EX-13 are satisfied; EX-6 and EX-7 are deferred. Phase 2 is not
+  complete. Non-production engineering work may proceed against the provisional scope once the owner authorizes
+  it; partner approval is not a blanket prohibition on such work.

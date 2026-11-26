@@ -16,7 +16,12 @@ This checklist lists what we must learn from each telco before designing or buil
 - **AI agents must not fill in answers from general knowledge.** Common industry practice is noted only to
   explain *why* a question matters.
 - Before asking, clarify whether **PLDT Enterprise and Smart** are separate integrations or a single
-  route/contract (they belong to the same corporate group). Also decide whether to approach **DITO**.
+  route/contract (they belong to the same corporate group). **Update 2026-11-26 (EX-9 review, D-160, pending
+  partner ratification):** the coverage objective is direct integration with **Smart, Globe and DITO**; PLDT
+  Enterprise is not a separate mobile network and may be a commercial or enterprise contracting counterpart.
+  Only **direct** aggregation is pursued: no third-party aggregator or intermediary may route messages, so the
+  answers below decide whether direct integration with each operator is possible. **No question is answered by
+  this update.**
 
 ## Simulator-only development (owner decision 2026-11-26)
 
@@ -40,7 +45,7 @@ during simulator-only development (EX-7 amended). This changes nothing below:
 
 Legend: `—` not asked · `Asked` · `Partial` · `Confirmed` (with evidence) · `N/A`
 
-| # | Topic | Smart | Globe | PLDT Ent. | DITO (TBD) |
+| # | Topic | Smart | Globe | PLDT Ent. (counterpart) | DITO |
 | - | ----- | ----- | ----- | --------- | ---------- |
 | 1 | Connectivity protocols | — | — | — | — |
 | 2 | SMPP specifications | — | — | — | — |
@@ -67,7 +72,8 @@ Legend: `—` not asked · `Asked` · `Partial` · `Confirmed` (with evidence) �
 ---
 
 ## 1. Connectivity protocols
-- [ ] Do you offer direct A2P connectivity to aggregators, or only through intermediaries? (D-118)
+- [ ] Do you offer direct A2P connectivity to aggregators, or only through intermediaries? (D-118; we pursue
+      direct connectivity only — D-160, pending partner ratification)
 - [ ] Which protocols are offered for A2P submission: SMPP, HTTP/REST API, other?
 - [ ] Which is recommended/required for our expected volume?
 - [ ] Are different protocols used for submission, delivery receipts, and incoming messages?

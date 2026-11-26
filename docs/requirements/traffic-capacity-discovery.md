@@ -144,3 +144,6 @@ distributions are recorded in the [traffic evidence worksheet §7](../discovery/
 - **Gate PG-10:** before general production rollout, the targets are re-baselined against validated
   pilot-customer volume information and contracted telco limits; production infrastructure sizing requires this
   re-baseline.
+- **2026-11-26 (EX-9 review):** the initial production build is designed and load-tested for the existing
+  1,000,000 messages/day growth capacity; an owner-provided, **unverified** planning estimate of about 5,000,000
+  messages/day is recorded separately in the worksheet §7.7. Neither changes the targets.
