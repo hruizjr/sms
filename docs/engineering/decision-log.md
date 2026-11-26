@@ -75,6 +75,11 @@ changed.
 **In Phase 3 Group 6 (2026-11-26) the owner approved the local development stack and expanded CI** (see
 [§11](#11-owner-decisions--local-development-stack-and-expanded-ci-phase-3-group-6-2026-11-26)); no ADR
 status changed.
+**In Phase 3 Group 7 (2026-11-26) the owner approved the PostgreSQL Row-Level Security evaluation spike**
+(see [§12](#12-owner-decisions--rls-evaluation-spike-phase-3-group-7-2026-11-26)). **After reviewing the
+evaluation, the owner accepted ADR-0010 on 2026-11-26** (decisions RLS-1 to RLS-5,
+[§12.1](#121-owner-decisions-on-rls-adoption-2026-11-26)): option B for tenant-owned **control-plane** tables. The
+RLS strategy for high-volume **data-plane** tables remains deferred.
 
 | ADR | Title | Status |
 | --- | ----- | ------ |
@@ -87,7 +92,7 @@ status changed.
 | 0007 | Redis — defer, with reconsideration criteria | Proposed (revised 2026-11-24) |
 | 0008 | ClickHouse — defer, with reconsideration criteria | Proposed (revised 2026-11-24) |
 | 0009 | Logical control/data plane separation | Proposed |
-| 0010 | Multi-tenancy: shared schema with `tenant_id`; RLS as evaluated defense-in-depth | Proposed (revised 2026-11-24) |
+| 0010 | Multi-tenancy: shared schema with `tenant_id`; RLS as evaluated defense-in-depth | **Accepted** (owner, 2026-11-26): option B for tenant-owned control-plane tables; high-volume data-plane tables **deferred** (RLS-5) |
 | 0011 | Credit ledger model | Proposed (revised 2026-11-24) |
 | 0012 | Provider abstraction, capabilities, and simulator adapter | Proposed (revised 2026-11-24) |
 | 0013 | Frontend application structure and component strategy | **Accepted** (owner, 2026-11-25) |
@@ -387,8 +392,33 @@ databases is a later, evidence-based decision.
 
 ### ADR-0010: Multi-tenancy — shared schema with `tenant_id`; RLS as evaluated defense-in-depth
 
-- **Status:** Proposed · **Date proposed:** 2026-11-24 · **Revised:** 2026-11-24 (RLS role and evaluation
-  requirements clarified)
+- **Status:** **Accepted** (by owner, 2026-11-26) — **option B for tenant-owned control-plane tables**; high-volume
+  data-plane tables excluded and deferred · **Date proposed:** 2026-11-24 · **Revised:** 2026-11-24 (RLS role and
+  evaluation requirements clarified)
+
+**Owner decision (2026-11-26, after the Phase 3 Group 7 evaluation; decisions RLS-1 to RLS-5 in
+[§12.1](#121-owner-decisions-on-rls-adoption-2026-11-26)):**
+
+1. **Adopted (RLS-1):** option B, PostgreSQL Row-Level Security as defense-in-depth on **tenant-owned
+   control-plane tables**, on top of mandatory application-level tenant filtering. Adoption is conditional on
+   all requirements in [evaluation §10](../architecture/rls-evaluation.md#10-conditions-of-adoption-adopted-by-the-owner-rls-1).
+2. **Policy (RLS-2):** `tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid`, with equivalent
+   `USING` and `WITH CHECK` expressions. The tenant context is set **transaction-locally through one application
+   helper**, which rejects missing or invalid tenant IDs before any tenant query runs. Session-level tenant
+   settings are never used.
+3. **Cross-tenant access (RLS-3):** a dedicated reporting role with its own credentials and connection pool,
+   explicit read-only policies, and the minimum necessary table and column privileges. Cross-tenant writes need
+   separate approval and narrowly scoped policies. `BYPASSRLS` is reserved for the migration role and a
+   separately controlled break-glass role, never for application, reporting or worker connections.
+   Cross-tenant administrative operations are audited in the application.
+4. **Prerequisite (RLS-4):** database role separation is implemented in a separate, explicitly approved
+   development group, before or alongside the first tenant-owned business table. The API must not use the
+   bootstrap PostgreSQL superuser.
+5. **Deferred (RLS-5):** this decision does **not** extend to high-volume data-plane (message) tables. Their RLS
+   strategy is evaluated separately once their design and workload are known (write throughput, partitioning,
+   query patterns, representative volume).
+
+The original analysis below is kept as written.
 
 **Context** — Many tenants, strict isolation, potentially large data volume.
 
@@ -433,6 +463,10 @@ spike). D remains an option only if a customer contract requires dedicated infra
 
 **Operational cost** — Low to moderate. **Missing information** — RLS evaluation results; dedicated
 infrastructure requirements; sub-account/reseller hierarchy (D-064).
+
+**Evaluation (2026-11-26, Phase 3 Group 7):** results and the recommendation are in
+[RLS evaluation](../architecture/rls-evaluation.md). The owner accepted this ADR on the same day, with the scope
+and conditions above.
 
 ---
 
@@ -1080,3 +1114,76 @@ in CI; Compose v5.7.1, 2026-11-26), all passed:
 **Sandbox note.** The agent's environment intercepts HTTPS with its own certificate authority. Local image
 builds therefore used an uncommitted Compose override that adds that certificate to the *build* stage
 only. CI builds the committed Dockerfile unchanged.
+
+---
+
+## 12. Owner decisions — RLS evaluation spike (Phase 3 Group 7, 2026-11-26)
+
+Recorded from the owner's approval of the Group 7 proposal, which covered the evaluation only. After
+reviewing the evaluation, the owner took the adoption decisions in §12.1: **ADR-0010 is Accepted** for
+tenant-owned control-plane tables, and **D-141 is resolved**. No dependency was added; no migration, business table, runtime role,
+configuration, API, contract or frontend change was made.
+
+**Approved scope:** a PostgreSQL 18.7 RLS evaluation as a Phase 3 group, with committed, reproducible
+integration-tagged tests on synthetic, test-only tables. It covers:
+
+- transaction-scoped tenant context and pgxpool connection reuse;
+- fail-closed behaviour and RLS bypass conditions;
+- cross-tenant access models and the documented RLS pitfalls;
+- pgx statement-cache behaviour relevant to future sqlc queries, without adding sqlc product queries.
+
+It also includes a manual, indicative performance evaluation that is never a CI gate. PgBouncer and other external poolers are documented as not tested. The outdated Group 6 status references are corrected.
+
+**Additional requirements and how they were met:**
+
+| ID | Requirement | Implementation |
+| -- | ----------- | -------------- |
+| A | Test isolation: roles are server-wide, so local runs use a separate disposable instance, never the Compose stack's persistent volume; roles are NOLOGIN, uniquely named, cleaned up and verified absent; existing roles and persistent objects are never modified | The tests need the build tags `integration,rlseval` and `RLS_EVAL_DISPOSABLE_SERVER=1`, and refuse a server whose maintenance database has been migrated. `scripts/rls-evaluation.sh` starts a throwaway, tmpfs-backed container; CI uses its ephemeral service. Roles are `rlseval_<run>_<fixture>_<purpose>`, NOLOGIN, dropped in cleanup; `TestMain`, the script and CI fail if any remain ([evaluation §2](../architecture/rls-evaluation.md#2-method-and-test-isolation)) |
+| B | Threat model: the tenant GUC is controlled by trusted application code; a compromised credential or arbitrary SQL can set another tenant | [Evaluation §3](../architecture/rls-evaluation.md#3-threat-model-owner-requirement-b), with a test demonstrating it |
+| C | Compare explicit cross-tenant policies with a dedicated BYPASSRLS role; recommend least privilege; document auditing; implement neither in product code | [Evaluation §6](../architecture/rls-evaluation.md#6-cross-tenant-access-owner-requirement-c) |
+| D | Performance manual and indicative; no CI threshold | `BenchmarkRLSOverhead`, run only with `-bench` through the script ([evaluation §12](../architecture/rls-evaluation.md#12-performance-owner-requirement-d-indicative-only)) |
+
+**Restrictions honoured:**
+
+- no business tables or production migrations;
+- no runtime role or configuration changes;
+- no tenant, identity, authentication, RBAC, billing or messaging code;
+- no API or frontend changes;
+- no new infrastructure;
+- no product-code `WithTenant` helper (a test-only sketch exists);
+- the testing standards were not updated as though RLS were adopted while the decision was pending. After the adoption decision (§12.1) the owner asked for the adopted requirements to be recorded there, and they now are.
+
+**CI change:** the "Go test and build" job runs the evaluation tests against its own PostgreSQL service
+and checks that no test role remains. `go vet` and golangci-lint also cover the `rlseval` build tag. The
+required-check names are unchanged.
+
+**Evaluation results (summary; details in the [evaluation](../architecture/rls-evaluation.md)):**
+
+- **Context and pooling:** transaction-scoped context with pgxpool is safe. Session-level context leaks between requests and must never be used.
+- **Fail closed:** the `NULLIF` policy form fails closed consistently.
+- **Who bypasses RLS:** superusers, owners of unforced tables and BYPASSRLS roles bypass it. The application role cannot.
+- **The current setup gets no protection.** The API currently connects as the bootstrap superuser, so RLS would give no protection until roles are separated.
+- **Pitfalls found:** unique constraints, foreign keys, views, `SECURITY DEFINER` functions and `TRUNCATE` need the mitigations listed in the evaluation.
+- **Caching:** the statement and plan caches follow the context in all pgx execution modes.
+- **Performance:** no measurable policy overhead in an indicative 1-million-row test; one extra statement per transaction to set the context.
+
+### 12.1 Owner decisions on RLS adoption (2026-11-26)
+
+Taken by the owner after reviewing the [evaluation](../architecture/rls-evaluation.md). They are recorded in
+ADR-0010 above, and they resolve D-141.
+
+| ID | Decision | Status |
+| -- | -------- | ------ |
+| RLS-1 | **Adopt ADR-0010 option B**: RLS as defense-in-depth for **tenant-owned control-plane tables**, on top of mandatory application-level tenant filtering. Conditional on all requirements in [evaluation §10](../architecture/rls-evaluation.md#10-conditions-of-adoption-adopted-by-the-owner-rls-1). High-volume data-plane tables are explicitly excluded | **Accepted** |
+| RLS-2 | **Policy expression:** `tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid`, with equivalent `USING` and `WITH CHECK` policies. The tenant context is set transaction-locally through one application helper, which rejects missing or invalid tenant IDs before executing tenant queries. Session-level tenant settings are never used | **Accepted** |
+| RLS-3 | **Explicit cross-tenant policies:** a dedicated reporting role with its own credentials and connection pool, explicit read-only policies, and the minimum necessary table and column privileges. Cross-tenant writes need separate approval and narrowly scoped policies. `BYPASSRLS` only for the migration role and a separately controlled break-glass role, never for application, reporting or worker connections. Cross-tenant administrative operations are audited in the application | **Accepted** |
+| RLS-4 | **Role separation is a prerequisite.** Implemented in a separate, explicitly approved development group, before or alongside the first tenant-owned business table. The API must not use the bootstrap PostgreSQL superuser. Not implemented in Group 7 | **Accepted**, implementation pending a future approved group |
+| RLS-5 | **High-volume data-plane tables deferred.** The control-plane decision is not extended to them automatically. They are evaluated separately when their design and workload are known: write throughput, partitioning, query patterns, representative volume | **Deferred** |
+
+**Consequences recorded in the same pull request:**
+
+- the [testing standards](../standards/testing-standards.md#32-integration-tests) now require the RLS tests for every tenant-owned control-plane table, and the catalog CI guard;
+- `AGENTS.md` §10.7 and the [security baseline](../security/security-baseline.md#4-tenant-isolation) §4 summarise the adopted rules;
+- the roadmap marks the Phase 3 RLS evaluation item complete.
+
+**Nothing was implemented:** there are no business tables, migrations, runtime roles, product-code tenant helper or CI guard yet. The guard and the RLS tests apply from the first tenant-owned table, which needs the role-separation group (RLS-4) first or alongside it.

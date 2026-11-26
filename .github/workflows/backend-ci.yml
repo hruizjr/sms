@@ -134,6 +134,7 @@ jobs:
         run: |
           go vet ./...
           go vet -tags integration ./...
+          go vet -tags integration,rlseval ./...
 
       - name: Unit tests
         run: go test -count=1 ./...
@@ -151,6 +152,21 @@ jobs:
 
       - name: Integration tests (PostgreSQL, race detector)
         run: go test -tags integration -race -count=1 ./...
+
+      # RLS evaluation spike (Phase 3 Group 7, ADR-0010; docs/architecture/rls-evaluation.md). These tests
+      # create server-wide NOLOGIN roles, so they run only against a disposable server: this job's own
+      # PostgreSQL service container. They must run before the migration smoke test below, which
+      # migrates the maintenance database (the tests refuse a migrated one). No performance threshold.
+      - name: RLS evaluation tests (disposable PostgreSQL service, race detector)
+        env:
+          RLS_EVAL_DISPOSABLE_SERVER: "1"
+        run: |
+          set -euo pipefail
+          go test -tags integration,rlseval -race -count=1 ./internal/database/rlseval/...
+          leftover="$(docker exec "$(docker ps -q --filter "ancestor=${POSTGRES_IMAGE}")" \
+            psql -U sms -d sms -Atc "SELECT count(*) FROM pg_roles WHERE starts_with(rolname, 'rlseval_')")"
+          echo "test-created roles remaining: ${leftover}"
+          test "${leftover}" = "0"
 
       - name: Build
         run: |

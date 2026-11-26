@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — initial assessment | Project owner | 2026-11-24 |
+| Draft — initial assessment | Project owner | 2026-11-26 (R-63 mitigation updated after ADR-0010 was accepted) |
 
 ## Scales
 
@@ -57,7 +57,7 @@ All risks below are **Open** at the time of writing; no mitigation has been impl
 | R-60 | Monetary precision or rounding errors (e.g. storing centavos when rates need more precision) cause material discrepancies at volume. | High | Medium | Exact arithmetic only; representation decided from real rates (ADR-0019); one shared rounding function; reconciliation. | Open |
 | R-61 | Duplicate event publication or consumption causes duplicate side effects (charges, refunds, webhooks). | High | Medium | At-least-once with idempotent consumers (ADR-0020); unique keys on side effects; test scenarios OB/DR. | Open |
 | R-62 | Treating timeouts or missing receipts as failures causes wrong refunds, misleading reports, and customer resends that duplicate SMS. | Medium | High | Uncertain states (`SUBMIT_UNCERTAIN`, `UNKNOWN`); late-receipt reconciliation (ADR-0021). | Open |
-| R-63 | Row-Level Security misconfigured (session-level context on pooled connections, owner/BYPASSRLS role) leaks tenant data or gives false assurance. | High | Low–Medium | Evaluation before adoption; transaction-scoped context; non-owner role; fail-closed policies; leak tests (ADR-0010). | Open |
+| R-63 | Row-Level Security misconfigured (session-level context on pooled connections, owner/BYPASSRLS role) leaks tenant data or gives false assurance. | High | Low–Medium | Evaluated in Phase 3 Group 7 and adopted with conditions for control-plane tables (ADR-0010, 2026-11-26): transaction-scoped context through one validating helper; non-owner, non-superuser application role after role separation (RLS-4); forced RLS with fail-closed `NULLIF` policies; required RLS tests and a catalog CI guard (testing standards). RLS does not protect against a compromised application credential ([RLS evaluation §3](../architecture/rls-evaluation.md#3-threat-model-owner-requirement-b)). | Open (controls not yet implemented) |
 
 ## Operational
 

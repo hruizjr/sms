@@ -61,7 +61,7 @@ Owner-preference decisions that should be made **before Phase 3 scaffolding**:
 
 | ADR | Waiting for | Expected source | Register items |
 | --- | ----------- | --------------- | -------------- |
-| 0010 (RLS part) | Evaluation with connection pooling and performance tests | Phase 3 engineering spike | D-141 |
+| 0010 (data-plane tables only) | ADR-0010 was accepted on 2026-11-26 for control-plane tables ([RLS evaluation](../architecture/rls-evaluation.md)). The RLS strategy for high-volume data-plane tables waits for their design and workload (RLS-5) | Separate evaluation when the message tables are designed | D-141 (resolved for control-plane tables) |
 | 0011 | Billing basis, credit unit, payment model, refund policy | Owner decisions after telco terms | D-080–D-084 |
 | 0019 | Real rate cards and pricing model; tax treatment | Telcos, owner, accountant | D-092, D-093, D-117, D-127 |
 | 0021 | Customer status labels; uncertain-message billing; telco receipt behaviour. **Update 2026-11-25:** status labels decided and ADR-0021 accepted with a limited scope; uncertain-message billing, webhook behaviour, and telco receipt behaviour still pending | Owner, telcos | D-095–D-099, D-104, D-114–D-116 |

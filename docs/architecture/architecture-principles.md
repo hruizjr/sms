@@ -86,7 +86,7 @@ belongs to the API process or a separate ingestion service is an architecture-ph
 
 - Application layer: tenant derived from identity; every query scoped.
 - Database layer: `tenant_id` on all tenant data; composite constraints; Row-Level Security as an extra
-  guard (proposed).
+  guard on tenant-owned control-plane tables (adopted 2026-11-26, ADR-0010; data-plane tables deferred).
 - Test layer: automated cross-tenant access tests for every tenant-scoped feature.
 
 ## P8. Explicit contracts at every boundary
@@ -147,6 +147,6 @@ belongs to the API process or a separate ingestion service is an architecture-ph
 | AQ-8 | High availability and disaster recovery targets (RPO/RTO). | Business SLAs, budget |
 | AQ-9 | How are rate limits coordinated across multiple dispatcher instances? | Instance count, telco limits |
 | AQ-10 | Billing settlement point (submission vs. delivery) and its effect on the ledger flow. | Business decision D-080 |
-| AQ-11 | Should PostgreSQL Row-Level Security be adopted, given pooling and performance? | RLS evaluation (ADR-0010) |
+| AQ-11 | Should PostgreSQL Row-Level Security be adopted, given pooling and performance? | **Answered 2026-11-26:** adopted for tenant-owned control-plane tables (ADR-0010 accepted); high-volume data-plane tables need their own evaluation (RLS-5) |
 | AQ-12 | Monetary representation, scale, and rounding. | Actual rates and pricing model (ADR-0019) |
 | AQ-13 | Policy for uncertain submissions and `UNKNOWN` messages. | Business decisions D-095, D-096; telco capabilities |
