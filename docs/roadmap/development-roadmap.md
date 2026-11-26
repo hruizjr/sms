@@ -49,8 +49,8 @@ Phase 11 Scale-out and expansion (more telcos, analytics, broker, features)
 **Goal:** replace unknowns with facts and agree the architecture for the MVP.
 **Status:** Ongoing. Phase 2A (discovery preparation package) is merged (PR #2). The actual external
 discovery (telcos, counsel, customers) and Phase 2B (SRS, domain model, system architecture, threat model) are
-**not yet done**. Two acceptance criteria below are met (MVP scope and the simulator-only decision, 2026-11-26);
-**Phase 2 is not complete**.
+**not yet done**. Three acceptance criteria below are met (MVP scope, provisional traffic targets and the
+simulator-only decision, 2026-11-26); **Phase 2 is not complete**.
 **Depends on:** owner and external parties (telcos, counsel, prospective customers).
 **Work:**
 - Collect traffic data (traffic capacity discovery); telco technical answers (checklist); regulatory
@@ -67,8 +67,10 @@ criteria below is tracked in the [Phase 2 exit checklist](../discovery/phase2-ex
       8 Post-MVP, 5 Deferred) with production gates PG-1 to PG-8 ([MVP scope worksheet](../discovery/mvp-scope-worksheet.md#owner-approval-of-the-mvp-scope-2026-11-26);
       [decision log §14](../engineering/decision-log.md#14-owner-decisions--mvp-scope-phase-2-ex-1-2026-11-26)). Launch customers TBD until pilot discovery (EX-1 amended;
       D-061).
-- [ ] Traffic figures for launch customers recorded with sources, or an explicit decision to proceed with
-      provisional targets.
+- [x] Traffic figures for launch customers recorded with sources, or an explicit decision to proceed with
+      provisional targets. **Met 2026-11-26 by owner decision:** provisional platform design targets (TR-1 to
+      TR-9, gate PG-10; [traffic evidence worksheet §7](../discovery/traffic-evidence-worksheet.md#7-provisional-design-targets-owner-decision-2026-11-26-ex-2)).
+      No traffic evidence has been collected (EX-6 deferred).
 - [x] At least one telco's technical specification received, or an explicit decision to proceed
       simulator-only. **Met 2026-11-26 by owner decision:** simulator-only development and testing (S1–S8),
       gate PG-9, telco discovery deferred (EX-7) ([decision log §15](../engineering/decision-log.md#15-owner-decisions--simulator-only-development-phase-2-ex-3-2026-11-26)). No telco

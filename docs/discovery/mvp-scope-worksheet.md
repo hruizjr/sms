@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| **Owner-approved (2026-11-26)** — all 34 capabilities decided (21 MVP, 8 Post-MVP, 5 Deferred) with production gates PG-1 to PG-8 (PG-9 added 2026-11-26 with the EX-3 simulator-only decision); launch customers TBD until pilot discovery (D-061, EX-1 amended). Earlier decisions: MVP-01, 05, 08, 09, 13, 29, 30 (2026-11-25); MVP-11, 12 (2026-11-26) | Project owner | 2026-11-26 |
+| **Owner-approved (2026-11-26)** — all 34 capabilities decided (21 MVP, 8 Post-MVP, 5 Deferred) with production gates PG-1 to PG-8 (PG-9 added 2026-11-26 with the EX-3 simulator-only decision; PG-10 with the EX-2 provisional traffic targets); launch customers TBD until pilot discovery (D-061, EX-1 amended). Earlier decisions: MVP-01, 05, 08, 09, 13, 29, 30 (2026-11-25); MVP-11, 12 (2026-11-26) | Project owner | 2026-11-26 |
 
 This worksheet helps the owner decide what launches first (D-089, D-020). Every capability from the
 original product expectations (D-007) is listed and classified:
@@ -108,6 +108,7 @@ instead of, the Phase 2 exit criteria and any later phase approvals.
 | PG-7 | **Production-critical alert coverage and D-066 operational ownership are resolved** before production. This does not by itself require 24/7 staffing | MVP-28 (owner, 2026-11-26) |
 | PG-8 | **At least one validated pilot customer** before production onboarding or traffic | EX-1 amendment, D-061 |
 | PG-9 | **Every real adapter passes the provider contract suite using the provider's official specifications**, plus validation in the provider's test environment where one is available. If none is available, the gap is documented and an alternative validation is explicitly approved by the owner | EX-3 simulator-only decision (owner, 2026-11-26; [decision log §15](../engineering/decision-log.md#15-owner-decisions--simulator-only-development-phase-2-ex-3-2026-11-26)) |
+| PG-10 | **Before general production rollout, capacity targets are re-baselined** against validated pilot-customer volume information (PG-8) and contracted telco limits (PG-1). **Production infrastructure sizing requires this re-baseline** | EX-2 provisional traffic targets (owner, 2026-11-26; [decision log §16](../engineering/decision-log.md#16-owner-decisions--provisional-traffic-targets-phase-2-ex-2-2026-11-26)) |
 
 ### Prerequisites before implementation
 
