@@ -15,6 +15,7 @@ import (
 	"github.com/hruizjr/sms/backend/internal/config"
 	"github.com/hruizjr/sms/backend/internal/database"
 	"github.com/hruizjr/sms/backend/internal/database/dbtest"
+	"github.com/hruizjr/sms/backend/internal/portal"
 )
 
 func TestIntegrationBootstrapIssuesAWorkingKeyAndRevokes(t *testing.T) {
@@ -34,14 +35,18 @@ func TestIntegrationBootstrapIssuesAWorkingKeyAndRevokes(t *testing.T) {
 		}
 		return os.LookupEnv(key)
 	}
-	smsctl := func(args ...string) (int, string) {
+	smsctlIn := func(stdin string, args ...string) (int, string) {
 		t.Helper()
 		var out, errOut bytes.Buffer
-		code := run(context.Background(), args, lookup, &out, &errOut)
+		code := run(context.Background(), args, lookup, strings.NewReader(stdin), &out, &errOut)
 		if strings.Contains(out.String()+errOut.String(), cfg.Password.Reveal()) {
 			t.Fatal("smsctl printed the database password")
 		}
 		return code, out.String() + errOut.String()
+	}
+	smsctl := func(args ...string) (int, string) {
+		t.Helper()
+		return smsctlIn("", args...)
 	}
 
 	code, out := smsctl("bootstrap", "--name", "Local Demo Co", "--sender-id", "EXAMPLECO")
@@ -82,5 +87,42 @@ func TestIntegrationBootstrapIssuesAWorkingKeyAndRevokes(t *testing.T) {
 	}
 	if code, _ = smsctl("api-key", "create"); code != exitUsage {
 		t.Errorf("missing --tenant: exit %d, want usage", code)
+	}
+
+	// Portal users: a generated password printed once, or one read from standard input.
+	accounts, err := portal.NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, out = smsctl("portal-user", "create", "--tenant", tenantID[1], "--email", "Owner@Example.invalid", "--role", "owner")
+	password := regexp.MustCompile(`(?m)^([0-9a-z]{32})$`).FindStringSubmatch(out)
+	if code != exitOK || password == nil || !strings.Contains(out, "portal user: owner@example.invalid (role owner)") {
+		t.Fatalf("portal-user create: %d %s", code, out)
+	}
+	if _, err := accounts.Login(ctx, "owner@example.invalid", password[1]); err != nil {
+		t.Errorf("sign-in with the printed password: %v", err)
+	}
+	const typed = "a typed password 123"
+	if code, out = smsctlIn(typed+"\n", "portal-user", "create", "--tenant", tenantID[1], "--email", "viewer@example.invalid", "--role", "viewer", "--password-stdin"); code != exitOK || strings.Contains(out, typed) {
+		t.Fatalf("portal-user create --password-stdin: %d %s", code, out)
+	}
+	if _, err := accounts.Login(ctx, "viewer@example.invalid", typed); err != nil {
+		t.Errorf("sign-in with the password from standard input: %v", err)
+	}
+	if code, out = smsctlIn("short\n", "portal-user", "create", "--tenant", tenantID[1], "--email", "weak@example.invalid", "--role", "viewer", "--password-stdin"); code != exitError {
+		t.Errorf("weak password accepted: %d %s", code, out)
+	}
+	if code, out = smsctl("portal-user", "create", "--tenant", tenantID[1], "--email", "x@example.invalid", "--role", "admin"); code != exitError {
+		t.Errorf("unknown role accepted: %d %s", code, out)
+	}
+	if code, out = smsctl("portal-user", "list", "--tenant", tenantID[1]); code != exitOK ||
+		!strings.Contains(out, "owner@example.invalid\towner\tactive") || !strings.Contains(out, "viewer@example.invalid\tviewer") || strings.Contains(out, "argon2") {
+		t.Errorf("portal-user list: %d %s", code, out)
+	}
+	if code, out = smsctl("portal-user", "revoke-sessions", "--tenant", tenantID[1], "--email", "owner@example.invalid"); code != exitOK || !strings.Contains(out, "1 session(s) of owner@example.invalid revoked") {
+		t.Errorf("portal-user revoke-sessions: %d %s", code, out)
+	}
+	if code, out = smsctl("portal-user", "unlock", "--tenant", tenantID[1], "--email", "owner@example.invalid"); code != exitOK {
+		t.Errorf("portal-user unlock: %d %s", code, out)
 	}
 }

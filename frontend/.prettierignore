@@ -1,3 +1,5 @@
 pnpm-lock.yaml
 **/dist/
 **/coverage/
+# Generated from contracts/openapi/portal-api-v1.yaml (scripts/generate-api-types.mjs); never edited by hand.
+**/*.gen.ts

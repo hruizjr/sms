@@ -1,6 +1,6 @@
-// Blocks browser network APIs in tests. No frontend code may call a server until a separately
-// approved, session-authenticated portal API contract exists (owner decision, Phase 3 Group 5).
-// Installed by every frontend test setup file, so a test fails if rendered code tries to connect.
+// Blocks browser network APIs in tests (owner decision, Phase 3 Group 5). Installed by every frontend
+// test setup file, so a test fails if rendered code tries to connect. Code that calls the portal API
+// (Phase 4 Group 3) is tested with an injected fake transport, never with the real network.
 
 export const BLOCKED_NETWORK_APIS = [
   'fetch',
@@ -12,9 +12,7 @@ export const BLOCKED_NETWORK_APIS = [
 
 export class NetworkAccessBlockedError extends Error {
   constructor(api: string) {
-    super(
-      `${api} is blocked: the frontend has no approved API contract yet, so no network calls are allowed.`,
-    );
+    super(`${api} is blocked in tests: inject a fake transport instead of calling the network.`);
     this.name = 'NetworkAccessBlockedError';
   }
 }

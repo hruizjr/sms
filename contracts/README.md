@@ -5,21 +5,22 @@ versioned independently of any one implementation.
 
 | Planned sub-folder | Contents | Consumers |
 | ------------------ | -------- | --------- |
-| `openapi/` | OpenAPI 3.x specifications for the portal API and the public developer API | Go server (types and routes generated into `backend/internal/publicapi`), generated TypeScript types for the frontend, public API documentation, contract tests |
+| `openapi/` | OpenAPI 3.x specifications for the portal API and the public developer API | Go server (types and routes generated into `backend/internal/publicapi` and `backend/internal/portalapi`), generated TypeScript types for the client portal, public API documentation, contract tests |
 | `events/`  | Schemas for internal asynchronous events (e.g. *message accepted*, *delivery receipt received*) | Producers and consumers in the data plane |
 | `webhooks/`| Schemas of the payloads we send to customer webhooks | Public documentation, contract tests |
 
-Current contents (Phase 3 Group 3):
+Current contents (Phase 3 Group 3; portal API added in Phase 4 Group 3):
 
 | Path | Contents |
 | ---- | -------- |
 | `openapi/public-api-v1.yaml` | **Draft** public developer API v1: message submission and status (implemented in Phase 4 Group 2, simulator provider only) |
+| `openapi/portal-api-v1.yaml` | **Draft** client portal API v1 (`/portal/v1`): session sign-in and sign-out, the organization's messages, single-SMS submission, segment estimate. Cookie session plus CSRF token; used only by the platform's own client portal (decision log §20) |
 | `openapi/README.md` | Semantics of the public API, status reference, problem types, and open owner decisions |
 | `tests/` | Contract tests (Node.js built-in test runner, no extra dependencies) |
 | `redocly.yaml` | OpenAPI lint rules (`@redocly/cli`, approved in decision log §7.2) |
 | `package.json`, `pnpm-lock.yaml`, `.npmrc` | Pinned tooling: Node.js 26.13.1, pnpm 10.34.9, `@redocly/cli` 2.77.0 |
 
-`events/` and `webhooks/` do not exist yet. The portal API is added with the portal features.
+`events/` and `webhooks/` do not exist yet.
 
 Validate locally from this directory (the same commands run in CI, job **OpenAPI contract check**):
 

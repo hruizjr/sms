@@ -1,22 +1,20 @@
 # frontend/
 
 The web applications, built with **React + TypeScript (strict) + Vite + Tailwind CSS v4** in a pnpm
-workspace (ADR-0013). Phase 3 Group 5 added the foundation:
+workspace (ADR-0013). Phase 3 Group 5 added the foundation (application shell, the shared UI package with design
+tokens, `Button` and `Card`, tooling and CI;
+[decision log §10](../docs/engineering/decision-log.md#10-owner-decisions--frontend-foundation-phase-3-group-5-2026-11-25)).
+Phase 4 Group 3 added the first working **client portal**
+([decision log §20](../docs/engineering/decision-log.md#20-owner-decisions--first-working-client-portal-phase-4-group-3-2026-11-27)):
 
-- the **client portal** application shell (one page; no features);
-- the shared UI package, with design tokens, `Button` and `Card`;
-- tooling and CI.
+- **Sign in** with email and password (server-side session cookie; nothing stored in the browser);
+- **Messages**: the organization's messages with recipient, sender ID, message ID, submission time and status;
+- **Message details** with the customer-visible status history, updated automatically while in progress;
+- **Send SMS**: one recipient, an approved sender ID, a character count and the platform's segment estimate, a
+  review step, and one idempotency key per intended send (a repeated click or a retry cannot duplicate it).
 
-The owner's decisions for this group are in
-[decision log §10](../docs/engineering/decision-log.md#10-owner-decisions--frontend-foundation-phase-3-group-5-2026-11-25).
-
-Not here yet, each needing separate owner approval:
-
-- an admin portal;
-- a router, and libraries for data fetching, forms, or headless UI primitives;
-- API calls or an API client;
-- authentication;
-- any portal feature.
+Not here yet, each needing separate owner approval: an admin portal; billing or cost display; user, API key or
+sender ID management; bulk sending; router, data-fetching, form or headless UI libraries.
 
 ## Structure
 
@@ -37,11 +35,14 @@ frontend/
 │       ├── scripts/        verify-build.mjs: checks the production build
 │       └── src/
 │           ├── main.tsx
-│           ├── app/                App, error boundary
-│           ├── components/layout/  App shell, skip link (app-specific components)
-│           ├── features/home/      The only page
+│           ├── app/                App (routes), error boundary
+│           ├── components/         App shell, skip link, alerts, skeletons, labelled form fields
+│           ├── features/auth/      Session context (sign-in, sign-out, central 401 handling), sign-in page
+│           ├── features/messages/  Messages list, message details, compose, status presentation
+│           ├── lib/api/            The typed portal API client; schema.gen.ts GENERATED from the contract
+│           ├── lib/router.tsx      Minimal History-API router (no router library, G3-6)
 │           ├── styles/index.css    Tailwind entry point; imports the shared theme
-│           └── test/setup.ts       Test setup (jest-dom matchers, network guard)
+│           └── test/               Test setup (network guard), fake API transport, render helper
 └── packages/
     └── ui/                 @sms/ui: shared design tokens and primitives (owner decision F8)
         └── src/
@@ -54,10 +55,10 @@ frontend/
 Shared tokens and primitives live in `packages/ui`. Components that only one application uses stay in that
 application (`src/components/`). `@sms/ui` is consumed as TypeScript source; it has no build step.
 
-There is **no `src/lib/api/` and no generated API types yet** (owner decision F3). Generating TypeScript
-types from the OpenAPI contract is deferred until a portal endpoint exists. The public `/v1` API uses API
-keys, which must never be used in a browser. The portal will need a separately approved,
-session-authenticated portal API contract.
+**API types are generated** from [`contracts/openapi/portal-api-v1.yaml`](../contracts/openapi/portal-api-v1.yaml)
+with `openapi-typescript` (types only) into `apps/client-portal/src/lib/api/schema.gen.ts` (never edit it). After a
+contract change run `pnpm --filter @sms/client-portal generate:api`; `pnpm check:api` (and CI, on Linux and
+Windows) fails if the committed file is stale. The browser never uses the public `/v1` API or API keys.
 
 ## Prerequisites
 
@@ -68,18 +69,19 @@ session-authenticated portal API contract.
 
 Run from `frontend/`:
 
-| Command                             | What it does                                                                          |
-| ----------------------------------- | ------------------------------------------------------------------------------------- |
-| `pnpm install --frozen-lockfile`    | Install exactly what the lockfile records (what CI does)                              |
-| `pnpm dev`                          | Development server for the client portal at http://localhost:5173                     |
-| `pnpm build`                        | Production build into `apps/client-portal/dist/`, then build verification             |
-| `pnpm preview`                      | Serve the production build at http://localhost:4173                                   |
-| `pnpm test`                         | Unit and component tests (Vitest, jsdom, Testing Library) in every package            |
-| `pnpm typecheck`                    | TypeScript type check of every package                                                |
-| `pnpm lint`                         | ESLint, failing on any warning                                                        |
-| `pnpm format` / `pnpm format:check` | Format with Prettier / check formatting                                               |
-| `pnpm audit`                        | Dependency vulnerability audit; fails on moderate or higher                           |
-| `pnpm check`                        | Formatting check, lint, type check, tests, build: everything CI runs except the audit |
+| Command                             | What it does                                                                            |
+| ----------------------------------- | --------------------------------------------------------------------------------------- |
+| `pnpm install --frozen-lockfile`    | Install exactly what the lockfile records (what CI does)                                |
+| `pnpm dev`                          | Development server for the client portal at http://localhost:5173                       |
+| `pnpm build`                        | Production build into `apps/client-portal/dist/`, then build verification               |
+| `pnpm preview`                      | Serve the production build at http://localhost:4173                                     |
+| `pnpm test`                         | Unit and component tests (Vitest, jsdom, Testing Library) in every package              |
+| `pnpm typecheck`                    | TypeScript type check of every package                                                  |
+| `pnpm lint`                         | ESLint, failing on any warning                                                          |
+| `pnpm format` / `pnpm format:check` | Format with Prettier / check formatting                                                 |
+| `pnpm audit`                        | Dependency vulnerability audit; fails on moderate or higher                             |
+| `pnpm check:api`                    | Fails if the generated portal API types differ from the contract                        |
+| `pnpm check`                        | API types, formatting, lint, type check, tests, build: everything CI runs but the audit |
 
 The commands work the same on Linux, macOS and Windows. CI runs them on Linux and Windows.
 
@@ -121,17 +123,20 @@ The commands work the same on Linux, macOS and Windows. CI runs them on Linux an
 
 ## Frontend security rules
 
-**No network calls and no browser persistence until a session-authenticated portal API contract is
-approved.** Three layers enforce this:
+**Network calls only through the typed portal API client, to the page's own origin; no browser persistence.**
+The session is an `HttpOnly` cookie managed by the server; the CSRF token is kept in memory only and sent in
+`X-CSRF-Token` on every state-changing request. Three layers enforce the rules:
 
 1. **ESLint** rejects:
-   - `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource` and `navigator.sendBeacon`;
+   - `fetch` everywhere except `apps/client-portal/src/lib/api/client.ts` (owner decision G3-6);
+   - `XMLHttpRequest`, `WebSocket`, `EventSource` and `navigator.sendBeacon`;
    - `localStorage`, `sessionStorage`, `indexedDB`, `caches`, `navigator.serviceWorker` and `document.cookie`;
    - `dangerouslySetInnerHTML`.
-2. **Tests** replace the browser network APIs with functions that throw, so any test that triggers a
-   request fails (`@sms/ui/testing`, `installNetworkGuard`).
+2. **Tests** replace the browser network APIs with functions that throw, so any test that reaches the real
+   network fails (`@sms/ui/testing`, `installNetworkGuard`). Pages are tested through an injected fake
+   transport (`src/test/fake-api.ts`).
 3. **The production build** contains a Content Security Policy in a `<meta>` element:
-   - `connect-src 'none'` makes the browser refuse network calls from the page;
+   - `connect-src 'self'` lets the page call only its own origin (the portal API); every other host is refused;
    - only same-origin scripts and styles are allowed, with nothing inline.
 
    `scripts/verify-build.mjs` fails the build if the policy is missing or misplaced, if `index.html` has
@@ -157,14 +162,17 @@ Start the backend stack from the repository root with
 `docker compose -f infra/local/compose.yaml up -d --build --wait` ([`infra/local/README.md`](../infra/local/README.md)),
 then run `pnpm dev` here and open http://localhost:5173.
 
-The Vite development server forwards **only `/healthz` and `/readyz`** to the API at
-`http://127.0.0.1:8080` (`apps/client-portal/config/dev-proxy.ts`; owner decision L5, Phase 3 Group 6):
+To sign in you need a portal user: create one with `smsctl portal-user create`
+([`infra/local/README.md` §4](../infra/local/README.md#4-use-the-client-portal-in-the-browser-phase-4-group-3)).
+Open the portal as **http://localhost:5173** (the session cookie is `Secure`; browsers accept that over plain
+HTTP for `localhost` only).
 
-- **One origin:** the portal and the API share one origin in development, so the API needs no CORS.
-  This also suits the future server-managed session cookies.
-- **Nothing else is proxied:** no `/v1` or other API path. Any other path is answered by Vite itself.
-- **No frontend code calls these endpoints.** The ESLint network rules, the test network guard and the
-  production `connect-src 'none'` policy are unchanged.
+The Vite development server forwards **`/healthz`, `/readyz` and `/portal`** to the API at
+`http://127.0.0.1:8080` (`apps/client-portal/config/dev-proxy.ts`; owner decisions L5 and G3-6):
+
+- **One origin:** the portal and the API share one origin in development, so the session cookie is
+  first-party and the API needs no CORS.
+- **The public API is not proxied:** no `/v1` path. Any other path is answered by Vite itself.
 - **The proxy applies to `pnpm dev` only**, not to `pnpm preview`.
 - **The target is fixed at port 8080**, the default `API_PORT`. Making it configurable would need Node.js
   type definitions, which are not added.
@@ -176,8 +184,9 @@ The "Local stack check" CI job starts the stack and `pnpm dev`, then checks:
 
 ## Routing
 
-There is no router (ADR-0013 defers routing to Phase 4). The portal has one view at `/`. Navigation is
-added when a second real page exists. Hosting will then need to serve `index.html` for every client-side
-path.
+No router library (owner decision G3-6): `src/lib/router.tsx` (about 50 lines on the History API) provides the
+current path, navigation and links. Routes: `/messages` (also `/`), `/messages/new`, `/messages/{id}`; without a
+session every path shows the sign-in page. Hosting must serve `index.html` for every client-side path (Vite's
+development server already does).
 
 Follow [`AGENTS.md`](../AGENTS.md) §8 (Frontend standards).

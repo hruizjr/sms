@@ -6,12 +6,19 @@ import (
 	"github.com/hruizjr/sms/backend/internal/database"
 )
 
-// No tenant-owned table is exempt. Adding an exception requires the project owner's approval,
-// recorded in the decision log with its reason (testing standards §6); update this test only then.
-func TestNoExceptions(t *testing.T) {
+// Exactly the owner-approved exceptions exist. Adding an exception requires the project owner's
+// approval, recorded in the decision log with its reason (testing standards §6); update this test
+// only then. Approved: public.portal_login_directory (G3-1, decision log §20).
+func TestOnlyApprovedExceptions(t *testing.T) {
 	t.Parallel()
-	if len(Exceptions) != 0 {
-		t.Errorf("Exceptions = %v, want none (owner approval required, decision log)", Exceptions)
+	approved := []string{"public.portal_login_directory"}
+	if len(Exceptions) != len(approved) {
+		t.Errorf("Exceptions = %v, want exactly %v (owner approval required, decision log)", Exceptions, approved)
+	}
+	for _, table := range approved {
+		if _, ok := Exceptions[table]; !ok {
+			t.Errorf("approved exception %s is missing", table)
+		}
 	}
 	for table, reason := range Exceptions {
 		if reason == "" {

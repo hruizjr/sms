@@ -3,6 +3,7 @@ package messaging
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSegment(t *testing.T) {
@@ -157,5 +158,43 @@ func TestFingerprintNormalizesTheRequest(t *testing.T) {
 		if Fingerprint(other) == Fingerprint(base) {
 			t.Errorf("changing %s must change the fingerprint", name)
 		}
+	}
+}
+
+func TestCustomerHistory(t *testing.T) {
+	t.Parallel()
+	at := func(m int) time.Time { return time.Date(2026, 11, 27, 8, m, 0, 0, time.UTC) }
+	queued, submitting, submitted := StateQueued, StateSubmitting, StateSubmitted
+	uncertain, reason := StateSubmitUncertain, ReasonSubmissionOutcomeUnknown
+	history := []HistoryEntry{
+		{To: StateQueued, OccurredAt: at(0)},
+		{From: &queued, To: StateSubmitting, OccurredAt: at(1)}, // still "accepted": left out
+		{From: &submitting, To: StateQueued, OccurredAt: at(2)}, // retry: still "accepted"
+		{From: &queued, To: StateSubmitting, OccurredAt: at(3)}, // still "accepted"
+		{From: &submitting, To: StateSubmitted, OccurredAt: at(4)},
+		{From: &submitted, To: StateDelivered, OccurredAt: at(5)},
+	}
+	got := CustomerHistory(history)
+	want := []StatusChange{{Status: StatusAccepted, OccurredAt: at(0)}, {Status: StatusProviderAccepted, OccurredAt: at(4)}, {Status: StatusDelivered, OccurredAt: at(5)}}
+	if len(got) != len(want) {
+		t.Fatalf("CustomerHistory() = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i].Status != want[i].Status || !got[i].OccurredAt.Equal(want[i].OccurredAt) || got[i].Reason != nil {
+			t.Errorf("change %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+	// A reason is kept, and a change of reason alone is a visible change.
+	other := ReasonProviderReportedUndelivered
+	got = CustomerHistory([]HistoryEntry{
+		{To: StateQueued, OccurredAt: at(0)},
+		{From: &submitting, To: StateSubmitUncertain, Reason: &reason, OccurredAt: at(1)},
+		{From: &uncertain, To: StateSubmitUncertain, Reason: &other, OccurredAt: at(2)},
+	})
+	if len(got) != 3 || got[1].Status != StatusSubmissionUncertain || got[1].Reason == nil || *got[1].Reason != reason || *got[2].Reason != other {
+		t.Errorf("CustomerHistory() with reasons = %+v", got)
+	}
+	if got := CustomerHistory(nil); got == nil || len(got) != 0 {
+		t.Errorf("CustomerHistory(nil) = %#v, want an empty slice", got)
 	}
 }

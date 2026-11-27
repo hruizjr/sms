@@ -6,7 +6,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
 const NO_NETWORK =
-  'The frontend makes no network calls until a separately approved, session-authenticated portal API contract exists (owner decision, Phase 3 Group 5).';
+  'Network calls go only through the typed portal API client in apps/client-portal/src/lib/api/ (owner decision G3-6, Phase 4 Group 3).';
 const NO_PERSISTENCE =
   'No browser persistence: session state lives in server-managed HttpOnly cookies (AGENTS.md §8.10).';
 
@@ -31,7 +31,7 @@ const restrictedProperties = [
 ];
 
 export default defineConfig([
-  globalIgnores(['**/dist/', '**/coverage/', '**/node_modules/']),
+  globalIgnores(['**/dist/', '**/coverage/', '**/node_modules/', '**/*.gen.ts']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -62,9 +62,25 @@ export default defineConfig([
     },
   },
   {
+    // The one place that may call fetch: the typed client of the session-authenticated portal API
+    // (AGENTS.md §8.5). XMLHttpRequest, WebSocket, EventSource, sendBeacon and browser persistence stay
+    // forbidden here too. Its tests inject a fake transport; the test network guard blocks real calls.
+    files: ['apps/client-portal/src/lib/api/client.ts'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        ...restrictedGlobals.filter(({ name }) => name !== 'fetch'),
+      ],
+      'no-restricted-properties': [
+        'error',
+        ...restrictedProperties.filter(({ property }) => property !== 'fetch'),
+      ],
+    },
+  },
+  {
     // Node.js scripts and configuration written in JavaScript.
     files: ['**/*.{js,mjs}'],
     extends: [js.configs.recommended],
-    languageOptions: { globals: { console: 'readonly', process: 'readonly' } },
+    languageOptions: { globals: { console: 'readonly', process: 'readonly', URL: 'readonly' } },
   },
 ]);

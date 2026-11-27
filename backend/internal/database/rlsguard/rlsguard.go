@@ -39,8 +39,14 @@ import (
 // Exceptions lists tenant-owned tables that are exempt from the guard, keyed by schema-qualified
 // name, with the owner-approved reason. A table may be added only with the project owner's
 // approval, recorded in the decision log (testing standards §6); deferred high-volume data-plane
-// tables (RLS-5) belong here rather than being skipped silently. There are no exceptions.
-var Exceptions = map[string]string{}
+// tables (RLS-5) belong here rather than being skipped silently.
+var Exceptions = map[string]string{
+	// Owner decision G3-1 (decision log §20, 2026-11-27): the platform-owned login directory maps a
+	// normalized email address to its tenant and user, because signing in with an email address and
+	// a password needs that one lookup before any tenant is known. It holds nothing else; password
+	// hashes, roles and sessions stay in tenant-owned tables under forced RLS.
+	"public.portal_login_directory": "platform-owned login directory (owner decision G3-1, decision log §20)",
+}
 
 // Violation is one unprotected tenant-owned table.
 type Violation struct {

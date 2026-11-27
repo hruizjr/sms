@@ -282,6 +282,20 @@ func (s *Service) ApproveSenderID(ctx context.Context, tenantID tenancy.ID, send
 	})
 }
 
+// ListSenderIDs returns the approved sender IDs of tenantID, in order.
+func (s *Service) ListSenderIDs(ctx context.Context, tenantID tenancy.ID) ([]string, error) {
+	var ids []string
+	err := s.db.InTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		var err error
+		ids, err = sqlcgen.New(tx).ListSenderIDs(ctx, pgUUID(tenantID))
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list sender IDs: %w", err)
+	}
+	return ids, nil
+}
+
 func messageFromRow(row sqlcgen.GetMessageRow) Message {
 	m := Message{
 		ID:              MessageID(row.ID.Bytes),

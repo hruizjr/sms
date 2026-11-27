@@ -12,6 +12,12 @@ SELECT EXISTS (
     SELECT 1 FROM sender_ids WHERE tenant_id = @tenant_id AND sender_id = @sender_id
 ) AS approved;
 
+-- name: ListSenderIDs :many
+SELECT sender_id
+FROM sender_ids
+WHERE tenant_id = @tenant_id
+ORDER BY sender_id;
+
 -- name: GetLiveIdempotencyRecord :one
 SELECT request_fingerprint, message_id
 FROM idempotency_keys

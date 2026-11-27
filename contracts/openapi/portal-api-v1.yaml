@@ -1,0 +1,873 @@
+openapi: 3.1.1
+info:
+  title: SMS Platform Client Portal API
+  version: 0.1.0-draft
+  summary: Session-authenticated API used only by the platform's own client portal.
+  description: |
+    **Status: draft contract (Phase 4 Group 3), implemented against the simulator provider only (no real
+    network).** Owner decisions G3-1 to G3-6 (decision log §20, 2026-11-27) apply.
+
+    This API serves the platform's own browser application (the client portal). It is **not** a
+    developer API: integrations use the public API (`public-api-v1.yaml`) with API keys. The two are
+    separate: a portal session never grants public API access, and an API key never opens a portal
+    session. API keys are never sent to or stored in the browser.
+
+    ## Authentication and CSRF
+
+    - `POST /portal/v1/session` signs in with an email address and a password. On success the server
+      sets the session cookie `__Host-sms_session` (`HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/`).
+      The browser stores nothing else; the session lives on the server.
+    - The tenant (organization) is always derived from the session. No request field selects it.
+    - Every state-changing request (`POST`, `DELETE`) made with a session must carry the session's CSRF
+      token in the `X-CSRF-Token` header. The token is returned in the `Session` object (readable by
+      same-origin JavaScript only) and is recomputed by the server from the session cookie.
+      `POST /portal/v1/session` itself accepts only `application/json`, which a cross-site form cannot
+      send without a CORS preflight, which this API never grants.
+    - A session ends after 30 minutes without a request, 12 hours after sign-in, at sign-out, or when
+      revoked (G3-3). Five consecutive failed sign-ins lock the account for 15 minutes.
+
+    ## Messages
+
+    Message submission uses the **same** messaging engine, idempotency records, dispatcher and status
+    model as the public API: the statuses, status categories and reason codes have the meanings documented
+    in `public-api-v1.yaml` and `contracts/openapi/README.md`. A portal message and a public API message
+    are the same kind of record. A `202` means only that the platform accepted and stored the message;
+    the platform never promises exactly-once SMS delivery.
+
+    ## Conventions
+
+    As in the public API: JSON with `snake_case` fields, RFC 3339 UTC timestamps, E.164 phone numbers,
+    opaque identifiers, RFC 9457 problem details, cursor pagination, and an `X-Request-ID` response
+    header on every response.
+  contact:
+    name: Platform owner (to be published)
+servers:
+  - url: https://portal.example.invalid
+    description: Placeholder. The portal is served from the same origin as this API; the host is not decided (D-145).
+tags:
+  - name: Session
+    description: Sign in, read the current session, sign out.
+  - name: Messages
+    description: Compose, submit and read the organization's messages.
+security:
+  - portal_session: []
+paths:
+  /portal/v1/session:
+    post:
+      tags: [Session]
+      operationId: signIn
+      summary: Sign in
+      description: |
+        Verifies an email address and password and starts a session (sets the session cookie). Unknown
+        addresses, wrong passwords and temporarily locked accounts all receive the same `401`
+        (`invalid-credentials`). A correct password for an organization that is not active receives
+        `403` (`account-not-active`) and no session.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignInRequest'
+      responses:
+        '200':
+          description: Signed in. The response sets the session cookie.
+          headers:
+            Set-Cookie:
+              description: The session cookie `__Host-sms_session` (`HttpOnly; Secure; SameSite=Strict; Path=/`).
+              schema:
+                type: string
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InvalidCredentials'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags: [Session]
+      operationId: getSession
+      summary: Read the current session
+      description: |
+        Returns the signed-in user, the organization, the user's permissions and the CSRF token.
+        `401` means there is no valid session (never signed in, expired, signed out or revoked).
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: The current session.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags: [Session]
+      operationId: signOut
+      summary: Sign out
+      description: Revokes the current session on the server and clears the session cookie.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '204':
+          description: Signed out. The response clears the session cookie.
+          headers:
+            Set-Cookie:
+              description: Expires the session cookie.
+              schema:
+                type: string
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /portal/v1/sender-ids:
+    get:
+      tags: [Messages]
+      operationId: listSenderIds
+      summary: List approved sender IDs
+      description: The organization's approved sender IDs, in order. Requires `messages:read`.
+      x-required-permission: messages:read
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: The approved sender IDs.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SenderIdList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /portal/v1/message-estimates:
+    post:
+      tags: [Messages]
+      operationId: estimateMessage
+      summary: Estimate encoding and segments
+      description: |
+        Returns the encoding and segment count the platform would calculate for a message text, using
+        the platform's one shared segmentation function. Nothing is stored or sent. Requires
+        `messages:send`.
+      x-required-permission: messages:send
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessageEstimateRequest'
+      responses:
+        '200':
+          description: The estimate.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageEstimate'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /portal/v1/messages:
+    post:
+      tags: [Messages]
+      operationId: createMessage
+      summary: Submit one SMS
+      description: |
+        Accepts one SMS to one recipient (D-089: one recipient per portal send) through the same
+        messaging engine as `POST /v1/messages`, with the same idempotency rules (ADR-0018): the portal
+        generates one `Idempotency-Key` per intended send and reuses it on retries, so a repeated click
+        or a network retry cannot create a second message. Requires `messages:send`.
+      x-required-permission: messages:send
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessageCreateRequest'
+      responses:
+        '202':
+          description: Accepted (or replayed for the same key and body). Not a delivery report.
+          headers:
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/IdempotencyRequestInProgress'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/UnprocessableMessage'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags: [Messages]
+      operationId: listMessages
+      summary: List messages
+      description: The organization's messages, newest first. Requires `messages:read`.
+      x-required-permission: messages:read
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          required: false
+          description: Only messages with this status.
+          schema:
+            $ref: '#/components/schemas/MessageStatus'
+      responses:
+        '200':
+          description: One page of messages.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /portal/v1/messages/{message_id}:
+    get:
+      tags: [Messages]
+      operationId: getMessage
+      summary: Read a message and its status history
+      description: |
+        One message of the organization with its customer-visible status history. A message of another
+        organization is reported as `404`, exactly like a message that does not exist. Requires
+        `messages:read`.
+      x-required-permission: messages:read
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - name: message_id
+          in: path
+          required: true
+          description: The message `id` returned at acceptance.
+          schema:
+            $ref: '#/components/schemas/MessageId'
+      responses:
+        '200':
+          description: The message.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  securitySchemes:
+    portal_session:
+      type: apiKey
+      in: cookie
+      name: __Host-sms_session
+      description: |
+        Server-side session cookie set by `POST /portal/v1/session` (`HttpOnly`, `Secure`,
+        `SameSite=Strict`, `Path=/`). It is opaque; only the hash of its secret is stored. State-changing
+        requests also need the `X-CSRF-Token` header.
+  parameters:
+    RequestId:
+      name: X-Request-ID
+      in: header
+      required: false
+      description: Optional correlation identifier, handled exactly as in the public API.
+      schema:
+        type: string
+    CsrfToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      description: |
+        The `csrf_token` of the current session. A missing or wrong token receives `403`
+        (`csrf-token-invalid`) and nothing is processed.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        A unique value per intended send (the portal uses a random UUID), reused unchanged on retries.
+        Same rules as the public API (ADR-0018): scope is the organization + this operation; a different
+        body with the same key receives `422` (`idempotency-key-reused`); an identical body is replayed
+        with `Idempotent-Replayed: true`; keys are kept for seven days.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+        pattern: '^(?:[\x21\x23-\x5B\x5D-\x7E]{1,255}|"[\x21\x23-\x5B\x5D-\x7E]{1,253}")$'
+      example: 0c9d4bf1-3b52-4f6e-9a57-3f0b6f2f9b1e
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Maximum number of items to return.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 25
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque cursor from a previous page's `next_cursor`, used with the same filters.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 512
+  headers:
+    XRequestID:
+      description: Request identifier for support and troubleshooting.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^[A-Za-z0-9._-]{1,128}$'
+    IdempotentReplayed:
+      description: '`true` when this response replays an earlier response for the same `Idempotency-Key`.'
+      schema:
+        type: string
+        enum: ['true']
+    RetryAfter:
+      description: Seconds to wait before retrying.
+      schema:
+        type: integer
+        minimum: 1
+  responses:
+    BadRequest:
+      description: |
+        The request is malformed or invalid (`malformed-request`, `validation-error` with field
+        `errors`, `idempotency-key-missing`, `idempotency-key-invalid`).
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/validation-error
+            title: The request is invalid
+            status: 400
+            detail: One or more fields are invalid.
+            request_id: 9b2f4c1e7d3a5b60
+            errors:
+              - pointer: /to
+                code: invalid_phone_number
+                detail: Must be an E.164 phone number, for example +639000000001.
+    InvalidCredentials:
+      description: |
+        The email address or password is wrong, or the account is temporarily locked
+        (`invalid-credentials`). The cause is not distinguished.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/invalid-credentials
+            title: Sign-in failed
+            status: 401
+            detail: The email address or password is incorrect, or the account is temporarily locked.
+            request_id: 9b2f4c1e7d3a5b61
+    Unauthenticated:
+      description: |
+        No valid session (`unauthenticated`): never signed in, expired, signed out or revoked.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/unauthenticated
+            title: Authentication required
+            status: 401
+            detail: Sign in to continue.
+            request_id: 9b2f4c1e7d3a5b62
+    Forbidden:
+      description: |
+        Refused: the CSRF token is missing or wrong (`csrf-token-invalid`), the user's role lacks the
+        permission (`forbidden`), or the organization is not active (`account-not-active`).
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/forbidden
+            title: Permission denied
+            status: 403
+            detail: Your role does not allow sending messages.
+            request_id: 9b2f4c1e7d3a5b63
+    NotFound:
+      description: No such message for this organization.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            detail: The requested resource does not exist.
+            request_id: 9b2f4c1e7d3a5b64
+    IdempotencyRequestInProgress:
+      description: A request with the same `Idempotency-Key` and body is still being processed.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/idempotency-request-in-progress
+            title: A request with this Idempotency-Key is in progress
+            status: 409
+            detail: Retry after the indicated delay with the same key and body.
+            request_id: 9b2f4c1e7d3a5b65
+    PayloadTooLarge:
+      description: The request body is too large (`payload-too-large`).
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/payload-too-large
+            title: Request body too large
+            status: 413
+            detail: The request body exceeds the allowed size.
+            request_id: 9b2f4c1e7d3a5b66
+    UnsupportedMediaType:
+      description: The request body is not `application/json` (`unsupported-media-type`).
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/unsupported-media-type
+            title: Unsupported media type
+            status: 415
+            detail: Send the request body as application/json.
+            request_id: 9b2f4c1e7d3a5b67
+    UnprocessableMessage:
+      description: |
+        Valid but not acceptable: `sender-id-not-approved`, `destination-not-supported`,
+        `message-too-long`, or `idempotency-key-reused`. Nothing was sent.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/sender-id-not-approved
+            title: Sender ID not approved
+            status: 422
+            detail: The sender_id is not an approved sender ID for this account.
+            request_id: 9b2f4c1e7d3a5b68
+    InternalError:
+      description: Unexpected server error. The outcome of a submission is unknown; retry with the same `Idempotency-Key`.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/XRequestID'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Internal Server Error
+            status: 500
+            detail: An unexpected error occurred.
+            request_id: 9b2f4c1e7d3a5b69
+  schemas:
+    SignInRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          minLength: 1
+          maxLength: 254
+          description: The user's email address (case-insensitive).
+          examples: [owner@example.invalid]
+        password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          description: The user's password.
+    Role:
+      type: string
+      description: |
+        Client portal role (MVP-03). `owner` and `sender` may read and send messages; `viewer` may only
+        read (G3-3). Owner management functions are not part of this version.
+      enum: [owner, sender, viewer]
+    Permission:
+      type: string
+      description: A permission of the signed-in user. Operations state the one they require (`x-required-permission`).
+      enum: ['messages:read', 'messages:send']
+    Session:
+      type: object
+      required: [user, organization, permissions, csrf_token, expires_at, idle_expires_at]
+      properties:
+        user:
+          type: object
+          required: [email, role]
+          properties:
+            email:
+              type: string
+              maxLength: 254
+            role:
+              $ref: '#/components/schemas/Role'
+        organization:
+          type: object
+          required: [name]
+          properties:
+            name:
+              type: string
+              maxLength: 200
+              description: The organization's display name.
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Permission'
+        csrf_token:
+          type: string
+          maxLength: 128
+          description: Send this value in the `X-CSRF-Token` header of every state-changing request.
+        expires_at:
+          type: string
+          format: date-time
+          description: When the session ends at the latest (absolute lifetime).
+        idle_expires_at:
+          type: string
+          format: date-time
+          description: When the session ends if no further request is made.
+    SenderIdList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SenderId'
+    MessageEstimateRequest:
+      type: object
+      additionalProperties: false
+      required: [body]
+      properties:
+        body:
+          type: string
+          maxLength: 1600
+          description: The message text to estimate (may be empty).
+    MessageEstimate:
+      type: object
+      required: [encoding, segment_count, characters, max_characters]
+      properties:
+        encoding:
+          $ref: '#/components/schemas/Encoding'
+        segment_count:
+          type: integer
+          minimum: 0
+          description: Segments the platform calculates for this text (0 for an empty text).
+        characters:
+          type: integer
+          minimum: 0
+          description: Number of characters (Unicode code points) in the text.
+        max_characters:
+          type: integer
+          description: The maximum message length in characters (D-144).
+          examples: [1600]
+    MessageId:
+      type: string
+      minLength: 1
+      maxLength: 64
+      pattern: '^[A-Za-z0-9_-]{1,64}$'
+      description: Opaque message identifier.
+      examples: [msg_01jd8x7k3p2m9q4r5s6t7v8w9y]
+    PhoneNumber:
+      type: string
+      pattern: '^\+[1-9][0-9]{6,14}$'
+      description: E.164 phone number. Only Philippine mobile numbers (`+639…`) are served.
+      examples: ['+639000000001']
+    SenderId:
+      type: string
+      minLength: 1
+      maxLength: 32
+      description: An approved sender ID of the organization.
+      examples: [EXAMPLE]
+    Encoding:
+      type: string
+      description: Encoding chosen by the platform from the message text.
+      enum: [gsm7, ucs2]
+    MessageCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [to, sender_id, body]
+      properties:
+        to:
+          $ref: '#/components/schemas/PhoneNumber'
+        sender_id:
+          $ref: '#/components/schemas/SenderId'
+        body:
+          type: string
+          minLength: 1
+          maxLength: 1600
+          description: The message text (1 to 1,600 characters).
+    MessageStatus:
+      type: string
+      description: Customer-visible status; the same values and meanings as the public API `MessageStatus`.
+      enum:
+        - accepted
+        - provider_accepted
+        - submission_uncertain
+        - delivered
+        - undelivered
+        - unknown
+        - rejected
+        - failed
+    StatusCategory:
+      type: string
+      description: Coarse grouping of `status`; the same values and meanings as the public API.
+      enum: [in_progress, uncertain, final]
+    StatusReason:
+      type: object
+      required: [code, description]
+      properties:
+        code:
+          type: string
+          maxLength: 64
+          pattern: '^[a-z][a-z0-9_]*$'
+          description: Machine-readable reason (public API reason codes).
+        description:
+          type: string
+          maxLength: 500
+          description: Human-readable explanation in English.
+    Message:
+      type: object
+      description: A message of the organization. The message text is never returned (data minimization).
+      required:
+        - id
+        - to
+        - sender_id
+        - status
+        - status_category
+        - status_reason
+        - encoding
+        - segment_count
+        - accepted_at
+        - status_updated_at
+      properties:
+        id:
+          $ref: '#/components/schemas/MessageId'
+        to:
+          $ref: '#/components/schemas/PhoneNumber'
+        sender_id:
+          $ref: '#/components/schemas/SenderId'
+        status:
+          $ref: '#/components/schemas/MessageStatus'
+        status_category:
+          $ref: '#/components/schemas/StatusCategory'
+        status_reason:
+          oneOf:
+            - $ref: '#/components/schemas/StatusReason'
+            - type: 'null'
+        encoding:
+          $ref: '#/components/schemas/Encoding'
+        segment_count:
+          type: integer
+          minimum: 1
+        accepted_at:
+          type: string
+          format: date-time
+        status_updated_at:
+          type: string
+          format: date-time
+    StatusChange:
+      type: object
+      description: One change of the customer-visible status, oldest first.
+      required: [status, status_category, status_reason, occurred_at]
+      properties:
+        status:
+          $ref: '#/components/schemas/MessageStatus'
+        status_category:
+          $ref: '#/components/schemas/StatusCategory'
+        status_reason:
+          oneOf:
+            - $ref: '#/components/schemas/StatusReason'
+            - type: 'null'
+        occurred_at:
+          type: string
+          format: date-time
+    MessageDetail:
+      description: A message with its customer-visible status history.
+      allOf:
+        - $ref: '#/components/schemas/Message'
+        - type: object
+          required: [status_history]
+          properties:
+            status_history:
+              type: array
+              items:
+                $ref: '#/components/schemas/StatusChange'
+    MessageList:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+        next_cursor:
+          description: Cursor for the next page, or `null` when there are no more items.
+          oneOf:
+            - type: string
+              maxLength: 512
+            - type: 'null'
+    Problem:
+      type: object
+      description: RFC 9457 problem details; `detail` never contains internal error text.
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+          description: Problem type URI. Compare it, not `title` or `detail`.
+        title:
+          type: string
+          description: Short summary of the problem type.
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+          description: HTTP status code.
+        detail:
+          type: string
+          description: Human-readable explanation of this occurrence.
+        request_id:
+          type: string
+          maxLength: 128
+          description: The request identifier.
+        errors:
+          type: array
+          description: Field-level validation errors (`validation-error` only).
+          items:
+            $ref: '#/components/schemas/FieldError'
+    FieldError:
+      type: object
+      required: [code, detail]
+      properties:
+        pointer:
+          type: string
+          description: JSON Pointer to the invalid body field, for example `/to`.
+        parameter:
+          type: string
+          description: Name of the invalid query, path or header parameter.
+        code:
+          type: string
+          pattern: '^[a-z][a-z0-9_]*$'
+          description: Machine-readable error code.
+        detail:
+          type: string
+          description: Human-readable explanation.

@@ -1,6 +1,6 @@
 // Checks the production build after `vite build` (run by `pnpm build`):
 // - the Content Security Policy <meta> element comes before every script and stylesheet and blocks
-//   network calls (connect-src 'none');
+//   network calls to other origins (connect-src 'self': only the portal's own API, owner decision G3-6);
 // - index.html has no inline <script> or <style> (the policy would block them);
 // - no source maps are published.
 import { readdirSync, readFileSync } from 'node:fs';
@@ -19,8 +19,8 @@ if (cspTag === null) {
   if (firstResource !== -1 && firstResource < cspTag.index) {
     failures.push('the Content Security Policy comes after a script, stylesheet or style element');
   }
-  if (!csp.split(';').some((directive) => directive.trim() === "connect-src 'none'")) {
-    failures.push("the Content Security Policy does not contain connect-src 'none'");
+  if (!csp.split(';').some((directive) => directive.trim() === "connect-src 'self'")) {
+    failures.push("the Content Security Policy does not contain connect-src 'self'");
   }
 }
 for (const match of html.matchAll(/<script\b([^>]*)>/g)) {

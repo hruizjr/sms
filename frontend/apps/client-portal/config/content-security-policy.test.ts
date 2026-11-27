@@ -18,8 +18,8 @@ function directives(policy: string): Map<string, string> {
 describe('content security policy', () => {
   const policy = directives(CONTENT_SECURITY_POLICY);
 
-  it('blocks every browser network call from the page', () => {
-    expect(policy.get('connect-src')).toBe("'none'");
+  it('allows network calls to the same origin only (the portal API)', () => {
+    expect(policy.get('connect-src')).toBe("'self'");
   });
 
   it('denies by default and allows only same-origin scripts and styles, nothing inline', () => {

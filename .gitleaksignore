@@ -14,3 +14,10 @@ b208db1fe4493475d9cda605733742eb809fb0de:backend/internal/httpserver/publicapi_t
 # - Commit 89b4d03 is the original Group 4 commit; it is part of this working branch's history, which
 #   pull-request checks scan in full.
 89b4d033040932b8b2cc8e9c6e84fdb2088f4ad1:backend/internal/httpserver/publicapi_test.go:generic-api-key:218
+#
+# Reviewed 2026-11-27. Rule generic-api-key matched a synthetic test constant in the Argon2id hash
+# parser test (TestParseHashRejectsMalformedAndExcessiveParameters): the unpadded base64 of the ASCII
+# words "saltsaltsaltsalt" and "keykeykey…", used as a well-formed but meaningless salt and hash. It is
+# not a password, key or hash of any credential and grants no access. The test now builds these values
+# at runtime, so only this earlier commit of the Phase 4 Group 3 branch contains the literal.
+bf214a47bc32cf26eac39ddcd7659654f357a1e0:backend/internal/portal/portal_test.go:generic-api-key:36

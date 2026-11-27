@@ -668,6 +668,33 @@ func (q *Queries) ListMessages(ctx context.Context, arg ListMessagesParams) ([]L
 	return items, nil
 }
 
+const listSenderIDs = `-- name: ListSenderIDs :many
+SELECT sender_id
+FROM sender_ids
+WHERE tenant_id = $1
+ORDER BY sender_id
+`
+
+func (q *Queries) ListSenderIDs(ctx context.Context, tenantID pgtype.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, listSenderIDs, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var sender_id string
+		if err := rows.Scan(&sender_id); err != nil {
+			return nil, err
+		}
+		items = append(items, sender_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStatusHistory = `-- name: ListStatusHistory :many
 SELECT from_status, to_status, status_reason, source, attempt_id, receipt_id, occurred_at
 FROM message_status_history

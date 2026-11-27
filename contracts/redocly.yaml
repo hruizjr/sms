@@ -3,6 +3,13 @@
 apis:
   public-api-v1:
     root: openapi/public-api-v1.yaml
+  portal-api-v1:
+    root: openapi/portal-api-v1.yaml
+    rules:
+      # /portal/v1/session is a singleton resource (the caller's own session).
+      path-segment-plural:
+        severity: error
+        exceptions: [v1, portal, session]
 
 extends:
   - recommended-strict

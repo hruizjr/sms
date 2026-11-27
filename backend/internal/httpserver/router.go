@@ -29,6 +29,9 @@ type RouterDeps struct {
 	// PublicAPI, when set, mounts the public API v1 (POST /v1/messages, GET /v1/messages and
 	// GET /v1/messages/{message_id}) behind API key authentication. Without it, /v1 answers 404.
 	PublicAPI *PublicAPIDeps
+	// Portal, when set, mounts the client portal API (/portal/v1, session-authenticated;
+	// contracts/openapi/portal-api-v1.yaml). Without it, /portal answers 404.
+	Portal *PortalDeps
 }
 
 // NewRouter returns the application HTTP handler with its middleware chain and routes.
@@ -72,6 +75,9 @@ func newRouter(deps RouterDeps, extra func(chi.Router)) http.Handler {
 
 	if deps.PublicAPI != nil {
 		mountMessagesAPI(r, *deps.PublicAPI, deps.Logger)
+	}
+	if deps.Portal != nil {
+		mountPortalAPI(r, *deps.Portal, deps.Logger)
 	}
 	if extra != nil {
 		extra(r)

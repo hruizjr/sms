@@ -17,7 +17,7 @@ func TestRefusesOutsideLocalEnvironments(t *testing.T) {
 			return "", false
 		}
 		var out, errOut bytes.Buffer
-		code := run(context.Background(), []string{"tenant", "list"}, lookup, &out, &errOut)
+		code := run(context.Background(), []string{"tenant", "list"}, lookup, strings.NewReader(""), &out, &errOut)
 		if code != exitUsage || !strings.Contains(errOut.String(), "refusing to run") || out.Len() != 0 {
 			t.Errorf("APP_ENV=%q: exit %d, stderr %q", env, code, errOut.String())
 		}
@@ -27,7 +27,7 @@ func TestRefusesOutsideLocalEnvironments(t *testing.T) {
 func TestUsage(t *testing.T) {
 	t.Parallel()
 	var out, errOut bytes.Buffer
-	if code := run(context.Background(), nil, func(string) (string, bool) { return "", false }, &out, &errOut); code != exitUsage || !strings.Contains(errOut.String(), "usage:") {
+	if code := run(context.Background(), nil, func(string) (string, bool) { return "", false }, strings.NewReader(""), &out, &errOut); code != exitUsage || !strings.Contains(errOut.String(), "usage:") {
 		t.Errorf("no arguments: exit %d, stderr %q", code, errOut.String())
 	}
 }
