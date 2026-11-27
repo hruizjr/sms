@@ -424,6 +424,9 @@ databases is a later, evidence-based decision.
    separate approval and narrowly scoped policies. `BYPASSRLS` is reserved for the migration role and a
    separately controlled break-glass role, never for application, reporting or worker connections.
    Cross-tenant administrative operations are audited in the application.
+   *Amended 2026-11-26 (owner decision G1-9, [§18](#18-owner-decisions--database-role-separation-and-tenant-registry-phase-4-group-1-2026-11-26)):
+   the migration role has `NOBYPASSRLS`; no blanket bypass is granted; cross-tenant data migrations need a
+   separately designed, controlled procedure. The rest of this item is unchanged.*
 4. **Prerequisite (RLS-4):** database role separation is implemented in a separate, explicitly approved
    development group, before or alongside the first tenant-owned business table. The API must not use the
    bootstrap PostgreSQL superuser.
@@ -1210,7 +1213,7 @@ ADR-0010 above, and they resolve D-141.
 | -- | -------- | ------ |
 | RLS-1 | **Adopt ADR-0010 option B**: RLS as defense-in-depth for **tenant-owned control-plane tables**, on top of mandatory application-level tenant filtering. Conditional on all requirements in [evaluation §10](../architecture/rls-evaluation.md#10-conditions-of-adoption-adopted-by-the-owner-rls-1). High-volume data-plane tables are explicitly excluded | **Accepted** |
 | RLS-2 | **Policy expression:** `tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid`, with equivalent `USING` and `WITH CHECK` policies. The tenant context is set transaction-locally through one application helper, which rejects missing or invalid tenant IDs before executing tenant queries. Session-level tenant settings are never used | **Accepted** |
-| RLS-3 | **Explicit cross-tenant policies:** a dedicated reporting role with its own credentials and connection pool, explicit read-only policies, and the minimum necessary table and column privileges. Cross-tenant writes need separate approval and narrowly scoped policies. `BYPASSRLS` only for the migration role and a separately controlled break-glass role, never for application, reporting or worker connections. Cross-tenant administrative operations are audited in the application | **Accepted** |
+| RLS-3 | **Explicit cross-tenant policies:** a dedicated reporting role with its own credentials and connection pool, explicit read-only policies, and the minimum necessary table and column privileges. Cross-tenant writes need separate approval and narrowly scoped policies. `BYPASSRLS` only for the migration role and a separately controlled break-glass role, never for application, reporting or worker connections. Cross-tenant administrative operations are audited in the application. *Migration-role part superseded by G1-9 (§18, 2026-11-26): `NOBYPASSRLS`* | **Accepted** |
 | RLS-4 | **Role separation is a prerequisite.** Implemented in a separate, explicitly approved development group, before or alongside the first tenant-owned business table. The API must not use the bootstrap PostgreSQL superuser. Not implemented in Group 7 | **Accepted**, implementation pending a future approved group |
 | RLS-5 | **High-volume data-plane tables deferred.** The control-plane decision is not extended to them automatically. They are evaluated separately when their design and workload are known: write throughput, partitioning, query patterns, representative volume | **Deferred** |
 
@@ -1496,3 +1499,80 @@ does not close Phase 2. **EX-9 status: owner review complete, partner approval p
   partner approval pending**; EX-2, EX-3 and EX-13 are satisfied; EX-6 and EX-7 are deferred. Phase 2 is not
   complete. Non-production engineering work may proceed against the provisional scope once the owner authorizes
   it; partner approval is not a blanket prohibition on such work.
+
+---
+
+## 18. Owner decisions — database role separation and tenant registry (Phase 4 Group 1, 2026-11-26)
+
+On 2026-11-26 the owner approved **Phase 4 Group 1** in full, as one implementation group and one Draft pull
+request. It is the first Phase 4 group: it establishes the database foundation for the customer and messaging
+groups that follow. **No ADR status changed.** No later Phase 4 group is authorized; the next one starts only
+after this one is reviewed and merged.
+
+**Approved scope:**
+
+| Part | Scope | Implementation |
+| ---- | ----- | -------------- |
+| A | Database role separation (owner decision RLS-4) | Roles `sms_migrator` and `sms_app`, defined by one idempotent script, [`dbroles/provision.sql`](../../backend/internal/database/dbroles/provision.sql), used by the local stack, CI and the test helpers. The API refuses an unsafe role on every new connection (`database.RequireApplicationRole`); `migrate` refuses a privileged role (`database.CheckMigrationRole`) |
+| B | Transaction-local tenant-context helper (RLS-2) | `database.DB.InTenantTx`: validates a non-nil RFC 9562 tenant UUID before any SQL, then `set_config('app.tenant_id', …, true)` as the first statement; never a session-level setting |
+| C | Platform-owned tenant registry | Migration `20261126175603_create_tenants.sql`, sqlc queries (`backend/queries/tenancy.sql`; sqlc v1.31.1 locked in `backend/tools`), and the `internal/tenancy` repository: create, get, list, activate, suspend, reactivate. No HTTP endpoints |
+| D | Row-Level Security catalog guard in CI (RLS-1; testing standards §6) | `internal/database/rlsguard`: run against a freshly migrated database; detects missing RLS, missing `FORCE`, missing policies and policies that do not cover all commands with the tenant setting; a negative test with deliberately unprotected tables. **No exceptions** |
+
+**Decisions:**
+
+| # | Decision |
+| - | -------- |
+| G1-1 | **Primary keys: UUIDv7**, generated by PostgreSQL 18's built-in `uuidv7()` as the column default. No UUID-generation dependency. *Scope clarified by the owner on 2026-11-26:* UUIDv7 is the default for newly introduced generated entity primary keys; natural and composite primary keys remain valid where appropriate; other exceptions need a concrete technical justification |
+| G1-2 | **`tenants` retention class: *account*.** The retention period remains **undefined**, subject to legal review; none is invented |
+| G1-3 | **`created_by` / `updated_by` deferred** until identity and authenticated actors exist |
+| G1-4 | **`tenants` is platform-owned and global:** no `tenant_id` column, no RLS policy. Display names are **not** required to be unique |
+| G1-5 | **`sms_migrator`:** owns application tables and runs migrations; not a superuser; no `BYPASSRLS`; cannot create roles; only the database and schema privileges needed to migrate (`CONNECT`; `USAGE`, `CREATE` on `public`) |
+| G1-6 | **`sms_app`:** not a superuser; no `BYPASSRLS`; owns no tables or schemas; cannot create objects; no `TRUNCATE`; only the table privileges the API needs; inherits nothing from the migration role. The API refuses to start with an unsafe role or a table owner |
+| G1-7 | **Existing local volumes are never deleted automatically.** Fresh volumes are provisioned by the official image initialisation (`/docker-entrypoint-initdb.d`); existing volumes by a documented, idempotent upgrade command ([`infra/local/README.md` §9](../../infra/local/README.md#9-database-roles-and-upgrading-an-existing-database-volume)). A volume reset is offered only as an explicit, user-typed alternative with its data-loss warning |
+| G1-9 | **Confirmed by the owner on 2026-11-26, superseding the RLS evaluation's recommendation** (RLS-3's migration-role clause, evaluation §6 and §10): `sms_migrator` has **`NOBYPASSRLS`**. Both `sms_migrator` and `sms_app` are non-superuser and have no `BYPASSRLS`. `sms_migrator` may own application tables and run migrations, but forced RLS policies still apply to its ordinary data queries. Future cross-tenant data migrations must use a **separately designed, controlled procedure**; **no blanket RLS bypass** is granted. History and reasons: [RLS evaluation §11.1](../architecture/rls-evaluation.md#111-superseded-bypassrls-for-the-migration-role-2026-11-26) |
+| G1-8 | **Out of scope:** user identity, authentication, sessions, MFA, RBAC; customer or administrator HTTP endpoints; audit logging needing authenticated actors; message submission or delivery; billing, monetary types, balances, pricing, ledger; telco adapters, routing, simulator; production deployment, provisioning or real credentials |
+
+**Engineering details recorded with this group** (within the approved scope; listed so they can be reviewed):
+
+- **Column privileges on `tenants`:** `sms_app` may `SELECT`, `INSERT (display_name)` and `UPDATE (status,
+  updated_at)` only, so the database itself prevents the API from choosing a tenant's ID, initial status or
+  timestamps. No `DELETE`.
+- **Status transitions:** `pending → active` (activate), `active → suspended` (suspend), `suspended → active`
+  (reactivate), as one conditional `UPDATE`, so concurrent transitions cannot both succeed.
+- **Display name:** trimmed, 1–200 characters, no control characters, enforced in Go and by a `CHECK`
+  constraint. The 200-character bound is an engineering limit, not a business rule.
+- **Provisioning hardening:** `PUBLIC` loses `CONNECT` and `TEMPORARY` on the application database and `USAGE`
+  on `public`; functions created later by `sms_migrator` are not executable by `PUBLIC` by default. The script
+  refuses (changing nothing) if a role has memberships, owns the database or a schema, or if `public` contains
+  objects owned by another role. It transfers only goose's version table on old volumes.
+- **sqlc pin:** sqlc v1.31.1 in `backend/tools/go.mod` (builds without cgo, so the generation command also runs
+  on Windows). As with kin-openapi (decision log §9), four of its indirect dependencies are raised to their
+  first fixed releases so that `govulncheck` and the "Dependency review" job report nothing:
+  `golang.org/x/net` v0.62.0, `google.golang.org/grpc` v1.83.2, `github.com/google/cel-go` v0.30.0 and
+  `golang.org/x/text` v0.43.0 (advisories listed in `backend/tools/go.mod`). The oapi-codegen output is
+  byte-identical. Nothing in `backend/tools` is linked into the API or migrate binaries.
+- **CI:** role provisioning (run twice), sqlc regeneration and determinism check (Linux and Windows), the RLS
+  catalog guard as a named step, `migrate` smoke-tested as `sms_migrator` and refused as the superuser, the API
+  smoke-tested as `sms_app` and refused as the superuser and as `sms_migrator`, a govulncheck scan of sqlc, and
+  the local stack check extended with role checks and the existing-volume upgrade. The required status-check
+  names are unchanged.
+
+**Windows validation (owner, 2026-11-26):** run with the checklist
+[`infra/local/windows-validation.md`](../../infra/local/windows-validation.md#validation-record) on commit
+`1ce253a`.
+
+- **Environment:** Windows PowerShell 5.1, Docker Desktop 4.98.0, Engine 29.9.2, Compose v5.6.1.
+- **Part A (fresh database): passed.** Every step from 0.1 to A11 passed:
+  - role separation and role attributes;
+  - the tenants migration and its privileges;
+  - permission denials;
+  - unsafe-role refusal and repair by re-provisioning;
+  - health and readiness;
+  - restart and persistence.
+- **Part B (existing-volume upgrade): not tested on Windows.** No existing volume was present. It is verified on
+  Linux only, by the local stack check in CI.
+
+**Open follow-ups (not decided here):** the reporting role and the break-glass role (neither may receive a
+blanket `BYPASSRLS` without its own approved design); production role provisioning and credential management;
+the separately designed, controlled procedure for any future cross-tenant **data** migration (G1-9); the
+retention period for the *account* class (legal review).

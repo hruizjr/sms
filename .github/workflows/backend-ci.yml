@@ -1,13 +1,15 @@
 # Backend CI — Phase 3 Group 1 (Go API skeleton), Group 2 (PostgreSQL foundation) and Group 4 (Go code
-# generated from the public API contract).
+# generated from the public API contract); Phase 4 Group 1 (database role separation, sqlc, tenant
+# registry, row-level security catalog guard).
 #
 # The job names below are the status-check names required on `main`; do not rename them:
 #   "Go test and build", "Go lint", "Go vulnerability check".
-# Group 4 adds "Go generate check (Windows)", which proves the documented generation command on Windows.
+# Group 4 adds "Go generate check (Windows)", which proves the documented generation commands on Windows
+# (oapi-codegen, and sqlc from Phase 4 Group 1).
 #
 # Security: least-privilege token (read-only contents), actions pinned to full commit SHAs, no
 # repository secrets used, credentials not persisted after checkout. Tool versions are pinned in
-# `env`. The PostgreSQL password below is a throwaway value for a service container that exists
+# `env`. The PostgreSQL passwords below are throwaway values for a service container that exists
 # only for the duration of the job and is reachable only from the runner's loopback interface.
 name: Backend CI
 
@@ -63,9 +65,14 @@ jobs:
       DB_HOST: 127.0.0.1
       DB_PORT: "5432"
       DB_NAME: sms
+      # The bootstrap superuser: used by the test helpers to create databases and provision roles.
       DB_USER: sms
       DB_PASSWORD: ci-throwaway-not-a-secret
       DB_SSLMODE: disable
+      # Passwords of the application roles (Phase 4 Group 1), set by the "Provision database roles"
+      # step and read by the integration tests (dbtest.RoleConfig) and the smoke tests below.
+      DB_MIGRATOR_PASSWORD: ci-throwaway-migrator-not-a-secret
+      DB_APP_PASSWORD: ci-throwaway-app-not-a-secret
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -130,6 +137,28 @@ jobs:
             exit 1
           fi
 
+      # sqlc output (ADR-0014; Phase 4 Group 1) is reproducible: the package is deleted and regenerated
+      # with the locked sqlc version; any difference, extra (hand-written) or missing file fails, and a
+      # second generation must be byte-identical.
+      - name: Check sqlc-generated code is up to date
+        run: |
+          set -euo pipefail
+          rm -rf internal/database/sqlcgen
+          go generate ./internal/database/...
+          changed="$(git status --porcelain --untracked-files=all -- internal/database/sqlcgen tools)"
+          if [ -n "${changed}" ]; then
+            echo "::error::internal/database/sqlcgen is stale, was edited by hand, or contains files sqlc does not generate. Run 'go generate ./internal/database/...' from backend/ and commit the result."
+            echo "${changed}"
+            git diff -- internal/database/sqlcgen
+            exit 1
+          fi
+          first="$(cat internal/database/sqlcgen/*.go | sha256sum)"
+          go generate ./internal/database/...
+          if [ "${first}" != "$(cat internal/database/sqlcgen/*.go | sha256sum)" ]; then
+            echo "::error::sqlc generation is not deterministic."
+            exit 1
+          fi
+
       - name: go vet
         run: |
           go vet ./...
@@ -150,8 +179,34 @@ jobs:
           echo "PostgreSQL server_version: ${version}"
           case "${version}" in 18.*) ;; *) echo "expected PostgreSQL 18.x"; exit 1 ;; esac
 
+      # The same idempotent script as the local stack (infra/local/postgres-init/10-sms-roles.sh with
+      # backend/internal/database/dbroles/provision.sql), run twice to prove that a second run is safe.
+      # It creates sms_migrator and sms_app and sets their passwords from the job's throwaway values.
+      - name: Provision database roles (same script as the local stack, run twice)
+        env:
+          SMS_MIGRATOR_PASSWORD: ${{ env.DB_MIGRATOR_PASSWORD }}
+          SMS_APP_PASSWORD: ${{ env.DB_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          cid="$(docker ps -q --filter "ancestor=${POSTGRES_IMAGE}")"
+          docker exec "${cid}" mkdir -p /sms
+          docker cp internal/database/dbroles/provision.sql "${cid}:/sms/provision-roles.sql"
+          docker cp ../infra/local/postgres-init/10-sms-roles.sh "${cid}:/sms/10-sms-roles.sh"
+          for run in 1 2; do
+            docker exec -e SMS_MIGRATOR_PASSWORD -e SMS_APP_PASSWORD "${cid}" bash /sms/10-sms-roles.sh
+          done
+          docker exec "${cid}" psql -U sms -d sms -Atc \
+            "SELECT rolname, rolsuper, rolbypassrls, rolcreaterole, rolcreatedb FROM pg_roles WHERE rolname LIKE 'sms\_%' ORDER BY 1"
+
       - name: Integration tests (PostgreSQL, race detector)
         run: go test -tags integration -race -count=1 ./...
+
+      # Row-level security catalog guard (owner decision RLS-1; testing standards §6): after all
+      # migrations are applied, every table with a tenant_id column must have row-level security
+      # enabled and forced and a tenant policy. The negative test proves the guard detects violations.
+      # (Both tests are also part of the integration run above; this step names the guard in the log.)
+      - name: RLS catalog guard (migrated schema, plus deliberately unprotected tables)
+        run: go test -tags integration -race -count=1 -v -run 'TestIntegrationMigratedSchemaPassesGuard|TestIntegrationGuardDetectsUnprotectedTables' ./internal/database/rlsguard/
 
       # RLS evaluation spike (Phase 3 Group 7, ADR-0010; docs/architecture/rls-evaluation.md). These tests
       # create server-wide NOLOGIN roles, so they run only against a disposable server: this job's own
@@ -173,24 +228,44 @@ jobs:
           go build -trimpath -o bin/api ./cmd/api
           go build -trimpath -o bin/migrate ./cmd/migrate
 
-      - name: Migration smoke test (up, status, down, up)
+      # Migrations run as the migration role (Phase 4 Group 1); the bootstrap superuser is refused.
+      - name: Migration smoke test (up, status, down, up, as sms_migrator)
+        env:
+          DB_USER: sms_migrator
+          DB_PASSWORD: ${{ env.DB_MIGRATOR_PASSWORD }}
+          SUPERUSER_PASSWORD: ci-throwaway-not-a-secret
         run: |
           set -euo pipefail
+          psql_sms() { docker exec "$(docker ps -q --filter "ancestor=${POSTGRES_IMAGE}")" psql -U sms -d sms -Atc "$1"; }
+          if DB_USER=sms DB_PASSWORD="${SUPERUSER_PASSWORD}" bin/migrate up; then
+            echo "migrate ran as the bootstrap superuser"; exit 1
+          fi
+          test "$(psql_sms "SELECT to_regclass('public.goose_db_version') IS NULL")" = "t"
           bin/migrate status
           bin/migrate up
           bin/migrate status
-          test "$(bin/migrate version)" != "0"
-          bin/migrate down
+          latest="$(bin/migrate version)"
+          test "${latest}" != "0"
+          for _ in $(ls migrations/*.sql); do bin/migrate down; done
           test "$(bin/migrate version)" = "0"
           bin/migrate up
           bin/migrate status
+          test "$(bin/migrate version)" = "${latest}"
           # Rollback fails closed: without an explicit APP_ENV it must be refused.
           if env -u APP_ENV bin/migrate down; then echo "migrate down ran without APP_ENV"; exit 1; fi
-          test "$(bin/migrate version)" != "0"
+          test "$(bin/migrate version)" = "${latest}"
+          # Every application table belongs to the migration role.
+          psql_sms "SELECT tablename, tableowner FROM pg_tables WHERE schemaname = 'public' ORDER BY 1"
+          test "$(psql_sms "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tableowner <> 'sms_migrator'")" = "0"
 
-      - name: API smoke test (healthz, readyz, graceful shutdown)
+      # The API connects as the application role; any other role makes it refuse to start.
+      - name: API smoke test (healthz, readyz, graceful shutdown, as sms_app)
+        env:
+          DB_USER: sms_app
+          DB_PASSWORD: ${{ env.DB_APP_PASSWORD }}
         run: |
           set -euo pipefail
+          psql_sms() { docker exec "$(docker ps -q --filter "ancestor=${POSTGRES_IMAGE}")" psql -U sms -d sms -Atc "$1"; }
           bin/api > api.log 2>&1 &
           api_pid=$!
           for _ in $(seq 1 50); do
@@ -199,9 +274,28 @@ jobs:
           done
           curl -fsS http://127.0.0.1:8080/healthz
           curl -fsS http://127.0.0.1:8080/readyz
+          users="$(psql_sms "SELECT string_agg(DISTINCT usename, ',') FROM pg_stat_activity WHERE application_name = 'sms-api'")"
+          echo "API database sessions connected as: ${users}"
+          test "${users}" = "sms_app"
           kill -TERM "${api_pid}"
           wait "${api_pid}"
           cat api.log
+
+      - name: API refuses to start with an unsafe database role
+        env:
+          SUPERUSER_PASSWORD: ci-throwaway-not-a-secret
+        run: |
+          set -euo pipefail
+          refuse() { # refuse <user> <password> <expected message>
+            if DB_USER="$1" DB_PASSWORD="$2" timeout 20 bin/api > refused.log 2>&1; then
+              echo "the API started as $1"; cat refused.log; exit 1
+            fi
+            cat refused.log
+            grep -q "$3" refused.log
+            ! curl -fsS -o /dev/null http://127.0.0.1:8080/healthz
+          }
+          refuse sms "${SUPERUSER_PASSWORD}" 'refusing to use database role "sms" as the application role: is a superuser'
+          refuse sms_migrator "${DB_MIGRATOR_PASSWORD}" 'as the application role: owns tables or other relations'
 
   lint:
     name: Go lint
@@ -248,9 +342,11 @@ jobs:
       - name: govulncheck
         run: go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" ./...
 
-      # The code generator runs in CI and on developer machines, so its own module is scanned too.
+      # The code generators run in CI and on developer machines, so their module is scanned too.
       - name: govulncheck (tools module)
-        run: go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" -C tools github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen
+        run: |
+          go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" -C tools github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen
+          go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" -C tools github.com/sqlc-dev/sqlc/cmd/sqlc
 
   generate-windows:
     name: Go generate check (Windows)
@@ -287,3 +383,14 @@ jobs:
 
       - name: Test generated types
         run: go test -count=1 ./internal/publicapi/...
+
+      # The documented sqlc command (Phase 4 Group 1), run in PowerShell: sqlc is built without cgo.
+      - name: Regenerate sqlc code
+        run: go generate ./internal/database/...
+
+      - name: Check sqlc code is unchanged
+        run: |
+          git diff --exit-code -- internal/database/sqlcgen
+          if ($LASTEXITCODE -ne 0) { Write-Output "::error::sqlc output differs on Windows."; exit 1 }
+          $changed = git status --porcelain --untracked-files=all -- internal/database/sqlcgen tools
+          if ($changed) { Write-Output "::error::Uncommitted sqlc files:"; $changed; exit 1 }

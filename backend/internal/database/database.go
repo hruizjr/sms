@@ -1,10 +1,11 @@
 // Package database owns the PostgreSQL connection pool shared by the api and migrate executables.
 //
 // It configures a pgxpool.Pool from config.DatabaseConfig, provides an explicit Ping for readiness
-// checks, a transaction helper, and Close for graceful shutdown. It contains no SQL for business
-// data: queries are written as SQL and compiled with sqlc (ADR-0014). Opening the pool performs no
-// network I/O; connections are established on first use, so the API can start, report not ready,
-// and recover once PostgreSQL becomes reachable.
+// checks, transaction helpers (InTx, and InTenantTx for row-level security), checks of the
+// connected database role (roleguard.go), and Close for graceful shutdown. It contains no SQL for
+// business data: queries are written as SQL and compiled with sqlc (ADR-0014) into the sqlcgen
+// package. Opening the pool performs no network I/O; connections are established on first use, so
+// the API can start, report not ready, and recover once PostgreSQL becomes reachable.
 package database
 
 import (
@@ -29,14 +30,20 @@ type DB struct {
 	pool *pgxpool.Pool
 }
 
+// Option changes how Open configures the pool.
+type Option func(*pgxpool.Config)
+
 // Open creates a connection pool from cfg. applicationName is reported to PostgreSQL
 // (pg_stat_activity.application_name) so that connections can be attributed to a process.
 //
 // Open does not connect; use Ping to check connectivity. Errors never contain the password.
-func Open(ctx context.Context, cfg config.DatabaseConfig, applicationName string) (*DB, error) {
+func Open(ctx context.Context, cfg config.DatabaseConfig, applicationName string, opts ...Option) (*DB, error) {
 	poolCfg, err := poolConfig(cfg, applicationName)
 	if err != nil {
 		return nil, err
+	}
+	for _, opt := range opts {
+		opt(poolCfg)
 	}
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {

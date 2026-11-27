@@ -1,8 +1,15 @@
-# Local development stack — Phase 3 Group 6 (owner decisions L1–L8, decision log §11).
+# Local development stack — Phase 3 Group 6 (owner decisions L1–L8, decision log §11); database role
+# separation added in Phase 4 Group 1 (decision log §18).
 #
-#   postgres  PostgreSQL 18 database (named volume "postgres-data")
-#   migrate   one-off: applies database migrations, then exits
-#   api       Go API, started only after migrate has completed successfully
+#   postgres  PostgreSQL 18 database (named volume "postgres-data"). DB_USER is its bootstrap
+#             superuser, used only inside this container and for role provisioning.
+#   migrate   one-off: applies database migrations as the migration role sms_migrator, then exits
+#   api       Go API, connected as the application role sms_app; started only after migrate has
+#             completed successfully
+#
+# Roles: on a FRESH volume, postgres-init/10-sms-roles.sh creates sms_migrator and sms_app during the
+# image's first initialisation. An EXISTING volume (created before role separation) is upgraded
+# once by hand, without losing data: infra/local/README.md, "Upgrading an existing database volume".
 #
 # The client portal runs natively with `pnpm dev` (owner decision L4); see infra/local/README.md.
 #
@@ -28,13 +35,12 @@ x-backend: &backend
 
 # Database settings for the containers. Containers reach PostgreSQL by its service name on the
 # container port 5432; DB_PORT in .env is only the port published on this machine.
+# DB_USER and DB_PASSWORD are set per service: migrate and api each use their own role.
 x-backend-database: &backend-database
   APP_ENV: development
   DB_HOST: postgres
   DB_PORT: "5432"
   DB_NAME: ${DB_NAME:-sms}
-  DB_USER: ${DB_USER:-sms}
-  DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is not set; copy infra/local/.env.example to infra/local/.env}
   DB_SSLMODE: disable
   LOG_FORMAT: text
 
@@ -48,12 +54,19 @@ services:
       POSTGRES_USER: ${DB_USER:-sms}
       # No default: copy .env.example to .env and choose a local-only password.
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is not set; copy infra/local/.env.example to infra/local/.env}
+      # Passwords of the application roles, read by postgres-init/10-sms-roles.sh. No defaults.
+      SMS_MIGRATOR_PASSWORD: ${DB_MIGRATOR_PASSWORD:?DB_MIGRATOR_PASSWORD is not set; add it to infra/local/.env (see infra/local/README.md, "Upgrading an existing database volume")}
+      SMS_APP_PASSWORD: ${DB_APP_PASSWORD:?DB_APP_PASSWORD is not set; add it to infra/local/.env (see infra/local/README.md, "Upgrading an existing database volume")}
     ports:
       # Loopback only. Never change this to 0.0.0.0 or remove the 127.0.0.1 prefix.
       - "127.0.0.1:${DB_PORT:-5432}:5432"
     volumes:
       # PostgreSQL 18 images keep data under /var/lib/postgresql/18/docker; mount the parent.
       - postgres-data:/var/lib/postgresql
+      # Role provisioning (Phase 4 Group 1): run by the image only when it initialises an empty
+      # volume; run by hand for an existing volume (README). Both read-only.
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+      - ../../backend/internal/database/dbroles/provision.sql:/sms/provision-roles.sql:ro
     # Verified in Group 6: the image initialises, restarts and serves with this option enabled.
     security_opt: ["no-new-privileges:true"]
     healthcheck:
@@ -71,6 +84,8 @@ services:
     command: ["up"]
     environment:
       <<: *backend-database
+      DB_USER: sms_migrator
+      DB_PASSWORD: ${DB_MIGRATOR_PASSWORD:?DB_MIGRATOR_PASSWORD is not set; add it to infra/local/.env}
     depends_on:
       postgres:
         condition: service_healthy
@@ -80,6 +95,8 @@ services:
     <<: *backend
     environment:
       <<: *backend-database
+      DB_USER: sms_app
+      DB_PASSWORD: ${DB_APP_PASSWORD:?DB_APP_PASSWORD is not set; add it to infra/local/.env}
       # Listen on all interfaces inside the container; the host publishes it on 127.0.0.1 only.
       HTTP_ADDR: ":8080"
     ports:

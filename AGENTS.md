@@ -9,10 +9,10 @@
 | Field | Value |
 | ----- | ----- |
 | Project | Enterprise A2P SMS Platform (Philippines) |
-| Current phase | **Phase 3 — Walking skeleton: complete (2026-11-26).** All eight groups are merged: 0 (decisions), 1 (Go API skeleton), 2 (PostgreSQL foundation), 3 (OpenAPI contract for the public messages API), 4 (Go API contract integration: Go types and Chi routes generated from the contract; no endpoint mounted), 5 (frontend foundation: client portal shell and shared UI package; no features, no API calls), 6 (local development stack and expanded CI, PR #10) and 7 (PostgreSQL Row-Level Security evaluation, PR #11; the owner accepted ADR-0010 for tenant-owned control-plane tables) (groups renumbered by the owner, [decision log §9](docs/engineering/decision-log.md#9-owner-decisions--go-contract-integration-phase-3-group-4-2026-11-25)). Closure: [decision log §13](docs/engineering/decision-log.md#13-phase-3-closure-2026-11-26). **Phase 4 is not authorized yet.** See [decision log §7](docs/engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25). |
-| Authorized scope | **Phase 3 walking skeleton only** (owner approval 2026-11-25), now complete. No later phase is authorized: Phase 4, and any group within it (including database role separation, RLS-4), needs explicit owner approval. Each implementation group starts only after the previous group is reviewed and merged. All other ADRs need separate owner approval. |
+| Current phase | **Phase 3 — Walking skeleton: complete (2026-11-26).** All eight groups are merged: 0 (decisions), 1 (Go API skeleton), 2 (PostgreSQL foundation), 3 (OpenAPI contract for the public messages API), 4 (Go API contract integration: Go types and Chi routes generated from the contract; no endpoint mounted), 5 (frontend foundation: client portal shell and shared UI package; no features, no API calls), 6 (local development stack and expanded CI, PR #10) and 7 (PostgreSQL Row-Level Security evaluation, PR #11; the owner accepted ADR-0010 for tenant-owned control-plane tables) (groups renumbered by the owner, [decision log §9](docs/engineering/decision-log.md#9-owner-decisions--go-contract-integration-phase-3-group-4-2026-11-25)). Closure: [decision log §13](docs/engineering/decision-log.md#13-phase-3-closure-2026-11-26). **Phase 4 — Group 1 (database role separation, tenant-context helper, tenant registry, RLS catalog guard) authorized by the owner on 2026-11-26** ([decision log §18](docs/engineering/decision-log.md#18-owner-decisions--database-role-separation-and-tenant-registry-phase-4-group-1-2026-11-26)); no other Phase 4 group is authorized. |
+| Authorized scope | **Phase 3 walking skeleton** (owner approval 2026-11-25), complete, and **Phase 4 Group 1 only** (owner approval 2026-11-26; scope and exclusions in [decision log §18](docs/engineering/decision-log.md#18-owner-decisions--database-role-separation-and-tenant-registry-phase-4-group-1-2026-11-26)). Every other Phase 4 group needs explicit owner approval. Each implementation group starts only after the previous group is reviewed and merged. All other ADRs need separate owner approval. |
 | Decision authority | The project owner has decision authority over day-to-day project matters. Decisions affecting pricing, product scope, or launch require business-partner approval in addition to the project owner's approval. Both approvals, including their dates, must be recorded before a decision is labelled approved. Supporting approval records are kept outside Git. Agents propose; they never record a partner approval that the owner has not confirmed in writing ([decision log §17](docs/engineering/decision-log.md#17-owner-decisions--business-decisions-review-phase-2-ex-9-2026-11-26)). |
-| Last updated | 2026-11-26 (Phase 3 closure; §12 MFA wording for owner decision D-021; §3.3 ADR-0012 status; EX-9 governance, operating model and billing wording: header, §2 rule 21, §3.1, §11.9, §17) |
+| Last updated | 2026-11-26 (Phase 3 closure; §12 MFA wording for owner decision D-021; §3.3 ADR-0012 status; EX-9 governance, operating model and billing wording: header, §2 rule 21, §3.1, §11.9, §17; Phase 4 Group 1: header, §1, §4, §7.1, §10.3, §10.7) |
 
 ---
 
@@ -53,7 +53,11 @@ public messages API in `contracts/openapi/`, Go types and Chi routes generated f
 a local Docker Compose stack in `infra/` (PostgreSQL, a one-off migration service, the API) with expanded
 CI (stack check, secret scan, dependency review), and the Row-Level Security evaluation tests in
 `backend/internal/database/rlseval/` (Group 7; synthetic test-only tables; no product code). The Phase 3 walking
-skeleton (technical foundation only) was added one reviewed group at a time and is complete. **No business functionality exists or is authorized.**
+skeleton (technical foundation only) was added one reviewed group at a time and is complete. **Phase 4 Group 1**
+adds the database foundation: separate database roles (`sms_migrator` for migrations, `sms_app` for the API, with
+checks that refuse unsafe roles), the transaction-local tenant-context helper, the platform-owned tenant registry
+(`tenants` table, sqlc queries, `internal/tenancy` repository without HTTP endpoints) and the RLS catalog guard in
+CI. **No other business functionality exists or is authorized.**
 
 **Verified facts:** almost none. The business *intends* to become an A2P SMS aggregator. No telco
 agreement, technical integration, accreditation, regulatory authorization, or traffic volume has been
@@ -71,7 +75,9 @@ Until a task explicitly authorizes it, you MUST NOT:
 
 Phase 3 group tasks authorize only what [decision log §7](docs/engineering/decision-log.md#7-owner-decisions--phase-3-walking-skeleton-2026-11-25)
 lists: the approved dependencies, `go.mod` / `package.json`, migrations **without business tables**, CI, and
-local development tooling. Customer authentication, tenant management, RBAC logic, billing, SMS submission,
+local development tooling. Phase 4 Group 1 additionally authorizes only its own scope ([decision log §18](docs/engineering/decision-log.md#18-owner-decisions--database-role-separation-and-tenant-registry-phase-4-group-1-2026-11-26)):
+the database roles, the tenant-context helper, the `tenants` migration and its sqlc queries and repository, the
+pinned sqlc tool, and the RLS catalog guard. Customer authentication, tenant management, RBAC logic, billing, SMS submission,
 SMPP, telco integrations, queues, Kafka, Redis, and ClickHouse remain prohibited. The metrics endpoint must not
 be publicly exposed, and GitHub Actions are pinned to commit SHAs.
 
@@ -277,7 +283,7 @@ Details and gaps: [product brief](docs/product/product-brief.md) and
 
 ```
 AGENTS.md          This file
-backend/           Go module (cmd/ = executables, internal/ = modules)   — API + database skeleton
+backend/           Go module (cmd/ = executables, internal/ = modules)   — API + database foundation, tenant registry
 frontend/          React applications (pnpm workspace)                   — client portal shell + packages/ui (Group 5)
 contracts/         OpenAPI specs, event and webhook schemas              — draft public API v1 (Group 3)
 backend/internal/publicapi/  Go code GENERATED from contracts/openapi/  — never edit by hand (Group 4)
@@ -370,7 +376,7 @@ Details and examples: [coding standards](docs/standards/coding-standards.md#go).
 - `main.go` is thin: load config → build dependencies → run → shut down gracefully.
 - Package names are short, lowercase, singular, without underscores (`billing`, not `billing_service`).
 - **Generated code MUST NOT be edited by hand** (`backend/internal/publicapi/*.gen.go`, and sqlc output in
-  `internal/database/sqlcgen` once it exists). Change the source (specification, SQL, or generator
+  `internal/database/sqlcgen`). Change the source (specification, SQL, or generator
   configuration) and regenerate; CI fails on stale or hand-edited generated code
   ([decision log §9](docs/engineering/decision-log.md#9-owner-decisions--go-contract-integration-phase-3-group-4-2026-11-25)).
 - MUST NOT create `utils`, `common`, `helpers`, `misc`, or `pkg/` (unless code is genuinely meant for
@@ -577,7 +583,10 @@ Proposed; its item below is marked as proposed.)
   enums are harder to evolve.
 
 ### 10.3 Types
-- IDs: UUID (UUIDv7 proposed for time-ordering); never expose sequential integers publicly.
+- IDs: **UUIDv7 is the default for newly introduced generated entity primary keys**, generated by PostgreSQL 18's
+  `uuidv7()` ([decision log §18, G1-1](docs/engineering/decision-log.md#18-owner-decisions--database-role-separation-and-tenant-registry-phase-4-group-1-2026-11-26)).
+  Natural and composite primary keys remain valid where appropriate; other exceptions need a concrete technical
+  justification. Never expose sequential integers publicly.
 - Money/credits/rates: exact types only, with documented currency and scale. **Never**
   `float`/`real`/`double precision`. The representation (scaled integer vs. `numeric`) and scale are
   **open** (ADR-0019) — do not choose them in a migration without an accepted ADR.
@@ -614,16 +623,23 @@ Proposed; its item below is marked as proposed.)
     invalid tenant IDs before any tenant query. It is **never** set as a session-level setting.
   - **Application role:** the application connects as a role that is not a superuser, not a table owner and
     has no `BYPASSRLS`. **Database role separation is a prerequisite** in its own approved group (RLS-4); the
-    API must not use the bootstrap superuser.
+    API must not use the bootstrap superuser. Implemented in Phase 4 Group 1: the API connects as `sms_app` and
+    refuses an unsafe role; migrations run as `sms_migrator`, which owns the tables and has no `BYPASSRLS`
+    ([backend README, "Database roles"](backend/README.md#database-roles-phase-4-group-1-owner-decision-rls-4)).
   - **Cross-tenant access:** it uses a dedicated reporting role with its own credentials and pool and
-    explicit read-only policies, and is audited in the application. `BYPASSRLS` is only for the migration
-    and break-glass roles.
+    explicit read-only policies, and is audited in the application. **No role receives a blanket
+    `BYPASSRLS`**: the migration role has `NOBYPASSRLS` (owner decision G1-9, decision log §18, superseding the
+    earlier rule that reserved it for the migration role), and a cross-tenant data migration or break-glass
+    access needs its own separately designed, controlled and approved procedure.
   - **Schema rules:** unique constraints and foreign keys on tenant data include `tenant_id`; views use
     `security_invoker = true`; there is no `SECURITY DEFINER` over tenant tables without review; the
     application role is never granted `TRUNCATE`.
   - **Data-plane tables:** high-volume data-plane tables are **not covered** by this decision; their RLS
     strategy is deferred (RLS-5).
 - Every tenant-scoped repository has a test proving tenant A cannot read or modify tenant B's data.
+- The **RLS catalog guard** (`backend/internal/database/rlsguard`) runs in CI after the migrations and fails if
+  any table with a `tenant_id` column lacks RLS enabled and forced or a tenant policy. Exceptions need owner
+  approval recorded in the decision log; there are none.
 
 ### 10.8 Data retention
 - Every table is assigned a retention class in its migration PR (e.g. *financial*, *audit*,

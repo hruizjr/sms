@@ -191,7 +191,12 @@ while required checks fail.
 - **Exceptions.** A table is exempt only if it is on an explicit, owner-approved exception list, kept in the
   repository with the reason for each entry. Deferred data-plane tables (RLS-5) go on that list rather than
   being silently skipped.
-- **Reference query.** `TestCatalogGuardFindsUnprotectedTables` in `backend/internal/database/rlseval/`
-  holds the catalog query the guard is based on.
-- **When it is introduced.** The guard is added with the first tenant-owned table, together with or after
-  database role separation (RLS-4). No tenant-owned table exists yet.
+- **Implementation.** `backend/internal/database/rlsguard` (Phase 4 Group 1, with database role separation,
+  RLS-4). CI applies every migration to a fresh database and fails on any finding
+  (`TestIntegrationMigratedSchemaPassesGuard`, also run as the named step "RLS catalog guard"). It also
+  reports a policy that does not apply to all commands with both `USING` and `WITH CHECK` on `app.tenant_id`,
+  and checks partitions as well as their parent. `TestIntegrationGuardDetectsUnprotectedTables` proves that
+  it detects deliberately unprotected tables. The exception list (`rlsguard.Exceptions`) is **empty**. The
+  original reference query is `TestCatalogGuardFindsUnprotectedTables` in `backend/internal/database/rlseval/`.
+- **Today** no tenant-owned table exists (the `tenants` registry is platform-owned and has no `tenant_id`),
+  so the guard passes on the migrated schema; it applies from the first tenant-owned table.

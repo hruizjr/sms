@@ -9,25 +9,36 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hruizjr/sms/backend/internal/config"
+	"github.com/hruizjr/sms/backend/internal/database/dbroles"
 	"github.com/hruizjr/sms/backend/internal/database/dbtest"
 )
 
-// TestIntegrationMigrateCommands drives the migrate command end to end against an isolated database.
-func TestIntegrationMigrateCommands(t *testing.T) {
-	t.Parallel()
-	cfg := dbtest.NewDatabase(t)
-	secret := cfg.Password.Reveal()
-
-	// The process environment, with DB_NAME pointing at the throwaway database.
-	lookup := func(key string) (string, bool) {
-		if key == "DB_NAME" {
+// lookupFor returns the process environment with DB_NAME pointing at the throwaway database, the
+// given role and password, and APP_ENV=test.
+func lookupFor(cfg config.DatabaseConfig) config.LookupFunc {
+	return func(key string) (string, bool) {
+		switch key {
+		case config.EnvDBName:
 			return cfg.Name, true
-		}
-		if key == "APP_ENV" {
+		case config.EnvDBUser:
+			return cfg.User, true
+		case config.EnvDBPassword:
+			return cfg.Password.Reveal(), true
+		case config.EnvAppEnv:
 			return "test", true
 		}
 		return os.LookupEnv(key)
 	}
+}
+
+// TestIntegrationMigrateCommands drives the migrate command end to end against an isolated database,
+// connected as the migration role.
+func TestIntegrationMigrateCommands(t *testing.T) {
+	t.Parallel()
+	cfg := dbtest.RoleConfig(t, dbtest.NewDatabase(t), dbroles.Migrator)
+	secret := cfg.Password.Reveal()
+	lookup := lookupFor(cfg)
 	runCmd := func(command string) (int, string) {
 		t.Helper()
 		var stdout, stderr bytes.Buffer
@@ -47,14 +58,17 @@ func TestIntegrationMigrateCommands(t *testing.T) {
 		wantOut  []string
 	}{
 		{"version", exitOK, []string{"0"}},
-		{"status", exitOK, []string{"VERSION", "20261125041208", "pending", "20261125041208_baseline.sql"}},
-		{"up", exitOK, []string{"20261125041208_baseline.sql", "database version: 20261125041208"}},
-		{"up", exitOK, []string{"no pending migrations", "database version: 20261125041208"}},
+		{"status", exitOK, []string{"VERSION", "20261125041208", "pending", "20261125041208_baseline.sql",
+			"20261126175603_create_tenants.sql"}},
+		{"up", exitOK, []string{"20261125041208_baseline.sql", "20261126175603_create_tenants.sql",
+			"database version: 20261126175603"}},
+		{"up", exitOK, []string{"no pending migrations", "database version: 20261126175603"}},
 		{"status", exitOK, []string{"applied"}},
-		{"version", exitOK, []string{"20261125041208"}},
+		{"version", exitOK, []string{"20261126175603"}},
+		{"down", exitOK, []string{"20261126175603_create_tenants.sql", "database version: 20261125041208"}},
 		{"down", exitOK, []string{"20261125041208_baseline.sql", "database version: 0"}},
 		{"down", exitError, nil},
-		{"up", exitOK, []string{"database version: 20261125041208"}},
+		{"up", exitOK, []string{"database version: 20261126175603"}},
 	}
 	for i, s := range steps {
 		code, out := runCmd(s.command)
@@ -66,5 +80,32 @@ func TestIntegrationMigrateCommands(t *testing.T) {
 				t.Errorf("step %d: migrate %s output missing %q:\n%s", i+1, s.command, want, out)
 			}
 		}
+	}
+}
+
+// TestIntegrationMigrateRefusesPrivilegedRoles: every command is refused, before any migration
+// runs, when the connected role is the bootstrap superuser, and the message says why.
+func TestIntegrationMigrateRefusesPrivilegedRoles(t *testing.T) {
+	t.Parallel()
+	admin := dbtest.NewDatabase(t)
+	for _, command := range []string{"up", "status", "version", "down"} {
+		var stdout, stderr bytes.Buffer
+		code := run(context.Background(), []string{command}, lookupFor(admin), &stdout, &stderr)
+		if code != exitError {
+			t.Errorf("migrate %s as the superuser: exit code %d, want %d", command, code, exitError)
+		}
+		if !strings.Contains(stderr.String(), "as the migration role: is a superuser") {
+			t.Errorf("migrate %s as the superuser: stderr does not explain the refusal:\n%s", command, stderr.String())
+		}
+		if strings.Contains(stdout.String()+stderr.String(), admin.Password.Reveal()) {
+			t.Fatalf("migrate %s printed the database password", command)
+		}
+	}
+	// Nothing was applied: goose's version table was never even created.
+	app := dbtest.RoleConfig(t, admin, dbroles.Migrator)
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"version"}, lookupFor(app), &stdout, &stderr); code != exitOK ||
+		strings.TrimSpace(stdout.String()) != "0" {
+		t.Errorf("version as the migration role afterwards = %d %q, want 0 \"0\"", code, stdout.String())
 	}
 }

@@ -132,6 +132,9 @@ CI (format, lint, test, type check, vulnerability and secret scan); OpenAPI skel
 **Depends on:** database role separation (owner decision RLS-4, 2026-11-26), delivered in its own approved group
 before or alongside the first tenant-owned table; the API must not use the bootstrap PostgreSQL superuser. Tenant
 tables follow the adopted RLS conditions (ADR-0010).
+**Group 1 (authorized 2026-11-26, [decision log §18](../engineering/decision-log.md#18-owner-decisions--database-role-separation-and-tenant-registry-phase-4-group-1-2026-11-26)):**
+database role separation, the tenant-context helper, the platform-owned tenant registry (repository only, no
+endpoints) and the RLS catalog guard. Later groups need separate approval.
 **Acceptance criteria:**
 - [ ] Admin can create tenants and users; users can log in; MFA enforced for admins.
 - [ ] Permission checks on every endpoint; authorization matrix tests pass.
