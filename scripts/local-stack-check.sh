@@ -262,7 +262,33 @@ portal GET messages
 expect "another tenant's user lists no messages" equals "$portal_body" '{"data":[],"next_cursor":null}'
 portal POST messages -H "X-CSRF-Token: $csrf" -H "Content-Type: application/json" -H "Idempotency-Key: v-1" --data '{"to":"+639000000002","sender_id":"EXAMPLECO","body":"x"}'
 expect "a viewer cannot submit (got $portal_code)" equals "$portal_code" 403
+portal GET api-keys
+expect "a viewer cannot list API keys (got $portal_code)" equals "$portal_code" 403
 cookie="$owner_cookie" csrf="$owner_csrf"
+
+echo "== Client portal: API key management (Phase 4 Group 4)"
+portal POST api-keys -H "Content-Type: application/json" --data '{"name":"Stack check key","scopes":["messages:send"]}'
+expect "creating an API key without the CSRF token is 403 (got $portal_code)" equals "$portal_code" 403
+portal POST api-keys -H "X-CSRF-Token: $csrf" -H "Content-Type: application/json" --data '{"name":"Stack check key","scopes":["messages:send","messages:read"]}'
+expect "POST /portal/v1/api-keys is 201 (got $portal_code)" equals "$portal_code" 201
+portal_key="$(grep -o '"key":"smsk_[0-9a-z_]*"' <<<"$portal_body" | cut -d'"' -f4)"
+portal_key_id="$(grep -o '"id":"[0-9a-z]*"' <<<"$portal_body" | head -n 1 | cut -d'"' -f4)"
+portal_api_send() {
+  curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "$API/v1/messages" -H "Authorization: Bearer $portal_key" \
+    -H "Content-Type: application/json" -H "Idempotency-Key: $1" --data '{"to":"+639000000003","sender_id":"EXAMPLECO","body":"Key check"}'
+}
+expect "a key created in the portal authenticates on the public API" equals "$(portal_api_send key-1)" 202
+key_secret="${portal_key##*_}"
+listed_without_secret() { grep -q "$portal_key_id" <<<"$portal_body" && ! grep -qF "$key_secret" <<<"$portal_body"; }
+revoked_in_body() { grep -q '"status":"revoked"' <<<"$portal_body"; }
+key_not_logged() { ! compose logs --no-log-prefix 2>&1 | grep -qF "$key_secret"; }
+portal GET api-keys
+expect "the key list shows the new key without its secret" listed_without_secret
+portal DELETE "api-keys/$portal_key_id" -H "X-CSRF-Token: $csrf"
+expect "DELETE /portal/v1/api-keys/{id} is 200 (got $portal_code)" equals "$portal_code" 200
+expect "the key is listed as revoked" revoked_in_body
+expect "the revoked key is refused by the public API" equals "$(portal_api_send key-2)" 401
+expect "no log contains the new key's secret" key_not_logged
 portal DELETE session -H "X-CSRF-Token: $csrf"
 expect "sign-out is 204 (got $portal_code)" equals "$portal_code" 204
 portal GET session

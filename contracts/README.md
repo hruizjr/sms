@@ -9,12 +9,12 @@ versioned independently of any one implementation.
 | `events/`  | Schemas for internal asynchronous events (e.g. *message accepted*, *delivery receipt received*) | Producers and consumers in the data plane |
 | `webhooks/`| Schemas of the payloads we send to customer webhooks | Public documentation, contract tests |
 
-Current contents (Phase 3 Group 3; portal API added in Phase 4 Group 3):
+Current contents (Phase 3 Group 3; portal API added in Phase 4 Group 3 and extended in Group 4):
 
 | Path | Contents |
 | ---- | -------- |
 | `openapi/public-api-v1.yaml` | **Draft** public developer API v1: message submission and status (implemented in Phase 4 Group 2, simulator provider only) |
-| `openapi/portal-api-v1.yaml` | **Draft** client portal API v1 (`/portal/v1`): session sign-in and sign-out, the organization's messages, single-SMS submission, segment estimate. Cookie session plus CSRF token; used only by the platform's own client portal (decision log §20) |
+| `openapi/portal-api-v1.yaml` | **Draft** client portal API v1 (`/portal/v1`): session sign-in and sign-out, the organization's messages, single-SMS submission, segment estimate, and (Phase 4 Group 4) owner-only API key management: list, create (full key returned once), revoke. Cookie session plus CSRF token; used only by the platform's own client portal (decision log §20, §21) |
 | `openapi/README.md` | Semantics of the public API, status reference, problem types, and open owner decisions |
 | `tests/` | Contract tests (Node.js built-in test runner, no extra dependencies) |
 | `redocly.yaml` | OpenAPI lint rules (`@redocly/cli`, approved in decision log §7.2) |

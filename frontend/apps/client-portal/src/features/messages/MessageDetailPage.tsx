@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Alert } from '../../components/feedback/Alert';
 import { Skeleton } from '../../components/feedback/Skeleton';
 import { ApiError, NetworkError, type MessageDetail } from '../../lib/api/client';
-import { Link } from '../../lib/router';
+import { PageHeader } from '../../components/layout/PageHeader';
 import { useSession } from '../auth/session';
 import { StatusBadge } from './StatusBadge';
 import { encodingLabel, formatDateTime, statusInfo } from './status';
@@ -70,94 +70,121 @@ export function MessageDetailPage({ id, justSent = false }: { id: string; justSe
   }, []);
 
   return (
-    <div className="space-y-6">
-      <p>
-        <Link to="/messages" className="text-sm font-medium text-primary underline">
-          ← All messages
-        </Link>
-      </p>
-      <h1 className="text-2xl font-semibold sm:text-3xl">Message details</h1>
+    <div>
+      <PageHeader
+        back={{ to: '/messages', label: 'Messages' }}
+        title="Message details"
+        meta={state.status === 'loaded' ? <StatusBadge status={state.message.status} /> : undefined}
+        description={
+          state.status === 'loaded' ? (
+            <span className="font-mono text-xs break-all">{state.message.id}</span>
+          ) : undefined
+        }
+      />
 
-      {justSent && state.status === 'loaded' && (
-        <Alert tone="success" title="Message accepted">
-          The platform accepted your message and is processing it. Its status below updates
-          automatically.
-        </Alert>
-      )}
+      <div className="space-y-6">
+        {justSent && state.status === 'loaded' && (
+          <Alert tone="success" title="Message accepted">
+            The platform accepted your message and is processing it. Its status below updates
+            automatically.
+          </Alert>
+        )}
 
-      {state.status === 'loading' && <Skeleton lines={5} label="Loading message…" />}
+        {state.status === 'loading' && <Skeleton lines={6} label="Loading message…" />}
 
-      {state.status === 'not-found' && (
-        <Alert tone="error" title="Message not found">
-          No message with this ID exists in your organization.
-        </Alert>
-      )}
+        {state.status === 'not-found' && (
+          <Alert tone="error" title="Message not found">
+            No message with this ID exists in your organization.
+          </Alert>
+        )}
 
-      {state.status === 'error' && (
-        <Alert
-          tone="error"
-          title="Could not load the message"
-          action={
-            <Button variant="secondary" size="sm" onClick={retry}>
-              Try again
-            </Button>
-          }
-        >
-          {state.message}
-        </Alert>
-      )}
+        {state.status === 'error' && (
+          <Alert
+            tone="error"
+            title="Could not load the message"
+            action={
+              <Button variant="secondary" size="sm" onClick={retry}>
+                Try again
+              </Button>
+            }
+          >
+            {state.message}
+          </Alert>
+        )}
 
-      {state.status === 'loaded' && <Details message={state.message} />}
+        {state.status === 'loaded' && <Details message={state.message} />}
+      </div>
     </div>
   );
 }
 
 function Details({ message }: { message: MessageDetail }) {
   const info = statusInfo(message.status);
+  const history = message.status_history;
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      <Card heading="Summary">
-        <dl className="grid grid-cols-1 gap-3 text-text sm:grid-cols-3">
-          <Row term="Status">
-            <StatusBadge status={message.status} />
-            <p className="mt-2 text-sm text-text-muted">{info.explanation}</p>
+    <div className="grid gap-6 lg:grid-cols-3">
+      <Card heading="Summary" className="lg:col-span-2">
+        <div className="mb-5 flex gap-3 rounded-control border border-border bg-surface-subtle p-3">
+          <StatusBadge status={message.status} />
+          <div className="min-w-0 space-y-1 text-sm">
+            <p>{info.explanation}</p>
             {message.status_reason !== null && (
-              <p className="mt-1 text-sm text-text-muted">
-                Reason: {message.status_reason.description}
-              </p>
+              <p className="text-text-muted">Reason: {message.status_reason.description}</p>
             )}
             {message.status_category === 'in_progress' && (
-              <p className="mt-1 text-sm text-text-muted">Updating automatically…</p>
+              <p className="flex items-center gap-1.5 text-text-muted">
+                <span aria-hidden="true" className="size-2 animate-pulse rounded-full bg-info" />
+                Updating automatically…
+              </p>
             )}
+          </div>
+        </div>
+        <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+          <Row term="Recipient">
+            <span className="tabular-nums">{message.to}</span>
           </Row>
-          <Row term="Message ID">
-            <span className="font-mono break-all">{message.id}</span>
-          </Row>
-          <Row term="Recipient">{message.to}</Row>
           <Row term="Sender ID">{message.sender_id}</Row>
+          <Row term="Message ID" wide>
+            <span className="font-mono text-xs break-all">{message.id}</span>
+          </Row>
           <Row term="Encoding">{encodingLabel(message.encoding)}</Row>
           <Row term="Segments">{message.segment_count}</Row>
           <Row term="Submitted">{formatDateTime(message.accepted_at)}</Row>
           <Row term="Status updated">{formatDateTime(message.status_updated_at)}</Row>
         </dl>
-        <p className="mt-4 text-sm text-text-muted">
+        <p className="mt-5 border-t border-border pt-4 text-xs text-text-muted">
           The message text is not shown: the platform does not display message content after
           submission.
         </p>
       </Card>
-      <Card heading="Status history">
-        <ol className="space-y-4">
-          {message.status_history.map((change, i) => (
-            <li key={`${change.status}-${change.occurred_at}-${String(i)}`} className="space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <StatusBadge status={change.status} />
-                <span className="text-sm text-text-muted">
-                  {formatDateTime(change.occurred_at)}
-                </span>
-              </div>
-              {change.status_reason !== null && (
-                <p className="text-sm text-text-muted">{change.status_reason.description}</p>
+      <Card heading="Status history" description="In the order the changes happened">
+        <ol className="space-y-0">
+          {history.map((change, i) => (
+            <li
+              key={`${change.status}-${change.occurred_at}-${String(i)}`}
+              className="relative flex gap-3 pb-5 last:pb-0"
+            >
+              {i < history.length - 1 && (
+                <span
+                  aria-hidden="true"
+                  className="absolute top-5 bottom-0 left-1 w-px bg-border"
+                />
               )}
+              <span
+                aria-hidden="true"
+                className={`relative mt-1.5 size-2.5 shrink-0 rounded-full border-2 ${
+                  i === history.length - 1
+                    ? 'border-primary bg-primary'
+                    : 'border-border-strong bg-surface'
+                }`}
+              />
+              <div className="min-w-0 space-y-1">
+                <StatusBadge status={change.status} />
+                <p className="text-xs text-text-muted">{formatDateTime(change.occurred_at)}</p>
+                {change.status_reason !== null && (
+                  <p className="text-sm text-text-muted">{change.status_reason.description}</p>
+                )}
+              </div>
             </li>
           ))}
         </ol>
@@ -166,11 +193,19 @@ function Details({ message }: { message: MessageDetail }) {
   );
 }
 
-function Row({ term, children }: { term: string; children: ReactNode }) {
+function Row({
+  term,
+  wide = false,
+  children,
+}: {
+  term: string;
+  wide?: boolean;
+  children: ReactNode;
+}) {
   return (
-    <div className="sm:col-span-3 sm:grid sm:grid-cols-3 sm:gap-4">
-      <dt className="text-sm font-medium text-text-muted">{term}</dt>
-      <dd className="sm:col-span-2">{children}</dd>
+    <div className={wide ? 'sm:col-span-2' : undefined}>
+      <dt className="text-xs font-medium text-text-muted">{term}</dt>
+      <dd className="mt-1 text-sm text-text">{children}</dd>
     </div>
   );
 }

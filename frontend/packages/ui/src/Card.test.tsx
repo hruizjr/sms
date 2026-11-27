@@ -25,3 +25,20 @@ describe('Card', () => {
     expect(screen.getByText('Plain content')).toBeInTheDocument();
   });
 });
+
+describe('Card header', () => {
+  it('shows a description and actions next to the heading', () => {
+    render(
+      <Card
+        heading="API keys"
+        description="Keys of your organization"
+        actions={<button>New</button>}
+      >
+        Rows
+      </Card>,
+    );
+    const region = screen.getByRole('region', { name: 'API keys' });
+    expect(region).toHaveTextContent('Keys of your organization');
+    expect(screen.getByRole('button', { name: 'New' })).toBeInTheDocument();
+  });
+});

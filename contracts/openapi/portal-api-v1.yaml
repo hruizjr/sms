@@ -4,13 +4,16 @@ info:
   version: 0.1.0-draft
   summary: Session-authenticated API used only by the platform's own client portal.
   description: |
-    **Status: draft contract (Phase 4 Group 3), implemented against the simulator provider only (no real
-    network).** Owner decisions G3-1 to G3-6 (decision log §20, 2026-11-27) apply.
+    **Status: draft contract (Phase 4 Groups 3 and 4), implemented against the simulator provider only
+    (no real network).** Owner decisions G3-1 to G3-6 (decision log §20, 2026-11-27) and the Phase 4
+    Group 4 scope (decision log §21) apply.
 
     This API serves the platform's own browser application (the client portal). It is **not** a
     developer API: integrations use the public API (`public-api-v1.yaml`) with API keys. The two are
     separate: a portal session never grants public API access, and an API key never opens a portal
-    session. API keys are never sent to or stored in the browser.
+    session. An API key is never used by the browser to call any API: the portal only manages keys
+    (list, create, revoke), and a new key's full value is returned exactly once, in the response that
+    creates it.
 
     ## Authentication and CSRF
 
@@ -34,6 +37,13 @@ info:
     are the same kind of record. A `202` means only that the platform accepted and stored the message;
     the platform never promises exactly-once SMS delivery.
 
+    ## API keys
+
+    An organization's owners manage the API keys of the public API (MVP-03; permission
+    `api_keys:manage`). Keys are created and verified by the same key service as the local administration
+    tool: only a hash of the key's secret is stored, so a key's full value cannot be shown again after
+    creation. Revocation takes effect for the next public API request.
+
     ## Conventions
 
     As in the public API: JSON with `snake_case` fields, RFC 3339 UTC timestamps, E.164 phone numbers,
@@ -49,6 +59,8 @@ tags:
     description: Sign in, read the current session, sign out.
   - name: Messages
     description: Compose, submit and read the organization's messages.
+  - name: API keys
+    description: Manage the organization's API keys for the public API (owners only).
 security:
   - portal_session: []
 paths:
@@ -333,6 +345,116 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
+  /portal/v1/api-keys:
+    get:
+      tags: [API keys]
+      operationId: listApiKeys
+      summary: List API keys
+      description: |
+        The organization's API keys, active and revoked, oldest first. A key's secret and its stored
+        hash are never returned. Requires `api_keys:manage`.
+      x-required-permission: api_keys:manage
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: The organization's API keys.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeyList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags: [API keys]
+      operationId: createApiKey
+      summary: Create an API key
+      description: |
+        Creates an API key of the organization with a name and the public API permissions (scopes) it
+        grants. The response contains the full key (`key`) **once**: the platform stores only a hash of
+        its secret and can never return it again. Requires `api_keys:manage`.
+      x-required-permission: api_keys:manage
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiKeyCreateRequest'
+      responses:
+        '201':
+          description: Created. `key` is shown only in this response.
+          headers:
+            Cache-Control:
+              description: '`no-store`: the response contains a secret and must not be cached.'
+              schema:
+                type: string
+                enum: [no-store]
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeyCreated'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /portal/v1/api-keys/{api_key_id}:
+    delete:
+      tags: [API keys]
+      operationId: revokeApiKey
+      summary: Revoke an API key
+      description: |
+        Revokes an API key of the organization. The key is refused by the public API from the next
+        request on (`401`). The key stays listed as `revoked`; revocation cannot be undone. Revoking a
+        key that is already revoked returns it unchanged. A key of another organization is reported as
+        `404`, exactly like a key that does not exist. Requires `api_keys:manage`.
+      x-required-permission: api_keys:manage
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - name: api_key_id
+          in: path
+          required: true
+          description: The API key's `id`.
+          schema:
+            $ref: '#/components/schemas/ApiKeyId'
+      responses:
+        '200':
+          description: The revoked key.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKey'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
 components:
   securitySchemes:
     portal_session:
@@ -487,7 +609,7 @@ components:
             detail: Your role does not allow sending messages.
             request_id: 9b2f4c1e7d3a5b63
     NotFound:
-      description: No such message for this organization.
+      description: No such message or API key in this organization.
       headers:
         X-Request-ID:
           $ref: '#/components/headers/XRequestID'
@@ -601,12 +723,13 @@ components:
       type: string
       description: |
         Client portal role (MVP-03). `owner` and `sender` may read and send messages; `viewer` may only
-        read (G3-3). Owner management functions are not part of this version.
+        read (G3-3). Only `owner` manages API keys (MVP-03). User management is not part of this
+        version.
       enum: [owner, sender, viewer]
     Permission:
       type: string
       description: A permission of the signed-in user. Operations state the one they require (`x-required-permission`).
-      enum: ['messages:read', 'messages:send']
+      enum: ['messages:read', 'messages:send', 'api_keys:manage']
     Session:
       type: object
       required: [user, organization, permissions, csrf_token, expires_at, idle_expires_at]
@@ -825,6 +948,92 @@ components:
             - type: string
               maxLength: 512
             - type: 'null'
+    ApiKeyId:
+      type: string
+      pattern: '^[0-9a-hjkmnp-tv-z]{26}$'
+      description: Opaque API key identifier (the key ID part of the key).
+      examples: [06h1wh346hsf13tppjr44p43pw]
+    ApiKeyScope:
+      type: string
+      description: A public API permission granted by the key (D-143).
+      enum: ['messages:send', 'messages:read']
+    ApiKey:
+      type: object
+      description: |
+        An API key's metadata. Never contains the key's secret or its stored hash. When a key was last
+        used is not recorded by the platform.
+      required: [id, name, prefix, scopes, status, created_at, revoked_at]
+      properties:
+        id:
+          $ref: '#/components/schemas/ApiKeyId'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: The name given at creation, to recognize the key.
+          examples: [Order notifications]
+        prefix:
+          type: string
+          maxLength: 64
+          pattern: '^smsk_[0-9a-hjkmnp-tv-z]{26}_[0-9a-hjkmnp-tv-z]{26}$'
+          description: |
+            The key's visible, non-secret beginning (everything before the secret), to match a key in
+            an application's configuration.
+        scopes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/ApiKeyScope'
+        status:
+          type: string
+          enum: [active, revoked]
+        created_at:
+          type: string
+          format: date-time
+        revoked_at:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+    ApiKeyList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiKey'
+    ApiKeyCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [name, scopes]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: A name to recognize the key (leading and trailing spaces are removed; no control characters).
+          examples: [Order notifications]
+        scopes:
+          type: array
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/ApiKeyScope'
+    ApiKeyCreated:
+      type: object
+      required: [api_key, key]
+      properties:
+        api_key:
+          $ref: '#/components/schemas/ApiKey'
+        key:
+          type: string
+          maxLength: 128
+          description: |
+            The full API key, for the `Authorization: Bearer` header of the public API. Returned only
+            in this response; it cannot be retrieved later.
     Problem:
       type: object
       description: RFC 9457 problem details; `detail` never contains internal error text.

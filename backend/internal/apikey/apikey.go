@@ -25,6 +25,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -62,9 +64,25 @@ var (
 	ErrTenantNotActive = errors.New("tenant is not active")
 	// ErrInvalidScopes: no scope, or an unknown scope, was requested at creation.
 	ErrInvalidScopes = errors.New("invalid scopes")
-	// ErrNotFound: no such key of the tenant (revocation).
+	// ErrInvalidLabel: the label is empty, too long or contains control characters.
+	ErrInvalidLabel = errors.New("invalid label")
+	// ErrNotFound: no such key of the tenant, or already revoked (revocation).
 	ErrNotFound = errors.New("api key not found")
 )
+
+// MaxLabelCharacters is the maximum length of a key's label (ck_api_keys__label).
+const MaxLabelCharacters = 100
+
+// NormalizeLabel trims label and checks it against the stored constraint (1 to 100 characters, no
+// control characters).
+func NormalizeLabel(label string) (string, error) {
+	label = strings.TrimSpace(label)
+	if label == "" || !utf8.ValidString(label) || utf8.RuneCountInString(label) > MaxLabelCharacters ||
+		strings.ContainsFunc(label, unicode.IsControl) {
+		return "", ErrInvalidLabel
+	}
+	return label, nil
+}
 
 // Principal is an authenticated API key.
 type Principal struct {
@@ -103,6 +121,10 @@ func NewService(db *database.DB) *Service { return &Service{db: db} }
 // Create issues a key for tenant with the given label and scopes. It returns the stored key and
 // the full key token, which is shown once and never stored.
 func (s *Service) Create(ctx context.Context, tenantID tenancy.ID, label string, scopes []Scope) (Key, string, error) {
+	label, err := NormalizeLabel(label)
+	if err != nil {
+		return Key{}, "", err
+	}
 	if len(scopes) == 0 {
 		return Key{}, "", fmt.Errorf("%w: at least one scope is required", ErrInvalidScopes)
 	}
@@ -122,10 +144,10 @@ func (s *Service) Create(ctx context.Context, tenantID tenancy.ID, label string,
 	hash := sha256.Sum256(secret)
 
 	var row sqlcgen.CreateAPIKeyRow
-	err := s.db.InTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+	err = s.db.InTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
 		var err error
 		row, err = sqlcgen.New(tx).CreateAPIKey(ctx, sqlcgen.CreateAPIKeyParams{
-			TenantID: pgUUID(tenantID), Label: strings.TrimSpace(label), SecretHash: hash[:], Scopes: names,
+			TenantID: pgUUID(tenantID), Label: label, SecretHash: hash[:], Scopes: names,
 		})
 		return err
 	})

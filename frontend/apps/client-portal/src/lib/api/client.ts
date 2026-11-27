@@ -24,6 +24,10 @@ export type StatusCategory = Schemas['StatusCategory'];
 export type StatusChange = Schemas['StatusChange'];
 export type Permission = Schemas['Permission'];
 export type Role = Schemas['Role'];
+export type ApiKey = Schemas['ApiKey'];
+export type ApiKeyScope = Schemas['ApiKeyScope'];
+export type ApiKeyCreateRequest = Schemas['ApiKeyCreateRequest'];
+export type ApiKeyCreated = Schemas['ApiKeyCreated'];
 export type Problem = Schemas['Problem'];
 export type FieldError = Schemas['FieldError'];
 
@@ -67,12 +71,20 @@ export type ApiClient = {
   signOut(): Promise<void>;
   listSenderIds(): Promise<string[]>;
   estimateMessage(body: string): Promise<MessageEstimate>;
-  listMessages(params?: { cursor?: string; limit?: number }): Promise<MessageList>;
+  listMessages(params?: {
+    cursor?: string;
+    limit?: number;
+    status?: MessageStatus;
+  }): Promise<MessageList>;
   getMessage(id: string): Promise<MessageDetail>;
   createMessage(
     request: MessageCreateRequest,
     idempotencyKey: string,
   ): Promise<{ message: Message; replayed: boolean }>;
+  listApiKeys(): Promise<ApiKey[]>;
+  /** The response holds the full key once; callers keep it in memory only. */
+  createApiKey(request: ApiKeyCreateRequest): Promise<ApiKeyCreated>;
+  revokeApiKey(id: string): Promise<ApiKey>;
 };
 
 export type ApiClientOptions = {
@@ -156,6 +168,7 @@ export function createApiClient({
       const query = new URLSearchParams();
       if (params.limit !== undefined) query.set('limit', String(params.limit));
       if (params.cursor !== undefined) query.set('cursor', params.cursor);
+      if (params.status !== undefined) query.set('status', params.status);
       const suffix = query.size > 0 ? `?${query.toString()}` : '';
       return (await request('GET', `/messages${suffix}`)).data as MessageList;
     },
@@ -171,6 +184,15 @@ export function createApiClient({
         message: data as Message,
         replayed: response.headers.get('Idempotent-Replayed') === 'true',
       };
+    },
+    async listApiKeys() {
+      return ((await request('GET', '/api-keys')).data as Schemas['ApiKeyList']).data;
+    },
+    async createApiKey(body) {
+      return (await request('POST', '/api-keys', { body })).data as ApiKeyCreated;
+    },
+    async revokeApiKey(id) {
+      return (await request('DELETE', `/api-keys/${encodeURIComponent(id)}`)).data as ApiKey;
     },
   };
 }

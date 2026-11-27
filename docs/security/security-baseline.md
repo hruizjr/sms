@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — pending owner review (MFA, MVP roles and API key scopes in §3 updated for owner decisions of 2026-11-26; portal sessions and passwords in §3 for decision log §20, 2026-11-27) | Project owner | 2026-11-27 |
+| Draft — pending owner review (MFA, MVP roles and API key scopes in §3 updated for owner decisions of 2026-11-26; portal sessions and passwords in §3 for decision log §20, 2026-11-27; S-3 status for §21) | Project owner | 2026-11-27 |
 
 This baseline sets the minimum security principles for all work. It is **not** a complete security
 program; §11 lists the security engineering still required. Nothing here is legal advice.
@@ -171,7 +171,7 @@ program; §11 lists the security engineering still required. Nothing here is leg
 | - | --------- | ---- |
 | S-1 | Formal threat model (data flows, trust boundaries, STRIDE or similar) | Architecture phase |
 | S-2 | RBAC role and permission design for client and admin portals | Before identity implementation |
-| S-3 | Session, MFA, and API key design details | Client portal sessions and API keys designed and implemented (decision log §19, §20); MFA and admin sessions remain open |
+| S-3 | Session, MFA, and API key design details | Client portal sessions and API keys designed and implemented, including owner-only API key management in the portal (decision log §19, §20, §21); MFA, admin sessions and re-authentication before sensitive actions remain open |
 | S-4 | Data classification and retention schedule (with counsel) | Before storing production data |
 | S-5 | Privacy impact assessment; DPO and NPC obligations (with counsel) | Before production |
 | S-6 | Secret management and key rotation design | Hosting decision |

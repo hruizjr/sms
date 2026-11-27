@@ -13,6 +13,42 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+// Defines values for ApiKeyStatus.
+const (
+	Active  ApiKeyStatus = "active"
+	Revoked ApiKeyStatus = "revoked"
+)
+
+// Valid indicates whether the value is a known member of the ApiKeyStatus enum.
+func (e ApiKeyStatus) Valid() bool {
+	switch e {
+	case Active:
+		return true
+	case Revoked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ApiKeyScope.
+const (
+	ApiKeyScopeMessagesRead ApiKeyScope = "messages:read"
+	ApiKeyScopeMessagesSend ApiKeyScope = "messages:send"
+)
+
+// Valid indicates whether the value is a known member of the ApiKeyScope enum.
+func (e ApiKeyScope) Valid() bool {
+	switch e {
+	case ApiKeyScopeMessagesRead:
+		return true
+	case ApiKeyScopeMessagesSend:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for Encoding.
 const (
 	Gsm7 Encoding = "gsm7"
@@ -69,16 +105,19 @@ func (e MessageStatus) Valid() bool {
 
 // Defines values for Permission.
 const (
-	MessagesRead Permission = "messages:read"
-	MessagesSend Permission = "messages:send"
+	PermissionApiKeysManage Permission = "api_keys:manage"
+	PermissionMessagesRead  Permission = "messages:read"
+	PermissionMessagesSend  Permission = "messages:send"
 )
 
 // Valid indicates whether the value is a known member of the Permission enum.
 func (e Permission) Valid() bool {
 	switch e {
-	case MessagesRead:
+	case PermissionApiKeysManage:
 		return true
-	case MessagesSend:
+	case PermissionMessagesRead:
+		return true
+	case PermissionMessagesSend:
 		return true
 	default:
 		return false
@@ -126,6 +165,65 @@ func (e StatusCategory) Valid() bool {
 		return false
 	}
 }
+
+// ApiKey An API key's metadata. Never contains the key's secret or its stored hash. When a key was last
+// used is not recorded by the platform.
+type ApiKey struct {
+	CreatedAt time.Time `json:"created_at"`
+
+	// Id Opaque API key identifier (the key ID part of the key).
+	//
+	// Examples: 06h1wh346hsf13tppjr44p43pw
+	Id ApiKeyId `json:"id"`
+
+	// Name The name given at creation, to recognize the key.
+	//
+	// Examples: Order notifications
+	Name string `json:"name"`
+
+	// Prefix The key's visible, non-secret beginning (everything before the secret), to match a key in
+	// an application's configuration.
+	Prefix    string        `json:"prefix"`
+	RevokedAt *time.Time    `json:"revoked_at"`
+	Scopes    []ApiKeyScope `json:"scopes"`
+	Status    ApiKeyStatus  `json:"status"`
+}
+
+// ApiKeyStatus defines model for ApiKey.Status.
+type ApiKeyStatus string
+
+// ApiKeyCreateRequest defines model for ApiKeyCreateRequest.
+type ApiKeyCreateRequest struct {
+	// Name A name to recognize the key (leading and trailing spaces are removed; no control characters).
+	//
+	// Examples: Order notifications
+	Name   string        `json:"name"`
+	Scopes []ApiKeyScope `json:"scopes"`
+}
+
+// ApiKeyCreated defines model for ApiKeyCreated.
+type ApiKeyCreated struct {
+	// ApiKey An API key's metadata. Never contains the key's secret or its stored hash. When a key was last
+	// used is not recorded by the platform.
+	ApiKey ApiKey `json:"api_key"`
+
+	// Key The full API key, for the `Authorization: Bearer` header of the public API. Returned only
+	// in this response; it cannot be retrieved later.
+	Key string `json:"key"`
+}
+
+// ApiKeyId Opaque API key identifier (the key ID part of the key).
+//
+// Examples: 06h1wh346hsf13tppjr44p43pw
+type ApiKeyId = string
+
+// ApiKeyList defines model for ApiKeyList.
+type ApiKeyList struct {
+	Data []ApiKey `json:"data"`
+}
+
+// ApiKeyScope A public API permission granted by the key (D-143).
+type ApiKeyScope string
 
 // Encoding Encoding chosen by the platform from the message text.
 type Encoding string
@@ -295,7 +393,8 @@ type Problem struct {
 }
 
 // Role Client portal role (MVP-03). `owner` and `sender` may read and send messages; `viewer` may only
-// read (G3-3). Owner management functions are not part of this version.
+// read (G3-3). Only `owner` manages API keys (MVP-03). User management is not part of this
+// version.
 type Role string
 
 // SenderId An approved sender ID of the organization.
@@ -327,7 +426,8 @@ type Session struct {
 		Email string `json:"email"`
 
 		// Role Client portal role (MVP-03). `owner` and `sender` may read and send messages; `viewer` may only
-		// read (G3-3). Owner management functions are not part of this version.
+		// read (G3-3). Only `owner` manages API keys (MVP-03). User management is not part of this
+		// version.
 		Role Role `json:"role"`
 	} `json:"user"`
 }
@@ -412,6 +512,32 @@ type UnprocessableMessage = Problem
 // UnsupportedMediaType RFC 9457 problem details; `detail` never contains internal error text.
 type UnsupportedMediaType = Problem
 
+// ListApiKeysParams defines parameters for ListApiKeys.
+type ListApiKeysParams struct {
+	// XRequestID Optional correlation identifier, handled exactly as in the public API.
+	XRequestID *RequestId `json:"X-Request-ID,omitempty"`
+}
+
+// CreateApiKeyParams defines parameters for CreateApiKey.
+type CreateApiKeyParams struct {
+	// XRequestID Optional correlation identifier, handled exactly as in the public API.
+	XRequestID *RequestId `json:"X-Request-ID,omitempty"`
+
+	// XCSRFToken The `csrf_token` of the current session. A missing or wrong token receives `403`
+	// (`csrf-token-invalid`) and nothing is processed.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// RevokeApiKeyParams defines parameters for RevokeApiKey.
+type RevokeApiKeyParams struct {
+	// XRequestID Optional correlation identifier, handled exactly as in the public API.
+	XRequestID *RequestId `json:"X-Request-ID,omitempty"`
+
+	// XCSRFToken The `csrf_token` of the current session. A missing or wrong token receives `403`
+	// (`csrf-token-invalid`) and nothing is processed.
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
 // EstimateMessageParams defines parameters for EstimateMessage.
 type EstimateMessageParams struct {
 	// XRequestID Optional correlation identifier, handled exactly as in the public API.
@@ -487,6 +613,9 @@ type SignInParams struct {
 	XRequestID *RequestId `json:"X-Request-ID,omitempty"`
 }
 
+// CreateApiKeyJSONRequestBody defines body for CreateApiKey for application/json ContentType.
+type CreateApiKeyJSONRequestBody = ApiKeyCreateRequest
+
 // EstimateMessageJSONRequestBody defines body for EstimateMessage for application/json ContentType.
 type EstimateMessageJSONRequestBody = MessageEstimateRequest
 
@@ -498,6 +627,15 @@ type SignInJSONRequestBody = SignInRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// ListApiKeys List API keys
+	// (GET /portal/v1/api-keys)
+	ListApiKeys(w http.ResponseWriter, r *http.Request, params ListApiKeysParams)
+	// CreateApiKey Create an API key
+	// (POST /portal/v1/api-keys)
+	CreateApiKey(w http.ResponseWriter, r *http.Request, params CreateApiKeyParams)
+	// RevokeApiKey Revoke an API key
+	// (DELETE /portal/v1/api-keys/{api_key_id})
+	RevokeApiKey(w http.ResponseWriter, r *http.Request, apiKeyId ApiKeyId, params RevokeApiKeyParams)
 	// EstimateMessage Estimate encoding and segments
 	// (POST /portal/v1/message-estimates)
 	EstimateMessage(w http.ResponseWriter, r *http.Request, params EstimateMessageParams)
@@ -527,6 +665,24 @@ type ServerInterface interface {
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
+
+// ListApiKeys List API keys
+// (GET /portal/v1/api-keys)
+func (_ Unimplemented) ListApiKeys(w http.ResponseWriter, r *http.Request, params ListApiKeysParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CreateApiKey Create an API key
+// (POST /portal/v1/api-keys)
+func (_ Unimplemented) CreateApiKey(w http.ResponseWriter, r *http.Request, params CreateApiKeyParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RevokeApiKey Revoke an API key
+// (DELETE /portal/v1/api-keys/{api_key_id})
+func (_ Unimplemented) RevokeApiKey(w http.ResponseWriter, r *http.Request, apiKeyId ApiKeyId, params RevokeApiKeyParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
 
 // EstimateMessage Estimate encoding and segments
 // (POST /portal/v1/message-estimates)
@@ -584,6 +740,184 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// ListApiKeys operation middleware
+func (siw *ServerInterfaceWrapper) ListApiKeys(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListApiKeysParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "X-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Request-ID")]; found {
+		var XRequestID RequestId
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Request-ID", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", valueList[0], &XRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Request-ID", Err: err})
+			return
+		}
+
+		params.XRequestID = &XRequestID
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListApiKeys(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateApiKey operation middleware
+func (siw *ServerInterfaceWrapper) CreateApiKey(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateApiKeyParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "X-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Request-ID")]; found {
+		var XRequestID RequestId
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Request-ID", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", valueList[0], &XRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Request-ID", Err: err})
+			return
+		}
+
+		params.XRequestID = &XRequestID
+
+	}
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateApiKey(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeApiKey operation middleware
+func (siw *ServerInterfaceWrapper) RevokeApiKey(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "api_key_id" -------------
+	var apiKeyId ApiKeyId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "api_key_id", chi.URLParam(r, "api_key_id"), &apiKeyId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "api_key_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RevokeApiKeyParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "X-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Request-ID")]; found {
+		var XRequestID RequestId
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Request-ID", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", valueList[0], &XRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Request-ID", Err: err})
+			return
+		}
+
+		params.XRequestID = &XRequestID
+
+	}
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeApiKey(w, r, apiKeyId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // EstimateMessage operation middleware
 func (siw *ServerInterfaceWrapper) EstimateMessage(w http.ResponseWriter, r *http.Request) {
@@ -1189,6 +1523,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/portal/v1/messages/{message_id}", wrapper.GetMessage)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/portal/v1/api-keys", wrapper.ListApiKeys)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/portal/v1/api-keys", wrapper.CreateApiKey)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/portal/v1/api-keys/{api_key_id}", wrapper.RevokeApiKey)
 	})
 
 	return r

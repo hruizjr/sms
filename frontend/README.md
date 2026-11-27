@@ -13,8 +13,14 @@ Phase 4 Group 3 added the first working **client portal**
 - **Send SMS**: one recipient, an approved sender ID, a character count and the platform's segment estimate, a
   review step, and one idempotency key per intended send (a repeated click or a retry cannot duplicate it).
 
-Not here yet, each needing separate owner approval: an admin portal; billing or cost display; user, API key or
-sender ID management; bulk sending; router, data-fetching, form or headless UI libraries.
+Phase 4 Group 4 redesigned the portal and added **API keys** for organization owners
+([decision log §21](../docs/engineering/decision-log.md#21-phase-4-group-4--enterprise-client-portal-and-api-key-management-2026-11-27)):
+a sidebar (menu button below 1024 px), one page header and status badge style, responsive tables, and an API keys
+page to list, create (name and permissions) and revoke keys. A new key is shown **once**, held in memory only, with a
+copy button and a `curl` example that uses a placeholder, never the key.
+
+Not here yet, each needing separate owner approval: an admin portal; billing or cost display; user or sender ID
+management; bulk sending; router, data-fetching, form or headless UI libraries.
 
 ## Structure
 
@@ -36,9 +42,10 @@ frontend/
 │       └── src/
 │           ├── main.tsx
 │           ├── app/                App (routes), error boundary
-│           ├── components/         App shell, skip link, alerts, skeletons, labelled form fields
+│           ├── components/         App shell (sidebar), page header, alerts, empty states, skeletons, form fields
 │           ├── features/auth/      Session context (sign-in, sign-out, central 401 handling), sign-in page
 │           ├── features/messages/  Messages list, message details, compose, status presentation
+│           ├── features/api-keys/  API keys page, create and revoke dialogs, one-time key display (owners)
 │           ├── lib/api/            The typed portal API client; schema.gen.ts GENERATED from the contract
 │           ├── lib/router.tsx      Minimal History-API router (no router library, G3-6)
 │           ├── styles/index.css    Tailwind entry point; imports the shared theme
@@ -47,7 +54,7 @@ frontend/
     └── ui/                 @sms/ui: shared design tokens and primitives (owner decision F8)
         └── src/
             ├── theme.css   Design tokens (Tailwind @theme); default colour palette switched off
-            ├── Button.tsx, Card.tsx (+ tests)
+            ├── Badge, Button, Card, Dialog, Icon (+ tests)
             ├── tokens.test.ts      WCAG AA contrast checks for the tokens
             └── testing/            Test support: contrast, network guard, styling rules
 ```

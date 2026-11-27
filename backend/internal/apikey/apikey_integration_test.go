@@ -162,3 +162,18 @@ func TestIntegrationCreateValidatesScopes(t *testing.T) {
 		t.Errorf("duplicate scopes: %+v, %v; want one scope", k.Scopes, err)
 	}
 }
+
+func TestIntegrationCreateValidatesLabel(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	tenantID := f.activeTenant(t, "Label Co")
+	for _, label := range []string{"", "   ", strings.Repeat("x", MaxLabelCharacters+1), "tab\there", "line\nbreak", "\xff"} {
+		if _, _, err := f.svc.Create(f.ctx, tenantID, label, []Scope{ScopeMessagesSend}); !errors.Is(err, ErrInvalidLabel) {
+			t.Errorf("label %q: %v, want ErrInvalidLabel", label, err)
+		}
+	}
+	k, _, err := f.svc.Create(f.ctx, tenantID, "  "+strings.Repeat("ñ", MaxLabelCharacters)+" ", []Scope{ScopeMessagesSend})
+	if err != nil || k.Label != strings.Repeat("ñ", MaxLabelCharacters) {
+		t.Errorf("100-character label: %q, %v", k.Label, err)
+	}
+}

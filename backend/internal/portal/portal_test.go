@@ -93,10 +93,13 @@ func TestNormalizeEmail(t *testing.T) {
 
 func TestRolePermissions(t *testing.T) {
 	t.Parallel()
-	for role, want := range map[Role][2]bool{RoleOwner: {true, true}, RoleSender: {true, true}, RoleViewer: {true, false}, "admin": {false, false}} {
+	for role, want := range map[Role][3]bool{
+		RoleOwner: {true, true, true}, RoleSender: {true, true, false}, RoleViewer: {true, false, false}, "admin": {false, false, false},
+	} {
 		p := Principal{Role: role}
-		if p.Has(PermissionMessagesRead) != want[0] || p.Has(PermissionMessagesSend) != want[1] {
-			t.Errorf("%s: read=%v send=%v, want %v", role, p.Has(PermissionMessagesRead), p.Has(PermissionMessagesSend), want)
+		got := [3]bool{p.Has(PermissionMessagesRead), p.Has(PermissionMessagesSend), p.Has(PermissionAPIKeysManage)}
+		if got != want {
+			t.Errorf("%s: read, send, manage API keys = %v, want %v", role, got, want)
 		}
 	}
 	if Role("admin").Valid() || !RoleViewer.Valid() {

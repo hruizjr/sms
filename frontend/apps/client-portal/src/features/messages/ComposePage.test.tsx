@@ -110,7 +110,7 @@ describe('compose page', () => {
     expect(review).toHaveTextContent('Recipients1 (+639000000001)');
     expect(review).toHaveTextContent('Not available: billing is not enabled yet.');
     await waitFor(() => {
-      expect(review).toHaveTextContent('1 (GSM-7)');
+      expect(review).toHaveTextContent('1 · GSM-7');
     });
 
     const send = screen.getByRole('button', { name: 'Send message' });

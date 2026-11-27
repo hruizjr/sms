@@ -70,17 +70,21 @@ func (r Role) Valid() bool { return r == RoleOwner || r == RoleSender || r == Ro
 // Permission is something a portal user may do. The portal API checks it on every request.
 type Permission string
 
-// Permissions of this group (G3-3): Owner and Sender may read and send; Viewer may only read. The
-// Owner's management functions (users, API keys) are not part of this group.
+// Permissions (G3-3, MVP-03): Owner and Sender may read and send; Viewer may only read. Only the
+// Owner manages the organization's API keys (MVP-03: "Owner (manages users and API keys)"). User
+// management is not implemented.
 const (
-	PermissionMessagesRead Permission = "messages:read"
-	PermissionMessagesSend Permission = "messages:send"
+	PermissionMessagesRead  Permission = "messages:read"
+	PermissionMessagesSend  Permission = "messages:send"
+	PermissionAPIKeysManage Permission = "api_keys:manage"
 )
 
 // Permissions returns the permissions of r, in a fixed order.
 func (r Role) Permissions() []Permission {
 	switch r {
-	case RoleOwner, RoleSender:
+	case RoleOwner:
+		return []Permission{PermissionMessagesRead, PermissionMessagesSend, PermissionAPIKeysManage}
+	case RoleSender:
 		return []Permission{PermissionMessagesRead, PermissionMessagesSend}
 	case RoleViewer:
 		return []Permission{PermissionMessagesRead}

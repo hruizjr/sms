@@ -38,7 +38,7 @@ describe('messages page', () => {
       '/messages/msg_06H1WH346HSF13TPPJR44P43PW',
     );
     // Shown in Philippine time.
-    expect(first.getByText(/Nov 27, 2026.*4:00:00.*PM PHT/)).toBeInTheDocument();
+    expect(first.getByText(/Nov 27, 2026.*4:00.PM PHT/)).toBeInTheDocument();
     expect(first.getByText('Delivered')).toBeInTheDocument();
     expect(within(secondRow).getByText('Uncertain')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument();

@@ -212,6 +212,11 @@ receipt marks it **Delivered**; **Messages** lists everything the organization s
 The Vite development server forwards `/healthz`, `/readyz` and the portal API (`/portal`) to the API on
 `127.0.0.1:8080`, so the portal and the API share one origin. The public API (`/v1`) is not forwarded.
 
+**API keys** (Phase 4 Group 4): signed in as an `owner`, open **API keys**, choose **Create API key**, give it a
+name and permissions, and copy the key from the one-time display (it cannot be shown again). Try it against the
+public API on `http://127.0.0.1:8080/v1/messages` with the `curl` example on that page (replace the placeholder host).
+**Revoke** asks for confirmation; the public API then refuses the key (`401`). Senders and viewers cannot manage keys.
+
 If a user is locked out after five wrong passwords (15 minutes) or should be signed out everywhere:
 
 ```powershell

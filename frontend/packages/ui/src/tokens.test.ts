@@ -41,6 +41,19 @@ const textPairs: [foreground: string, background: string][] = [
   ['info', 'surface-muted'],
   ['danger', 'surface'],
   ['danger', 'surface-muted'],
+  ['text', 'surface-subtle'],
+  ['text-muted', 'surface-subtle'],
+  ['primary', 'primary-subtle'],
+  ['text', 'primary-subtle'],
+  ['success', 'success-subtle'],
+  ['warning', 'warning-subtle'],
+  ['info', 'info-subtle'],
+  ['danger', 'danger-subtle'],
+  ['text', 'danger-subtle'],
+  ['text', 'warning-subtle'],
+  ['text', 'info-subtle'],
+  ['text', 'success-subtle'],
+  ['code-foreground', 'code'],
 ];
 
 // Focus indicators and component boundaries against the backgrounds they sit on:
@@ -54,6 +67,9 @@ const nonTextPairs: [foreground: string, background: string][] = [
   ['primary', 'surface-muted'],
   ['danger', 'surface'],
   ['danger', 'surface-muted'],
+  ['focus', 'surface-subtle'],
+  ['border-strong', 'surface-subtle'],
+  ['focus', 'primary-subtle'],
 ];
 
 describe('design tokens', () => {

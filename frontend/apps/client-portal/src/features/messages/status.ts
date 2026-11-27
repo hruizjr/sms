@@ -1,8 +1,9 @@
+import type { IconName } from '@sms/ui';
 import type { MessageStatus } from '../../lib/api/client';
 
 export type StatusTone = 'progress' | 'success' | 'warning' | 'danger';
 
-type StatusInfo = { label: string; tone: StatusTone; icon: string; explanation: string };
+type StatusInfo = { label: string; tone: StatusTone; icon: IconName; explanation: string };
 
 /*
  * How each customer-visible status is shown. The explanations follow the contract
@@ -13,52 +14,52 @@ export const STATUS_INFO: Record<MessageStatus, StatusInfo> = {
   accepted: {
     label: 'Accepted',
     tone: 'progress',
-    icon: '◷',
+    icon: 'clock',
     explanation: 'Accepted by the platform; not yet acknowledged by a provider.',
   },
   provider_accepted: {
     label: 'Provider accepted',
     tone: 'progress',
-    icon: '◷',
+    icon: 'clock',
     explanation:
       'The provider acknowledged the message. This is not a delivery report; the final outcome is still pending.',
   },
   submission_uncertain: {
     label: 'Uncertain',
     tone: 'warning',
-    icon: '?',
+    icon: 'question',
     explanation:
       'The provider’s answer was not received, so the outcome is unknown. The message may already have been delivered. It is not resent automatically.',
   },
   delivered: {
     label: 'Delivered',
     tone: 'success',
-    icon: '✓',
+    icon: 'check',
     explanation: 'The provider reported delivery to the handset.',
   },
   undelivered: {
     label: 'Undelivered',
     tone: 'danger',
-    icon: '✕',
+    icon: 'x',
     explanation: 'The provider reported that the message was not delivered.',
   },
   unknown: {
     label: 'Unknown',
     tone: 'warning',
-    icon: '?',
+    icon: 'question',
     explanation:
       'No final report arrived in time. This is not proof that the message was undelivered; a late report can still change it.',
   },
   rejected: {
     label: 'Rejected',
     tone: 'danger',
-    icon: '✕',
+    icon: 'x',
     explanation: 'Not sent: the platform or the provider refused the message.',
   },
   failed: {
     label: 'Failed',
     tone: 'danger',
-    icon: '✕',
+    icon: 'x',
     explanation: 'Not sent: handing the message to the provider failed.',
   },
 };
@@ -69,7 +70,7 @@ export function statusInfo(status: string): StatusInfo {
     (STATUS_INFO as Partial<Record<string, StatusInfo>>)[status] ?? {
       label: status,
       tone: 'progress',
-      icon: '◷',
+      icon: 'clock',
       explanation: 'The message is being processed.',
     }
   );
@@ -85,10 +86,23 @@ const dateTime = new Intl.DateTimeFormat('en-PH', {
   second: '2-digit',
 });
 
-/** Formats an RFC 3339 timestamp in Philippine time (AGENTS.md §7.10: Asia/Manila for display). */
-export function formatDateTime(iso: string): string {
+const shortDateTime = new Intl.DateTimeFormat('en-PH', {
+  timeZone: 'Asia/Manila',
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+});
+
+/**
+ * Formats an RFC 3339 timestamp in Philippine time (AGENTS.md §7.10: Asia/Manila for display).
+ * Lists use the short form (to the minute); details show seconds.
+ */
+export function formatDateTime(iso: string, form: 'full' | 'short' = 'full'): string {
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : `${dateTime.format(date)} PHT`;
+  if (Number.isNaN(date.getTime())) return iso;
+  return `${(form === 'short' ? shortDateTime : dateTime).format(date)} PHT`;
 }
 
 export function encodingLabel(encoding: string): string {

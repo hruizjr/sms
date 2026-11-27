@@ -1644,3 +1644,22 @@ G3-6). **No ADR status changed.**
 
 **Out of scope (unchanged):** real SMPP or telco adapters, real credentials, third-party aggregators, billing,
 pricing, production deployment, Kafka, RabbitMQ and Redis. The simulator remains the only provider.
+
+## 21. Phase 4 Group 4 — enterprise client portal and API key management (2026-11-27)
+
+On 2026-11-27 the owner approved **Phase 4 Group 4**: an enterprise-quality redesign of the client portal and
+customer-facing API key management (list, create, revoke) for the public messaging API, as one Draft pull request.
+No blocking decision was found: the existing approved decisions cover the authorization question. **No ADR status
+changed, and no owner decision is recorded here;** the rows below are the existing decisions applied and the
+engineering decisions made within the approved scope, listed so they can be reviewed.
+
+| # | Decision |
+| - | -------- |
+| G4-1 | **Only owners manage API keys**, applying MVP-03 (§14: "Owner (manages users and API keys)"). The portal permission `api_keys:manage` belongs to the Owner role only; Sender and Viewer receive `403`. The tenant comes from the session; a key of another organization is reported as `404` |
+| G4-2 | **One key service.** The portal endpoints (`GET`/`POST /portal/v1/api-keys`, `DELETE /portal/v1/api-keys/{id}`) call the same `apikey.Service` as `smsctl` and the public API's Bearer authentication, which is unchanged. Only the SHA-256 hash of a key's secret is stored; the full key is returned once, in the `201` response (`Cache-Control: no-store`), and never logged (creation and revocation are logged with tenant, user and key IDs). Revocation takes effect for the next public API request; revoking an already revoked key returns it unchanged. Key names are validated against the existing column constraint (1–100 characters, no control characters) |
+| G4-3 | **No schema change.** The `api_keys` table has no last-used time, so the portal says that last use is not recorded rather than showing an invented value |
+| G4-4 | **Design system extended, no UI library.** New semantic tokens (subtle surfaces and status tints, code-sample colours) with contrast tests; new shared primitives `Badge`, `Icon` (hand-drawn SVG line icons, decorative only), `Dialog` (native `<dialog>` with `showModal()`), and refined `Button` and `Card`. Navigation: sidebar on large screens, menu button below 1024 px; tables become stacked rows below 1280 px |
+| G4-5 | **Not implemented** (out of scope or not decided): last-used tracking for API keys; a limit on the number of keys; re-authentication before creating a key (security baseline §3, draft; open item S-3); an audit log table (S-8); user management and invitations; MFA for client users; billing, pricing and costs; bulk sending; analytics |
+
+**Out of scope (unchanged):** real SMPP or telco adapters, real credentials, third-party aggregators, billing,
+pricing, production deployment, Kafka, RabbitMQ and Redis. The simulator remains the only provider.

@@ -2,6 +2,56 @@
 // Regenerate with: pnpm --filter @sms/client-portal generate:api
 /* eslint-disable */
 export interface paths {
+    "/portal/v1/api-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List API keys
+         * @description The organization's API keys, active and revoked, oldest first. A key's secret and its stored
+         *     hash are never returned. Requires `api_keys:manage`.
+         */
+        get: operations["listApiKeys"];
+        put?: never;
+        /**
+         * Create an API key
+         * @description Creates an API key of the organization with a name and the public API permissions (scopes) it
+         *     grants. The response contains the full key (`key`) **once**: the platform stores only a hash of
+         *     its secret and can never return it again. Requires `api_keys:manage`.
+         */
+        post: operations["createApiKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/portal/v1/api-keys/{api_key_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke an API key
+         * @description Revokes an API key of the organization. The key is refused by the public API from the next
+         *     request on (`401`). The key stays listed as `revoked`; revocation cannot be undone. Revoking a
+         *     key that is already revoked returns it unchanged. A key of another organization is reported as
+         *     `404`, exactly like a key that does not exist. Requires `api_keys:manage`.
+         */
+        delete: operations["revokeApiKey"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/portal/v1/message-estimates": {
         parameters: {
             query?: never;
@@ -130,6 +180,58 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * @description An API key's metadata. Never contains the key's secret or its stored hash. When a key was last
+         *     used is not recorded by the platform.
+         */
+        ApiKey: {
+            /** Format: date-time */
+            created_at: string;
+            id: components["schemas"]["ApiKeyId"];
+            /**
+             * @description The name given at creation, to recognize the key.
+             * @example Order notifications
+             */
+            name: string;
+            /**
+             * @description The key's visible, non-secret beginning (everything before the secret), to match a key in
+             *     an application's configuration.
+             */
+            prefix: string;
+            revoked_at: string | null;
+            scopes: components["schemas"]["ApiKeyScope"][];
+            /** @enum {string} */
+            status: "active" | "revoked";
+        };
+        ApiKeyCreated: {
+            api_key: components["schemas"]["ApiKey"];
+            /**
+             * @description The full API key, for the `Authorization: Bearer` header of the public API. Returned only
+             *     in this response; it cannot be retrieved later.
+             */
+            key: string;
+        };
+        ApiKeyCreateRequest: {
+            /**
+             * @description A name to recognize the key (leading and trailing spaces are removed; no control characters).
+             * @example Order notifications
+             */
+            name: string;
+            scopes: components["schemas"]["ApiKeyScope"][];
+        };
+        /**
+         * @description Opaque API key identifier (the key ID part of the key).
+         * @example 06h1wh346hsf13tppjr44p43pw
+         */
+        ApiKeyId: string;
+        ApiKeyList: {
+            data: components["schemas"]["ApiKey"][];
+        };
+        /**
+         * @description A public API permission granted by the key (D-143).
+         * @enum {string}
+         */
+        ApiKeyScope: "messages:send" | "messages:read";
+        /**
          * @description Encoding chosen by the platform from the message text.
          * @enum {string}
          */
@@ -204,7 +306,7 @@ export interface components {
          * @description A permission of the signed-in user. Operations state the one they require (`x-required-permission`).
          * @enum {string}
          */
-        Permission: "messages:read" | "messages:send";
+        Permission: "messages:read" | "messages:send" | "api_keys:manage";
         /**
          * @description E.164 phone number. Only Philippine mobile numbers (`+639…`) are served.
          * @example +639000000001
@@ -230,7 +332,8 @@ export interface components {
         };
         /**
          * @description Client portal role (MVP-03). `owner` and `sender` may read and send messages; `viewer` may only
-         *     read (G3-3). Owner management functions are not part of this version.
+         *     read (G3-3). Only `owner` manages API keys (MVP-03). User management is not part of this
+         *     version.
          * @enum {string}
          */
         Role: "owner" | "sender" | "viewer";
@@ -407,7 +510,7 @@ export interface components {
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
-        /** @description No such message for this organization. */
+        /** @description No such message or API key in this organization. */
         NotFound: {
             headers: {
                 "X-Request-ID": components["headers"]["XRequestID"];
@@ -540,6 +643,110 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    listApiKeys: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional correlation identifier, handled exactly as in the public API. */
+                "X-Request-ID"?: components["parameters"]["RequestId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The organization's API keys. */
+            200: {
+                headers: {
+                    "X-Request-ID": components["headers"]["XRequestID"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiKeyList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    createApiKey: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description The `csrf_token` of the current session. A missing or wrong token receives `403`
+                 *     (`csrf-token-invalid`) and nothing is processed.
+                 */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Optional correlation identifier, handled exactly as in the public API. */
+                "X-Request-ID"?: components["parameters"]["RequestId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiKeyCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Created. `key` is shown only in this response. */
+            201: {
+                headers: {
+                    /** @description `no-store`: the response contains a secret and must not be cached. */
+                    "Cache-Control"?: "no-store";
+                    "X-Request-ID": components["headers"]["XRequestID"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiKeyCreated"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    revokeApiKey: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description The `csrf_token` of the current session. A missing or wrong token receives `403`
+                 *     (`csrf-token-invalid`) and nothing is processed.
+                 */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Optional correlation identifier, handled exactly as in the public API. */
+                "X-Request-ID"?: components["parameters"]["RequestId"];
+            };
+            path: {
+                /** @description The API key's `id`. */
+                api_key_id: components["schemas"]["ApiKeyId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The revoked key. */
+            200: {
+                headers: {
+                    "X-Request-ID": components["headers"]["XRequestID"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiKey"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
     estimateMessage: {
         parameters: {
             query?: never;

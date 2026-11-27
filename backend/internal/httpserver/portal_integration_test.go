@@ -119,7 +119,7 @@ func TestIntegrationPortalEndToEnd(t *testing.T) {
 	}
 	deps, logs := testDeps(true)
 	deps.PublicAPI = &PublicAPIDeps{Messages: msgs, Auth: keys}
-	deps.Portal = &PortalDeps{Messages: msgs, Auth: accounts}
+	deps.Portal = &PortalDeps{Messages: msgs, Auth: accounts, APIKeys: keys}
 	h := NewRouter(deps)
 
 	tenants := tenancy.NewRepository(db.Pool())
@@ -193,7 +193,7 @@ func TestIntegrationPortalEndToEnd(t *testing.T) {
 	var session portalapi.Session
 	_ = json.Unmarshal(b, &session)
 	if code != http.StatusOK || session.User.Email != "owner@a.example.invalid" || session.User.Role != "owner" ||
-		session.Organization.Name != "Portal Tenant A" || len(session.Permissions) != 2 || session.CsrfToken != owner.csrf {
+		session.Organization.Name != "Portal Tenant A" || len(session.Permissions) != 3 || session.CsrfToken != owner.csrf {
 		t.Fatalf("GET session: %d %s", code, b)
 	}
 	if strings.Contains(string(b), tenantA.String()) {

@@ -67,10 +67,10 @@ export function SignInPage({ notice }: { notice?: string }) {
   }
 
   return (
-    <div className="mx-auto max-w-md space-y-6 py-6">
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold">Sign in</h1>
-        <p className="text-text-muted">Sign in to send SMS and see your organization’s messages.</p>
+    <div className="space-y-6">
+      <div className="space-y-1 text-center">
+        <h1 className="text-xl font-semibold tracking-tight">Sign in</h1>
+        <p className="text-sm text-text-muted">Send SMS and follow your organization’s messages.</p>
       </div>
       {notice !== undefined && <Alert tone="info" title={notice} />}
       {failure !== undefined && (
@@ -109,7 +109,7 @@ export function SignInPage({ notice }: { notice?: string }) {
           </Button>
         </form>
       </Card>
-      <p className="text-sm text-text-muted">
+      <p className="text-center text-xs text-text-muted">
         Accounts are created by the platform team. There is no self-registration or password reset
         by email yet; contact your administrator if you cannot sign in.
       </p>

@@ -7,7 +7,7 @@ import { useId, type ComponentPropsWithoutRef, type ReactNode } from 'react';
  */
 
 const controlClasses =
-  'block w-full rounded-control border bg-surface px-3 py-2 text-base text-text placeholder:text-text-muted disabled:cursor-not-allowed disabled:opacity-60';
+  'block w-full rounded-control border bg-surface px-3 py-2 text-base text-text shadow-sm transition-colors placeholder:text-text-muted hover:border-text-muted focus:border-focus disabled:cursor-not-allowed disabled:bg-surface-subtle disabled:text-text-muted sm:text-sm';
 
 type FieldFrameProps = {
   label: string;
@@ -25,18 +25,18 @@ function FieldFrame({ label, hint, error, children }: FieldFrameProps) {
       .filter(Boolean)
       .join(' ') || undefined;
   return (
-    <div className="space-y-1">
+    <div className="space-y-1.5">
       <label htmlFor={id} className="block text-sm font-medium text-text">
         {label}
       </label>
       {children({ id, describedBy, invalid: error !== undefined })}
       {hint !== undefined && (
-        <p id={hintId} className="text-sm text-text-muted">
+        <p id={hintId} className="text-xs text-text-muted">
           {hint}
         </p>
       )}
       {error !== undefined && (
-        <p id={errorId} className="text-sm font-medium text-danger">
+        <p id={errorId} className="text-xs font-medium text-danger">
           {error}
         </p>
       )}
