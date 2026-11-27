@@ -1,9 +1,9 @@
 # Frontend CI — Phase 3 Group 5 (client portal and shared UI package); Phase 4 Group 3 (portal API
-# types generated from the contract, checked on Linux and Windows).
+# types generated from the contract).
 #
-# The job names below are the status-check names to require on `main` once this workflow is merged:
-#   "Frontend check" (Linux; intended to become a required status check, owner decision F6)
-#   "Frontend check (Windows)"
+# One job, "Frontend check" (Linux), a required status check on `main` (owner decisions F6, L9). The
+# Windows job "Frontend check (Windows)" was removed by owner decision on 2026-11-27 (decision log §10,
+# status update): Windows compatibility of the frontend is validated by the owner's local Windows testing.
 #
 # Security: least-privilege token (read-only contents), actions pinned to full commit SHAs, no
 # secrets used, credentials not persisted after checkout. Tool versions are pinned in `env` and in
@@ -80,52 +80,3 @@ jobs:
 
       - name: Security audit (fails on moderate or higher)
         run: pnpm run audit
-
-  windows:
-    name: Frontend check (Windows)
-    runs-on: windows-2025
-    timeout-minutes: 20
-    defaults:
-      run:
-        shell: pwsh
-        working-directory: frontend
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install pnpm
-        run: npm install --global "pnpm@$env:PNPM_VERSION"
-
-      - name: Show tool versions
-        run: |
-          node --version
-          pnpm --version
-
-      - name: Install dependencies (lockfile only)
-        run: pnpm install --frozen-lockfile
-
-      # Phase 4 Group 3: the portal API types must match contracts/openapi/portal-api-v1.yaml.
-      - name: Generated portal API types are up to date
-        run: pnpm run check:api
-
-      - name: Check formatting (Prettier)
-        run: pnpm run format:check
-
-      - name: Lint (ESLint)
-        run: pnpm run lint
-
-      - name: Type check (TypeScript)
-        run: pnpm run typecheck
-
-      - name: Unit and component tests (Vitest)
-        run: pnpm run test
-
-      - name: Production build and build verification
-        run: pnpm run build

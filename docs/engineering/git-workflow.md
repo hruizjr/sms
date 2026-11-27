@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Approved (ADR-0017 accepted 2026-11-25) | Project owner | 2026-11-25 (repository state updated) |
+| Approved (ADR-0017 accepted 2026-11-25) | Project owner | 2026-11-27 (Windows frontend CI job removed) |
 
 A deliberately simple, trunk-based workflow for **one human owner and multiple AI agents**.
 
@@ -49,8 +49,12 @@ to `main`, with no path filters:
 | Local stack check | Local Stack CI | Yes |
 | Secret scan | Security CI | Yes |
 | Dependency review | Security CI | Yes. Runs on pull requests only |
-| Frontend check (Windows) | Frontend CI | No: optional initially |
 | Local stack config (Windows) | Local Stack CI | No: optional |
+
+The optional **Frontend check (Windows)** job was removed from Frontend CI by owner decision on 2026-11-27
+([decision log §10](decision-log.md#10-owner-decisions--frontend-foundation-phase-3-group-5-2026-11-25), status
+update). It was never a required check. Windows compatibility of the frontend is validated by the owner's local
+Windows testing; the Windows jobs of Backend CI and Local Stack CI are unchanged.
 
 The tool-assigned branch `claude/ecstatic-gates-ji0o5b` is reused by agent sessions as their working branch
 (Phase 3 Groups 4–7 and the Phase 3 closure), updated from `main` by merge rather than history rewrite; its pull requests are
