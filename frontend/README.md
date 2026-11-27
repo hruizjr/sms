@@ -57,8 +57,8 @@ application (`src/components/`). `@sms/ui` is consumed as TypeScript source; it 
 
 **API types are generated** from [`contracts/openapi/portal-api-v1.yaml`](../contracts/openapi/portal-api-v1.yaml)
 with `openapi-typescript` (types only) into `apps/client-portal/src/lib/api/schema.gen.ts` (never edit it). After a
-contract change run `pnpm --filter @sms/client-portal generate:api`; `pnpm check:api` (and CI, on Linux and
-Windows) fails if the committed file is stale. The browser never uses the public `/v1` API or API keys.
+contract change run `pnpm --filter @sms/client-portal generate:api`; `pnpm check:api` (and CI) fails if the
+committed file is stale. The browser never uses the public `/v1` API or API keys.
 
 ## Prerequisites
 
@@ -83,7 +83,8 @@ Run from `frontend/`:
 | `pnpm check:api`                    | Fails if the generated portal API types differ from the contract                        |
 | `pnpm check`                        | API types, formatting, lint, type check, tests, build: everything CI runs but the audit |
 
-The commands work the same on Linux, macOS and Windows. CI runs them on Linux and Windows.
+The commands work the same on Linux, macOS and Windows. CI runs them on Linux; Windows compatibility is
+validated by the owner's local Windows testing (owner decision, 2026-11-27).
 
 ## Dependencies and the package age policy
 
