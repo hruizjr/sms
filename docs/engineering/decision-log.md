@@ -975,6 +975,12 @@ old number (§7.4).
 | F7 | Visual placeholder | Neutral placeholder theme, "Client Portal" label, system fonts, light theme only; branding and dark mode are later decisions |
 | F8 | Component location | Shared design tokens and primitives in `frontend/packages/ui`; app-specific components in the application |
 
+> **Status update (2026-11-27, owner decision):** the **"Frontend check (Windows)"** job of F6 is removed from
+> `.github/workflows/frontend-ci.yml`. The Linux job **"Frontend check"** keeps every check (generated API types,
+> formatting, lint, type check, tests, build and build verification, security audit). Windows compatibility of the
+> frontend is validated by the owner's local Windows testing. The Windows job was optional, never a required status
+> check (§13). Windows support of the application and the Windows jobs of Backend CI and Local Stack CI are unchanged.
+
 **Additional owner requirements.**
 
 1. **Package age policy.** `frontend/pnpm-workspace.yaml` sets `minimumReleaseAge: 10080`, plus
