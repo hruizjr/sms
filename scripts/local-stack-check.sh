@@ -18,6 +18,8 @@
 #   project's own server only, and restore the approved state before continuing.
 # - The messaging test creates a synthetic tenant and API key with smsctl in this project's database
 #   and sends synthetic messages to the in-process simulator only (no SMS, no network connection).
+# - The portal test creates synthetic portal users with smsctl (passwords from standard input) in this
+#   project's database and signs in with curl against the API only.
 # - The failed-migration test writes one deliberately invalid migration into backend/migrations and
 #   always removes it again (also on failure or Ctrl+C).
 # - Uses only docker, curl and standard shell tools. Extra Compose files can be added with the
@@ -41,7 +43,7 @@ P="$COMPOSE_PROJECT_NAME"
 API="http://127.0.0.1:${API_PORT:-8080}"
 BROKEN_MIGRATION="backend/migrations/29991231235959_local_stack_check_broken.sql"
 BASELINE_VERSION="20261125041208"
-LATEST_VERSION="20261127150000"
+LATEST_VERSION="20261127200000"
 failures=0
 
 compose() { docker compose "$@"; }
@@ -193,6 +195,79 @@ expect "a request without an API key is 401" equals "$(http_code /v1/messages)" 
 expect "the dispatcher's database sessions use sms_app" \
   equals "$(psql_value "SELECT coalesce(string_agg(DISTINCT usename, ','), '') FROM pg_stat_activity WHERE application_name = 'sms-dispatcher'")" sms_app
 expect "no log contains the API key" key_not_logged
+rm -f "$hdr_file"
+
+echo "== Client portal: session sign-in, CSRF, submission and tenant isolation (Phase 4 Group 3)"
+portal_password="stack check portal password"
+printf '%s\n' "$portal_password" | compose run --rm -T smsctl portal-user create --tenant "$tenant_id" \
+  --email owner@stack-check.example.invalid --role owner --password-stdin >/dev/null 2>&1 || true
+cookie="" csrf="" portal_code="" portal_body=""
+# portal <method> <path> [curl args...]: sets portal_code and portal_body (with the session cookie).
+portal() {
+  local method="$1" path="$2" out
+  shift 2
+  out="$(curl -s -m 10 -w '\n%{http_code}' -X "$method" "$API/portal/v1/$path" ${cookie:+-H "Cookie: $cookie"} "$@")"
+  portal_code="$(tail -n 1 <<<"$out")"
+  portal_body="$(head -n -1 <<<"$out")"
+}
+portal_sign_in() { # portal_sign_in <email> <password>: sets cookie and csrf on success
+  local headers
+  headers="$(curl -s -m 10 -D - -o "$hdr_file" -X POST "$API/portal/v1/session" -H "Content-Type: application/json" \
+    --data "{\"email\":\"$1\",\"password\":\"$2\"}")"
+  cookie="$( (grep -i '^set-cookie: __Host-sms_session=' <<<"$headers" || true) | sed -E 's/^[^:]*: ([^;]*);.*/\1/' | tr -d '\r')"
+  csrf="$( (grep -o '"csrf_token":"[a-z0-9]*"' "$hdr_file" || true) | cut -d'"' -f4)"
+  cookie_attributes="$( (grep -i '^set-cookie: __Host-sms_session=' <<<"$headers" || true) | tr -d '\r')"
+}
+portal_status() { portal GET "messages/$1"; status_of "$portal_body"; }
+wait_for_portal_status() {
+  local i
+  for i in $(seq 1 30); do
+    [[ "$(portal_status "$1")" == "$2" ]] && return 0
+    sleep 1
+  done
+  return 1
+}
+signed_in() { [[ -n "$cookie" && -n "$csrf" ]]; }
+hardened_cookie() { grep -q 'HttpOnly' <<<"$cookie_attributes" && grep -q 'Secure' <<<"$cookie_attributes" && grep -q 'SameSite=Strict' <<<"$cookie_attributes"; }
+password_not_logged() { ! compose logs --no-log-prefix 2>&1 | grep -qF "$portal_password"; }
+
+portal_sign_in owner@stack-check.example.invalid "wrong password, not this one"
+expect "a wrong password is refused (no session)" equals "$cookie" ""
+portal_sign_in owner@stack-check.example.invalid "$portal_password"
+expect "smsctl created a portal user who can sign in" signed_in
+expect "the session cookie is HttpOnly, Secure and SameSite=Strict" hardened_cookie
+portal GET session
+expect "GET /portal/v1/session names the user and organization" grep -q '"email":"owner@stack-check.example.invalid"' <<<"$portal_body"
+portal POST messages -H "Content-Type: application/json" -H "Idempotency-Key: portal-1" --data '{"to":"+639000000002","sender_id":"EXAMPLECO","body":"Portal stack check"}'
+expect "a submission without the CSRF token is 403 (got $portal_code)" equals "$portal_code" 403
+portal POST messages -H "X-CSRF-Token: $csrf" -H "Content-Type: application/json" -H "Idempotency-Key: portal-1" --data '{"to":"+639000000002","sender_id":"EXAMPLECO","body":"Portal stack check"}'
+portal_message="$(message_id_of "$portal_body")"
+expect "POST /portal/v1/messages with the CSRF token is 202 (got $portal_code)" equals "$portal_code" 202
+portal POST messages -H "X-CSRF-Token: $csrf" -H "Content-Type: application/json" -H "Idempotency-Key: portal-1" --data '{"to":"+639000000002","sender_id":"EXAMPLECO","body":"Portal stack check"}'
+expect "a repeated portal submission returns the same message" equals "$(message_id_of "$portal_body")" "$portal_message"
+expect "the portal message is delivered by the same dispatcher and simulator" wait_for_portal_status "$portal_message" delivered
+expect "the portal message is visible through the public API of the same tenant" equals "$(get_status "$portal_message")" delivered
+portal GET messages
+expect "the portal list shows both portal and API messages" bash -c "grep -q '$portal_message' <<<'$portal_body' && grep -q '$message_id' <<<'$portal_body'"
+# A second tenant's user sees nothing of the first tenant.
+other="$(compose run --rm -T smsctl tenant create --name "Stack Check Other Co" 2>&1)" || true
+other_tenant="$(sed -n 's/^tenant: \([0-9a-f-]*\) (active)$/\1/p' <<<"$other")"
+printf '%s\n' "$portal_password" | compose run --rm -T smsctl portal-user create --tenant "$other_tenant" \
+  --email other@stack-check.example.invalid --role viewer --password-stdin >/dev/null 2>&1 || true
+owner_cookie="$cookie" owner_csrf="$csrf"
+portal_sign_in other@stack-check.example.invalid "$portal_password"
+portal GET "messages/$portal_message"
+expect "another tenant's user gets 404 for the message (got $portal_code)" equals "$portal_code" 404
+portal GET messages
+expect "another tenant's user lists no messages" equals "$portal_body" '{"data":[],"next_cursor":null}'
+portal POST messages -H "X-CSRF-Token: $csrf" -H "Content-Type: application/json" -H "Idempotency-Key: v-1" --data '{"to":"+639000000002","sender_id":"EXAMPLECO","body":"x"}'
+expect "a viewer cannot submit (got $portal_code)" equals "$portal_code" 403
+cookie="$owner_cookie" csrf="$owner_csrf"
+portal DELETE session -H "X-CSRF-Token: $csrf"
+expect "sign-out is 204 (got $portal_code)" equals "$portal_code" 204
+portal GET session
+expect "the signed-out session no longer works (got $portal_code)" equals "$portal_code" 401
+expect "no log contains the portal password" password_not_logged
 rm -f "$hdr_file"
 
 echo "== Security settings"

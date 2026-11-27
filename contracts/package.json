@@ -11,7 +11,7 @@
   },
   "scripts": {
     "lint": "redocly lint --format=stylish",
-    "bundle": "redocly bundle public-api-v1 --ext json --output build/public-api-v1.json",
+    "bundle": "redocly bundle public-api-v1 --ext json --output build/public-api-v1.json && redocly bundle portal-api-v1 --ext json --output build/portal-api-v1.json",
     "test": "node --test tests/",
     "check": "pnpm run lint && pnpm run bundle && pnpm run test"
   },

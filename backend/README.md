@@ -38,10 +38,11 @@ backend/
 │   ├── api/main.go             HTTP API: load config → open pool → serve → shut down → close pool
 │   ├── migrate/main.go         Migrations: up | status | version | down
 │   ├── dispatcher/main.go      Messaging engine: hand-off to the provider, receipts, recovery, reporting window
-│   ├── smsctl/main.go          LOCAL admin tool (development/test only): tenants, sender IDs, API keys, traces
+│   ├── smsctl/main.go          LOCAL admin tool (development/test only): tenants, sender IDs, API keys, portal
+│   │                           users, traces
 │   └── healthcheck/main.go     Container health check: GET http://127.0.0.1:8080/readyz → exit 0/1
 ├── migrations/                 Versioned goose SQL migrations, embedded into cmd/migrate
-├── queries/                    SQL queries for sqlc, one file per module (tenancy, apikeys, messaging)
+├── queries/                    SQL queries for sqlc, one file per module (tenancy, apikeys, messaging, portal)
 └── internal/
     ├── config/                 Environment configuration: parsing, defaults, validation
     ├── database/               PostgreSQL pool (pgxpool): Open, Ping, InTx, InTenantTx, role checks, Close
@@ -52,6 +53,7 @@ backend/
     │   └── rlseval/            RLS evaluation spike: tests and benchmark only, synthetic tables (tags "integration,rlseval")
     ├── tenancy/                Tenant registry: create, get, list, activate, suspend, reactivate (no HTTP)
     ├── apikey/                 API keys: issue (shown once, SHA-256 hash stored), authenticate, revoke
+    ├── portal/                 Client portal accounts: Argon2id passwords, lockout, server-side sessions, CSRF
     ├── messaging/              Messaging engine: accept (idempotent), status model, segmentation, dispatcher,
     │   │                       receipts; every query inside the tenant's transaction-local context
     │   ├── provider/           PROVISIONAL provider interface, capability model, normalized results (ADR-0012)
@@ -59,8 +61,10 @@ backend/
     │   └── providers/          Builds the configured adapter (SMS_PROVIDER); the only place naming adapters
     ├── migration/              goose runner: advisory lock, one transaction per migration
     ├── httpserver/             Router, /healthz and /readyz, problem responses, listeners, shutdown;
-    │                           /v1 handlers with API key authentication and contract validation
+    │                           /v1 handlers with API key authentication and contract validation;
+    │                           /portal/v1 handlers with session, CSRF and permission checks
     ├── publicapi/              GENERATED from contracts/openapi/public-api-v1.yaml — never edit by hand
+    ├── portalapi/              GENERATED from contracts/openapi/portal-api-v1.yaml — never edit by hand
     ├── middleware/             Request ID, access log, metrics, panic recovery, security headers, body limit
     └── observability/          slog logger and Prometheus metrics registry
 ```
@@ -148,6 +152,9 @@ report `503` when the pool is exhausted.
 | Application | `POST /v1/messages` | Accept one message (`202`; `Idempotency-Key` required). Permission `messages:send`. |
 | Application | `GET /v1/messages/{message_id}` | Current status of one message of the caller's tenant (`404` otherwise). Permission `messages:read`. |
 | Application | `GET /v1/messages` | The caller's messages, newest first, cursor pagination and filters. Permission `messages:read`. |
+| Application | `POST`, `GET`, `DELETE /portal/v1/session` | Client portal sign-in (sets the session cookie), current session (user, organization, permissions, CSRF token), sign-out. |
+| Application | `GET /portal/v1/sender-ids`, `POST /portal/v1/message-estimates` | The organization's approved sender IDs; encoding and segment estimate from the shared segmentation function. |
+| Application | `GET`, `POST /portal/v1/messages`, `GET /portal/v1/messages/{message_id}` | Portal list, submission (same engine and idempotency as `/v1`) and detail with customer-visible status history. |
 
 The `/v1` endpoints follow [`contracts/openapi/public-api-v1.yaml`](../contracts/openapi/public-api-v1.yaml)
 exactly. Not implemented (no decided values or features yet): rate limits (`429`), credit checks (`402`) and
@@ -262,6 +269,38 @@ tenants, approves sender IDs, issues API keys (printed once), revokes them, and 
 trace (history, attempts, receipts). With the Compose stack: `docker compose -f infra/local/compose.yaml run
 --rm smsctl bootstrap --name "Demo Co" --sender-id EXAMPLECO` ([`infra/local/README.md`](../infra/local/README.md)).
 
+## Client portal API (Phase 4 Group 3)
+
+The `/portal/v1` endpoints follow [`contracts/openapi/portal-api-v1.yaml`](../contracts/openapi/portal-api-v1.yaml)
+and serve only the platform's own client portal (decision log §20). They are separate from the public API: a
+portal session never opens `/v1`, and an API key never opens `/portal/v1`.
+
+- **Sign-in** (`internal/portal`): the normalized email is looked up in the platform-owned login directory
+  (the one approved RLS guard exception, G3-1), which gives the tenant; everything else — the Argon2id hash, the
+  role, the lockout state — is read inside that tenant's context. Unknown addresses, wrong passwords and locked
+  accounts get the same `401` after the same hashing work. Five consecutive failures lock the account for 15
+  minutes; an inactive tenant gets `403` and no session.
+- **Sessions:** cookie `__Host-sms_session` (`HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/`), value
+  `<tenant>.<session id>.<secret>`; only the SHA-256 hash of the secret is stored. A session ends after 30 minutes
+  without a request, 12 hours after sign-in, at sign-out, or with `smsctl portal-user revoke-sessions`.
+- **CSRF:** every `POST`/`DELETE` except sign-in needs the session's CSRF token in `X-CSRF-Token` (it is in the
+  `GET /portal/v1/session` response and is derived from the cookie's secret, so it is never stored). Sign-in
+  accepts only `application/json`.
+- **Permissions:** Owner and Sender may read and send; Viewer may only read. Checked by every handler; the tenant
+  always comes from the session.
+- **Messages:** submission calls the same `messaging.Service.Accept` as `POST /v1/messages` (same idempotency
+  records, dispatcher, simulator and history). The detail view returns the customer-visible status history only.
+
+Portal users are created locally with `smsctl` (there is no registration endpoint):
+
+```bash
+smsctl portal-user create --tenant TENANT_ID --email owner@example.invalid --role owner          # prints a generated password once
+printf '%s\n' 'a long password' | smsctl portal-user create --tenant TENANT_ID --email viewer@example.invalid --role viewer --password-stdin
+smsctl portal-user list --tenant TENANT_ID
+smsctl portal-user unlock --tenant TENANT_ID --email owner@example.invalid
+smsctl portal-user revoke-sessions --tenant TENANT_ID --email owner@example.invalid
+```
+
 ## Migrations
 
 Migrations use [goose](https://github.com/pressly/goose) v3 (ADR-0014) and live in
@@ -301,6 +340,7 @@ Migrations today:
 | `20261125041208_baseline.sql` | No SQL (goose needs at least one migration); creates only goose's version table | — |
 | `20261126175603_create_tenants.sql` | The platform-owned tenant registry `tenants` (UUIDv7 `id` from PostgreSQL 18's `uuidv7()`, `display_name`, `status`, timestamps) and the `sms_app` grants | *account* (period undefined, subject to legal review) |
 | `20261127150000_create_messaging.sql` | API keys, approved sender IDs, messages and their bodies, idempotency records, dispatch jobs, submission attempts, status history, the platform-owned receipt inbox and correlated receipts; forced RLS with the approved policy on every tenant table; column-level `sms_app` grants (no `DELETE` or `TRUNCATE`) | Per table, in the migration header (account, message metadata, message content, operational); periods undefined |
+| `20261127200000_create_portal_accounts.sql` | Portal users (Argon2id hash, role, lockout state), server-side sessions (secret hash only) and the platform-owned login directory (email → tenant and user; the approved RLS guard exception G3-1); forced RLS on the tenant tables; column-level `sms_app` grants (no `DELETE` or `TRUNCATE`) | account (users, directory), operational (sessions); periods undefined |
 
 `tenants` has no `tenant_id` and no RLS policy: it is the global list of tenants, not data belonging to one.
 The application role may read it, insert only `display_name`, and update only `status` and `updated_at`.

@@ -18,10 +18,22 @@
 //	smsctl api-key list --tenant TENANT_ID
 //	smsctl api-key revoke --tenant TENANT_ID --key-id KEY_ID
 //	smsctl message trace --tenant TENANT_ID --message-id msg_...
+//	smsctl portal-user create --tenant TENANT_ID --email EMAIL --role owner|sender|viewer [--password-stdin]
+//	smsctl portal-user list --tenant TENANT_ID
+//	smsctl portal-user unlock --tenant TENANT_ID --email EMAIL
+//	smsctl portal-user revoke-sessions --tenant TENANT_ID --email EMAIL
+//
+// Portal users (Phase 4 Group 3; owner decision G3-4): there is no self-registration and no user
+// management endpoint. "portal-user create" generates a random password and prints it once, or reads
+// the password from standard input with --password-stdin (never from a command-line flag, which
+// would be visible in the process list and shell history). Only its Argon2id hash is stored.
 package main
 
 import (
+	"bufio"
 	"context"
+	"crypto/rand"
+	"encoding/base32"
 	"errors"
 	"flag"
 	"fmt"
@@ -37,6 +49,7 @@ import (
 	"github.com/hruizjr/sms/backend/internal/database"
 	"github.com/hruizjr/sms/backend/internal/messaging"
 	"github.com/hruizjr/sms/backend/internal/messaging/provider"
+	"github.com/hruizjr/sms/backend/internal/portal"
 	"github.com/hruizjr/sms/backend/internal/tenancy"
 )
 
@@ -56,11 +69,15 @@ const usage = `usage:
   smsctl api-key list --tenant TENANT_ID
   smsctl api-key revoke --tenant TENANT_ID --key-id KEY_ID
   smsctl message trace --tenant TENANT_ID --message-id msg_...
+  smsctl portal-user create --tenant TENANT_ID --email EMAIL --role owner|sender|viewer [--password-stdin]
+  smsctl portal-user list --tenant TENANT_ID
+  smsctl portal-user unlock --tenant TENANT_ID --email EMAIL
+  smsctl portal-user revoke-sessions --tenant TENANT_ID --email EMAIL
 `
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	code := run(ctx, os.Args[1:], os.LookupEnv, os.Stdout, os.Stderr)
+	code := run(ctx, os.Args[1:], os.LookupEnv, os.Stdin, os.Stdout, os.Stderr)
 	stop()
 	os.Exit(code)
 }
@@ -69,10 +86,12 @@ type cli struct {
 	tenants  *tenancy.Repository
 	keys     *apikey.Service
 	messages *messaging.Service
+	portal   *portal.Service
+	in       io.Reader
 	out      io.Writer
 }
 
-func run(ctx context.Context, args []string, lookup config.LookupFunc, stdout, stderr io.Writer) int {
+func run(ctx context.Context, args []string, lookup config.LookupFunc, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) < 1 {
 		say(stderr, usage)
 		return exitUsage
@@ -95,10 +114,17 @@ func run(ctx context.Context, args []string, lookup config.LookupFunc, stdout, s
 		return exitError
 	}
 	defer db.Close()
+	accounts, err := portal.NewService(db)
+	if err != nil {
+		sayln(stderr, "smsctl:", err)
+		return exitError
+	}
 	c := &cli{
 		tenants:  tenancy.NewRepository(db.Pool()),
 		keys:     apikey.NewService(db),
 		messages: messaging.NewService(db, provider.Capabilities{}),
+		portal:   accounts,
+		in:       stdin,
 		out:      stdout,
 	}
 	if err := c.dispatch(ctx, args); err != nil {
@@ -135,6 +161,9 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 	scopes := fs.String("scopes", "messages:send,messages:read", "comma-separated API key scopes")
 	keyID := fs.String("key-id", "", "API key ID")
 	messageID := fs.String("message-id", "", "message ID (msg_...)")
+	email := fs.String("email", "", "portal user email address")
+	role := fs.String("role", "", "portal user role: owner, sender or viewer")
+	passwordStdin := fs.Bool("password-stdin", false, "read the portal user's password from standard input")
 	if err := fs.Parse(args[1:]); err != nil {
 		return usageError{err.Error()}
 	}
@@ -251,9 +280,89 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		}
 		c.printTrace(tr)
 		return nil
+	case "portal-user create":
+		id, err := tenantID()
+		if err != nil {
+			return err
+		}
+		if *email == "" || *role == "" {
+			return usageError{"--email and --role are required"}
+		}
+		return c.createPortalUser(ctx, id, *email, portal.Role(*role), *passwordStdin)
+	case "portal-user list":
+		id, err := tenantID()
+		if err != nil {
+			return err
+		}
+		users, err := c.portal.ListUsers(ctx, id)
+		for _, u := range users {
+			state := "active"
+			if u.LockedUntil != nil && u.LockedUntil.After(time.Now()) {
+				state = "locked until " + u.LockedUntil.UTC().Format(time.RFC3339)
+			}
+			say(c.out, "%s\t%s\t%s\n", u.Email, u.Role, state)
+		}
+		return err
+	case "portal-user unlock":
+		id, err := tenantID()
+		if err != nil {
+			return err
+		}
+		if *email == "" {
+			return usageError{"--email is required"}
+		}
+		if err := c.portal.Unlock(ctx, id, *email); err != nil {
+			return err
+		}
+		say(c.out, "portal user %s unlocked\n", *email)
+		return nil
+	case "portal-user revoke-sessions":
+		id, err := tenantID()
+		if err != nil {
+			return err
+		}
+		if *email == "" {
+			return usageError{"--email is required"}
+		}
+		n, err := c.portal.RevokeUserSessions(ctx, id, *email)
+		if err == nil {
+			say(c.out, "%d session(s) of %s revoked\n", n, *email)
+		}
+		return err
 	}
 	return usageError{"unknown command " + cmd}
 }
+
+// createPortalUser creates a portal user with a generated password (printed once) or a password read
+// from standard input.
+func (c *cli) createPortalUser(ctx context.Context, tenantID tenancy.ID, email string, role portal.Role, fromStdin bool) error {
+	var password string
+	if fromStdin {
+		line, err := bufio.NewReader(io.LimitReader(c.in, portal.MaxPasswordBytes+2)).ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return fmt.Errorf("read password from standard input: %w", err)
+		}
+		password = strings.TrimRight(line, "\r\n")
+	} else {
+		b := make([]byte, 20)
+		if _, err := rand.Read(b); err != nil {
+			return fmt.Errorf("generate password: %w", err)
+		}
+		password = generatedPasswordEncoding.EncodeToString(b)
+	}
+	u, err := c.portal.CreateUser(ctx, tenantID, email, role, password)
+	if err != nil {
+		return err
+	}
+	say(c.out, "portal user: %s (role %s)\n", u.Email, u.Role)
+	if !fromStdin {
+		say(c.out, "password (shown once; it is not stored and cannot be shown again):\n%s\n", password)
+	}
+	return nil
+}
+
+// generatedPasswordEncoding avoids characters that are easy to confuse (Crockford base32).
+var generatedPasswordEncoding = base32.NewEncoding("0123456789abcdefghjkmnpqrstvwxyz").WithPadding(base32.NoPadding)
 
 func (c *cli) createActiveTenant(ctx context.Context, name string) (tenancy.Tenant, error) {
 	t, err := c.tenants.Create(ctx, name)

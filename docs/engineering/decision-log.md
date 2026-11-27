@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Living document — thirteen ADRs accepted (2026-11-25; ADR-0010 and ADR-0012 (limited scope) on 2026-11-26); others Proposed | Project owner | 2026-11-26 |
+| Living document — thirteen ADRs accepted (2026-11-25; ADR-0010 and ADR-0012 (limited scope) on 2026-11-26); others Proposed | Project owner | 2026-11-27 |
 
 ## 1. What an ADR is and why we use them
 
@@ -1614,3 +1614,33 @@ scope*: the provider interface remains **provisional** and the simulator the onl
 **Out of scope (unchanged):** real SMPP or telco adapters, any SMPP library, real credentials or endpoints,
 third-party aggregators, fallback or multi-provider routing, billing, pricing, production deployment, frontend
 changes, Kafka, RabbitMQ and Redis.
+
+## 20. Owner decisions — first working client portal (Phase 4 Group 3, 2026-11-27)
+
+On 2026-11-27 the owner approved **Phase 4 Group 3**: the first working version of the client portal (sign in,
+view the organization's messages, compose and submit one SMS, see its status and details), connected to the Group 2
+messaging backend, as one Draft pull request. Before implementation the agent identified four decisions that
+blocked a secure implementation; the owner chose the recommended option for each on 2026-11-27 (G3-1 to G3-3 and
+G3-6). **No ADR status changed.**
+
+**Owner decisions:**
+
+| # | Decision |
+| - | -------- |
+| G3-1 | **Login directory — the first approved exception to the RLS catalog guard.** Signing in with only an email address and a password needs one lookup before any tenant is known. The platform-owned table `portal_login_directory` maps a normalized email address to its tenant and user and holds **nothing else** (columns `email`, `tenant_id`, `user_id`, `created_at`; a test enforces the list). Portal users, password hashes, roles, lockout state and sessions stay in tenant-owned tables under forced RLS and are read only inside the tenant's transaction-local context. An email address is unique across the platform. Recorded in `rlsguard.Exceptions`; `TestOnlyApprovedExceptions` allows exactly this one |
+| G3-2 | **Passwords are hashed with Argon2id** (OWASP parameters: 19 MiB memory, 2 iterations, 1 lane; 16-byte salt; PHC string format), using `golang.org/x/crypto` v0.59.0 (maintained by the Go project, BSD-3-Clause; already present in the module graph indirectly). At most four hashes run at once. Resolves the "Argon2id (proposed)" item of the security baseline for portal users |
+| G3-3 | **Account and session policy:** roles Owner and Sender may read and send, Viewer may only read (Owner management functions are not in this group); **no MFA for client users** in this group (MFA stays mandatory for internal admin accounts, D-021); sessions end after **30 minutes without a request**, **12 hours after sign-in**, at sign-out or on revocation; **five consecutive failed sign-ins lock the account for 15 minutes**; passwords have **at least 12 characters**; local provisioning through `smsctl` (development and test only) |
+| G3-6 | **Frontend:** a session-authenticated portal API contract (`contracts/openapi/portal-api-v1.yaml`), Go server code generated with the existing oapi-codegen, TypeScript types generated with **`openapi-typescript` 7.13.0** (development dependency only, MIT, types only; it declares a peer range of TypeScript 5 and is verified to work with the pinned TypeScript 6.0.3), one typed API client in `src/lib/api/`, and **no router or data-fetching library** (a small History-API router). Supersedes F3 and F4 of §10 for the client portal |
+
+**Engineering decisions recorded with this group** (within the approved scope; listed so they can be reviewed):
+
+| # | Decision |
+| - | -------- |
+| G3-4 | **No self-registration, no email.** `smsctl portal-user create` generates a random password and prints it once, or reads one from standard input (`--password-stdin`), never from a command-line flag. `portal-user list`, `unlock` and `revoke-sessions` complete the local administration |
+| G3-5 | **Session and CSRF design.** The session cookie `__Host-sms_session` is `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/`; its value is `<tenant>.<session id>.<secret>` (the tenant part lets authentication set the tenant context first, like API keys, G2-2); only the SHA-256 hash of the 256-bit secret is stored. The CSRF token is derived from the secret (synchronizer token, not stored) and required in `X-CSRF-Token` on every state-changing request; sign-in accepts only `application/json`. Unknown addresses, wrong passwords and locked accounts get the same `401` after the same hashing work. The last-seen time is written at most once a minute. Sign-in and sign-out are logged with tenant and user IDs, never the email address or password |
+| G3-7 | **One messaging engine.** Portal submissions go through `messaging.Service.Accept` with the same idempotency records (scope: organization + `create_message`), dispatcher, provider and status history as `POST /v1/messages`. The portal generates one idempotency key per intended send and reuses it on retries. The portal shows customer-visible statuses and history only, never provider details or the message text |
+| G3-8 | **Narrowed frontend guardrails.** `fetch` is allowed only in `src/lib/api/client.ts`; the production CSP allows `connect-src 'self'`; the development proxy forwards `/portal` (never `/v1`); browser storage stays forbidden; tests keep the network guard and use an injected fake transport |
+| G3-9 | **Not implemented** (out of scope or not decided): billing and cost estimates (the confirmation step says cost is not available), bulk sending, user and API key management, registration, password recovery, inbound SMS, webhooks, admin portal, analytics; per-IP sign-in rate limiting; an audit log table (S-8); a retention job for expired sessions (§10.8); serving the portal from a production host (D-145) |
+
+**Out of scope (unchanged):** real SMPP or telco adapters, real credentials, third-party aggregators, billing,
+pricing, production deployment, Kafka, RabbitMQ and Redis. The simulator remains the only provider.

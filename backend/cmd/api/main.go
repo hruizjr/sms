@@ -25,6 +25,7 @@ import (
 	"github.com/hruizjr/sms/backend/internal/messaging/provider"
 	"github.com/hruizjr/sms/backend/internal/messaging/providers"
 	"github.com/hruizjr/sms/backend/internal/observability"
+	"github.com/hruizjr/sms/backend/internal/portal"
 )
 
 func main() {
@@ -99,14 +100,25 @@ func run() error {
 	metrics := observability.NewMetrics()
 	readiness := &httpserver.Readiness{}
 
+	// The public API (API keys) and the client portal (sessions) share one messaging engine, so a
+	// portal message gets exactly the same idempotency, dispatch and status handling.
+	messages := messaging.NewService(db, caps)
+	portalAccounts, err := portal.NewService(db)
+	if err != nil {
+		return err
+	}
 	router := httpserver.NewRouter(httpserver.RouterDeps{
 		Logger:    logger,
 		Metrics:   metrics,
 		Readiness: readiness,
 		Database:  db,
 		PublicAPI: &httpserver.PublicAPIDeps{
-			Messages: messaging.NewService(db, caps),
+			Messages: messages,
 			Auth:     apikey.NewService(db),
+		},
+		Portal: &httpserver.PortalDeps{
+			Messages: messages,
+			Auth:     portalAccounts,
 		},
 	})
 	server := httpserver.NewServer(httpserver.ServerConfig{

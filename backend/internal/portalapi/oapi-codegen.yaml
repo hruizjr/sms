@@ -1,0 +1,9 @@
+# oapi-codegen configuration for the client portal API v1 (Phase 4 Group 3; owner decision G3-6).
+# Input: contracts/openapi/portal-api-v1.yaml (passed by the go:generate directive in generate.go).
+# Output: data types (models) and Chi routes with parameter binding (chi-server). Regenerate from
+# backend/: go generate ./internal/portalapi/...
+package: portalapi
+generate:
+  models: true
+  chi-server: true
+output: portalapi.gen.go

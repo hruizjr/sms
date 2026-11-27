@@ -115,7 +115,7 @@ jobs:
         working-directory: frontend
         run: pnpm install --frozen-lockfile
 
-      - name: Check the client portal development proxy (/healthz and /readyz only)
+      - name: Check the client portal development proxy (/healthz, /readyz and /portal only)
         working-directory: frontend
         run: |
           set -euo pipefail
@@ -126,6 +126,8 @@ jobs:
           done
           test "$(curl -fsS http://localhost:5173/readyz)" = '{"status":"ready"}'
           test "$(curl -fsS http://localhost:5173/healthz)" = '{"status":"ok"}'
+          # The portal API reaches the API (Phase 4 Group 3): without a session it answers 401 problem details.
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5173/portal/v1/session)" = 401
           # Any other path is served by Vite itself (the portal page), never by the API.
           content_type="$(curl -s -o /dev/null -w '%{content_type}' http://localhost:5173/v1/messages)"
           echo "GET /v1/messages through Vite: ${content_type}"

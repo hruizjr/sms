@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — pending owner review (MFA, MVP roles and API key scopes in §3 updated for owner decisions of 2026-11-26) | Project owner | 2026-11-26 |
+| Draft — pending owner review (MFA, MVP roles and API key scopes in §3 updated for owner decisions of 2026-11-26; portal sessions and passwords in §3 for decision log §20, 2026-11-27) | Project owner | 2026-11-27 |
 
 This baseline sets the minimum security principles for all work. It is **not** a complete security
 program; §11 lists the security engineering still required. Nothing here is legal advice.
@@ -40,8 +40,13 @@ program; §11 lists the security engineering still required. Nothing here is leg
 
 - **Portal users:** server-side sessions in `HttpOnly`, `Secure`, `SameSite` cookies; session expiry and
   idle timeout; re-authentication for sensitive actions (credit adjustment, API key creation, pricing).
-- **Passwords:** hashed with Argon2id (proposed) using parameters from current guidance; breached-password
-  and minimum-length checks; rate-limited login with lockout/backoff.
+  **Implemented for client portal users** (Phase 4 Group 3; owner decisions G3-3 and G3-5, decision log §20):
+  cookie `__Host-sms_session` (`HttpOnly`, `Secure`, `SameSite=Strict`), only a hash of the session secret stored,
+  30-minute idle timeout, 12-hour absolute lifetime, server-side sign-out and revocation, CSRF token required on
+  every state-changing request. Re-authentication for sensitive actions applies once such actions exist.
+- **Passwords:** hashed with **Argon2id** (owner decision G3-2, 2026-11-27: OWASP parameters, 19 MiB, 2 iterations,
+  1 lane); at least 12 characters (G3-3); five consecutive failed sign-ins lock the account for 15 minutes.
+  Breached-password checks and per-IP rate limiting of sign-in are **not implemented yet**.
 - **MFA:** mandatory for **every human internal admin account** — Super Admin, Operations and Finance (owner
   decision D-021, widened on 2026-11-26, MVP-04); available (possibly mandatory by policy) for clients.
 - **API keys:** random, high-entropy, with a visible prefix for identification; stored only as hashes;
@@ -166,7 +171,7 @@ program; §11 lists the security engineering still required. Nothing here is leg
 | - | --------- | ---- |
 | S-1 | Formal threat model (data flows, trust boundaries, STRIDE or similar) | Architecture phase |
 | S-2 | RBAC role and permission design for client and admin portals | Before identity implementation |
-| S-3 | Session, MFA, and API key design details | Before identity implementation |
+| S-3 | Session, MFA, and API key design details | Client portal sessions and API keys designed and implemented (decision log §19, §20); MFA and admin sessions remain open |
 | S-4 | Data classification and retention schedule (with counsel) | Before storing production data |
 | S-5 | Privacy impact assessment; DPO and NPC obligations (with counsel) | Before production |
 | S-6 | Secret management and key rotation design | Hosting decision |

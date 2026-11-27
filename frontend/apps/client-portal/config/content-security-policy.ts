@@ -2,11 +2,12 @@ import type { Plugin } from 'vite';
 
 /**
  * Content Security Policy added to the production build's index.html (owner requirement, Phase 3
- * Group 5: prevent accidental browser network calls until a separately approved,
- * session-authenticated portal API contract exists).
+ * Group 5; widened in Phase 4 Group 3, owner decision G3-6, for the approved session-authenticated
+ * portal API).
  *
- * - connect-src 'none' makes the browser refuse fetch, XMLHttpRequest, WebSocket, EventSource and
- *   navigator.sendBeacon from the page.
+ * - connect-src 'self' lets the page call only its own origin, where the portal API is served
+ *   (/portal/v1); every other host is refused for fetch, XMLHttpRequest, WebSocket, EventSource and
+ *   navigator.sendBeacon.
  * - Only same-origin scripts, styles, images and fonts load; no inline scripts or styles.
  * - form-action 'none' and base-uri 'none' stop form posts and <base> redirection.
  *
@@ -21,7 +22,7 @@ export const CONTENT_SECURITY_POLICY = [
   "style-src 'self'",
   "img-src 'self'",
   "font-src 'self'",
-  "connect-src 'none'",
+  "connect-src 'self'",
   "base-uri 'none'",
   "form-action 'none'",
   "object-src 'none'",

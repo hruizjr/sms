@@ -13,7 +13,7 @@ It is for local development only and is never used in production.
 | `api` | The Go API, connected as the application role **`sms_app`**. Starts only after `migrate` has **completed successfully**. Health check: `/readyz` | `127.0.0.1:${API_PORT}` (default 8080) |
 
 - **Client portal:** not containerised. It runs natively with `pnpm dev` and reaches the API through
-  its development proxy (see [section 4](#4-start-the-client-portal-optional)).
+  its development proxy (see [section 4](#4-use-the-client-portal-in-the-browser-phase-4-group-3)).
 - **Ports:** every published port is bound to **127.0.0.1 only**, so nothing is reachable from your
   network. The API's metrics listener stays inside the container and is not published. For metrics,
   run the API natively (see [`backend/README.md`](../../backend/README.md)).
@@ -179,18 +179,45 @@ docker compose -f infra/local/compose.yaml run --rm smsctl message trace --tenan
 Revoke a key with `smsctl api-key revoke --tenant <tenant id> --key-id <key id>` (`smsctl api-key list` shows
 the IDs).
 
-## 4. Start the client portal (optional)
+## 4. Use the client portal in the browser (Phase 4 Group 3)
 
-From `frontend/`, in a second terminal (first time: `pnpm install --frozen-lockfile`):
+The client portal signs users in with an email address and a password (server-side session, no API key in the
+browser) and sends messages through the same engine as the public API. There is no self-registration: create a
+portal user for an existing tenant with `smsctl` (the tenant ID is printed by `smsctl bootstrap`, or listed by
+`smsctl tenant list`). Roles: `owner` and `sender` can view and send; `viewer` can only view.
+
+```powershell
+docker compose -f infra/local/compose.yaml run --rm smsctl portal-user create --tenant <tenant id> --email owner@example.invalid --role owner
+```
+
+It prints a generated password **once** (only its Argon2id hash is stored). To choose the password yourself, pipe
+it in instead (never pass it as a command-line argument):
+
+```powershell
+'my own long password' | docker compose -f infra/local/compose.yaml run --rm -T smsctl portal-user create --tenant <tenant id> --email viewer@example.invalid --role viewer --password-stdin
+```
+
+Then start the portal from `frontend/`, in a second terminal (first time: `pnpm install --frozen-lockfile`):
 
 ```powershell
 pnpm dev
 ```
 
-Open http://localhost:5173. The Vite development server forwards **only** `/healthz` and `/readyz` to
-the API on `127.0.0.1:8080`, so http://localhost:5173/readyz shows the API's readiness. The portal page
-makes no API calls (owner decision L5): no API client, authentication or public API integration exists
-yet.
+Open **http://localhost:5173** (use `localhost`, not another host name: the session cookie is `Secure`, which
+browsers accept over plain HTTP only for `localhost`; current Chrome, Edge and Firefox do). Sign in, choose **Send
+SMS**, enter a synthetic number such as `+639000000001` (the last two digits choose the simulator's behaviour, for
+example `30` for an uncertain outcome), review and send. The message page updates itself until the simulated
+receipt marks it **Delivered**; **Messages** lists everything the organization sent, from the portal or the API.
+
+The Vite development server forwards `/healthz`, `/readyz` and the portal API (`/portal`) to the API on
+`127.0.0.1:8080`, so the portal and the API share one origin. The public API (`/v1`) is not forwarded.
+
+If a user is locked out after five wrong passwords (15 minutes) or should be signed out everywhere:
+
+```powershell
+docker compose -f infra/local/compose.yaml run --rm smsctl portal-user unlock --tenant <tenant id> --email owner@example.invalid
+docker compose -f infra/local/compose.yaml run --rm smsctl portal-user revoke-sessions --tenant <tenant id> --email owner@example.invalid
+```
 
 ## 5. Migrations
 

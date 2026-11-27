@@ -9,6 +9,11 @@ ADR-0015). This guide explains the semantics behind it for reviewers and future 
 specification and this guide are checked against each other by the contract tests
 (`contracts/tests/`), so the tables in §3 and §5 must stay in this exact format.
 
+The client portal has its own contract, [`portal-api-v1.yaml`](portal-api-v1.yaml) (Phase 4 Group 3, decision
+log §20): session-authenticated and used only by the platform's own portal. It reuses this guide's status model,
+reason codes and idempotency rules; `contracts/tests/portal-api-v1.test.mjs` checks that its statuses, categories
+and encodings stay identical to this contract's.
+
 This contract defines **our own** client-facing API. It is independent of any SMS gateway, protocol,
 provider, network, or library: no protocol terms, provider message IDs, raw provider status codes, or
 gateway-specific behaviour appear in it. Provider behaviour is translated into our status model inside
