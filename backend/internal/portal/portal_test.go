@@ -2,6 +2,7 @@ package portal
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"strings"
 	"testing"
@@ -33,7 +34,9 @@ func TestPasswordHashRoundTrip(t *testing.T) {
 
 func TestParseHashRejectsMalformedAndExcessiveParameters(t *testing.T) {
 	t.Parallel()
-	const salt, key = "c2FsdHNhbHRzYWx0c2FsdA", "a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2U"
+	// Synthetic, fixed-length values (16-byte salt, 32-byte hash), encoded as in a stored hash.
+	salt := base64.RawStdEncoding.EncodeToString(make([]byte, 16))
+	key := base64.RawStdEncoding.EncodeToString(make([]byte, 32))
 	good := "$argon2id$v=19$m=19456,t=2,p=1$" + salt + "$" + key
 	if _, err := parseHash(good); err != nil {
 		t.Fatalf("parseHash(good) = %v", err)
