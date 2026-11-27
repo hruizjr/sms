@@ -118,5 +118,44 @@ services:
     # Longer than the API's SHUTDOWN_TIMEOUT (15s), so `stop` never cuts graceful shutdown short.
     stop_grace_period: 20s
 
+  # Messaging engine (Phase 4 Group 2): hands accepted messages to the provider and applies receipts.
+  # The provider is the in-process SIMULATOR (decision log §15): nothing leaves the container and no
+  # SMS is sent. Its settings are synthetic. It publishes no port.
+  dispatcher:
+    <<: *backend
+    entrypoint: ["/usr/local/bin/dispatcher"]
+    environment:
+      <<: *backend-database
+      DB_USER: sms_app
+      DB_PASSWORD: ${DB_APP_PASSWORD:?DB_APP_PASSWORD is not set; add it to infra/local/.env}
+      SMS_PROVIDER: simulator
+      SIMULATOR_RECEIPT_DELAY: ${SIMULATOR_RECEIPT_DELAY:-2s}
+      SIMULATOR_REPORT_WINDOW: ${SIMULATOR_REPORT_WINDOW:-10m}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    stop_grace_period: 20s
+
+  # Local administration tool (not started by `up`): create a tenant and an API key, revoke keys,
+  # trace a message. Run it with:
+  #   docker compose -f infra/local/compose.yaml run --rm smsctl bootstrap --name "Demo Co" --sender-id EXAMPLECO
+  smsctl:
+    <<: *backend
+    profiles: ["tools"]
+    entrypoint: ["/usr/local/bin/smsctl"]
+    environment:
+      <<: *backend-database
+      DB_USER: sms_app
+      DB_PASSWORD: ${DB_APP_PASSWORD:?DB_APP_PASSWORD is not set; add it to infra/local/.env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
 volumes:
   postgres-data:

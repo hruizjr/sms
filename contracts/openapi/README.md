@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft contract — Phase 3 Group 3; **not implemented**; owner decisions of 2026-11-25 applied; remaining provisional items in §7 | Project owner | 2026-11-25 |
+| Draft contract — Phase 3 Group 3; **implemented in Phase 4 Group 2** against the simulator provider only (no rate limits, credit checks or suppression lists yet); owner decisions of 2026-11-25 applied; remaining provisional items in §7 | Project owner | 2026-11-27 |
 
 The machine-readable source of truth is [`public-api-v1.yaml`](public-api-v1.yaml) (OpenAPI 3.1,
 ADR-0015). This guide explains the semantics behind it for reviewers and future implementers. The

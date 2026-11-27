@@ -4,7 +4,8 @@ info:
   version: 0.1.0-draft
   summary: Client-facing REST API for submitting A2P SMS messages and reading their status.
   description: |
-    **Status: draft contract (Phase 3 Group 3). Nothing in this document is implemented yet.**
+    **Status: draft contract (Phase 3 Group 3), implemented in Phase 4 Group 2 against the simulator provider
+    only (no real network). Rate limits, credit checks and suppression lists are not implemented yet.**
     Owner decisions recorded on 2026-11-25 are applied. Values still marked *provisional* depend on
     open owner decisions listed in `contracts/openapi/README.md` §7 and the discovery register; they may
     change before `v1` is published.

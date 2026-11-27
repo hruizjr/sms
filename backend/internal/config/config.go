@@ -132,6 +132,10 @@ type Config struct {
 	Log             LogConfig
 	Database        DatabaseConfig
 	ShutdownTimeout time.Duration
+	// Provider and Dispatch configure messaging (Phase 4 Group 2). The API uses Provider for the
+	// provider's capabilities; the dispatcher uses both.
+	Provider ProviderConfig
+	Dispatch DispatchConfig
 }
 
 // HTTPConfig configures the public application HTTP server.
@@ -231,6 +235,8 @@ func Load(lookup LookupFunc) (Config, error) {
 	}
 	cfg.Log.Level = r.logLevel(EnvLogLevel, slog.LevelInfo)
 	cfg.Database = r.database(cfg.Env)
+	cfg.Provider = r.provider(cfg.Env)
+	cfg.Dispatch = r.dispatch()
 
 	httpHost, httpPort, httpOK := r.address(EnvHTTPAddr, cfg.HTTP.Addr)
 	metricsHost, metricsPort, metricsOK := r.address(EnvMetricsAddr, cfg.Metrics.Addr)

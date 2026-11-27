@@ -1,7 +1,9 @@
-// Command api runs the SMS platform HTTP API (Phase 3 walking skeleton).
+// Command api runs the SMS platform HTTP API.
 //
-// It serves /healthz and /readyz on the application listener and Prometheus metrics on a
-// separate, loopback-only listener. /readyz checks PostgreSQL connectivity. The API never runs
+// It serves the public API v1 (POST /v1/messages, GET /v1/messages, GET /v1/messages/{message_id};
+// Bearer API keys; Phase 4 Group 2), /healthz and /readyz on the application listener, and
+// Prometheus metrics on a separate, loopback-only listener. Accepted messages are handed to the
+// provider by the dispatcher command, not by the API. /readyz checks PostgreSQL connectivity. The API never runs
 // database migrations; use the migrate command. It connects as the application role (sms_app) and
 // refuses to start, or to use any connection, if that role is unsafe (database.RequireApplicationRole). It shuts down gracefully on SIGINT or SIGTERM,
 // closing the database pool after in-flight requests have finished.
@@ -15,9 +17,13 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/hruizjr/sms/backend/internal/apikey"
 	"github.com/hruizjr/sms/backend/internal/config"
 	"github.com/hruizjr/sms/backend/internal/database"
 	"github.com/hruizjr/sms/backend/internal/httpserver"
+	"github.com/hruizjr/sms/backend/internal/messaging"
+	"github.com/hruizjr/sms/backend/internal/messaging/provider"
+	"github.com/hruizjr/sms/backend/internal/messaging/providers"
 	"github.com/hruizjr/sms/backend/internal/observability"
 )
 
@@ -50,7 +56,19 @@ func run() error {
 		"db_name", cfg.Database.Name,
 		"db_sslmode", string(cfg.Database.SSLMode),
 		"db_max_conns", cfg.Database.MaxConns,
+		"sms_provider", cfg.Provider.Name,
 	)
+
+	// The API only needs the configured provider's declared capabilities (for example a segment
+	// limit); it never calls the provider. Without a provider every capability is unknown.
+	var caps provider.Capabilities
+	if cfg.Provider.Name != "" {
+		p, err := providers.New(cfg.Provider)
+		if err != nil {
+			return err
+		}
+		caps = p.Capabilities()
+	}
 
 	// Every new connection is checked: the API never uses a superuser, a role with BYPASSRLS, a
 	// table owner, or a role that can create objects or truncate tables (decision log §18).
@@ -86,6 +104,10 @@ func run() error {
 		Metrics:   metrics,
 		Readiness: readiness,
 		Database:  db,
+		PublicAPI: &httpserver.PublicAPIDeps{
+			Messages: messaging.NewService(db, caps),
+			Auth:     apikey.NewService(db),
+		},
 	})
 	server := httpserver.NewServer(httpserver.ServerConfig{
 		Addr:              cfg.HTTP.Addr,

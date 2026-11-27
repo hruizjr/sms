@@ -1576,3 +1576,41 @@ after this one is reviewed and merged.
 blanket `BYPASSRLS` without its own approved design); production role provisioning and credential management;
 the separately designed, controlled procedure for any future cross-tenant **data** migration (G1-9); the
 retention period for the *account* class (legal review).
+
+---
+
+## 19. Owner decisions — messaging backend and provider integration foundation (Phase 4 Group 2, 2026-11-27)
+
+On 2026-11-27 the owner approved **Phase 4 Group 2**: a working messaging backend with a provider-independent
+integration boundary, as one Draft pull request. **No ADR status changed.** ADR-0012 stays *accepted — limited
+scope*: the provider interface remains **provisional** and the simulator the only provider (§15).
+
+**Approved scope (implemented):**
+
+| Part | Implementation |
+| ---- | -------------- |
+| Public API v1 | `POST /v1/messages`, `GET /v1/messages/{message_id}`, `GET /v1/messages`, exactly as the contract defines them (statuses, reason codes, problem types, idempotency, cursor pagination) |
+| Authentication | Bearer API keys (D-143): random 256-bit secret, only its SHA-256 hash stored, shown once, scopes `messages:send` / `messages:read`, revocable, tenant derived from the key; inactive tenants refused (`403`) |
+| Persistence | Migration `20261127150000_create_messaging.sql`: tenant-owned tables with forced RLS and the approved policy; column-level `sms_app` grants; no `DELETE` or `TRUNCATE` |
+| Durable dispatch | Transactional outbox (`dispatch_jobs` committed with the message), per-tenant claiming with `FOR UPDATE SKIP LOCKED` and a lease, attempts recorded before the provider call, recovery of abandoned attempts as uncertain |
+| Provider boundary | `internal/messaging/provider`: submission, capability declaration (unknown is never support), normalized outcomes (accepted with reference, rejected, not sent, uncertain), normalized receipts |
+| Simulator | The first and only adapter, in-process, deterministic scenarios by synthetic destination (backend README, "Messaging") |
+| Receipts | Platform-owned inbox matched inside each tenant's context; duplicates and conflicts recorded without overwriting (D-098 open) |
+| Local administration | `smsctl` (development and test only): tenants, sender IDs, API keys, message traces. No public management endpoint |
+
+**Engineering decisions recorded with this group** (within the approved scope; listed so they can be reviewed):
+
+| # | Decision |
+| - | -------- |
+| G2-1 | **No cross-tenant processing.** The dispatcher works tenant by tenant in each tenant's transaction-local context. Receipts, which carry only a provider reference, are stored in the platform-owned `provider_receipts` table (no `tenant_id`, no RLS) and correlated per tenant through RLS-protected submission attempts. No role bypasses RLS |
+| G2-2 | **API key format** `smsk_<tenant>_<key id>_<secret>`: the visible part names the tenant, so authentication sets the tenant context before the key lookup, which RLS therefore also protects |
+| G2-3 | **Uncertain outcomes** (timeout, adapter failure, an acceptance without a provider reference, an attempt abandoned by a crashed dispatcher) become `submit_uncertain` and are never resubmitted or failed (D-095 interim rule). Only definite "not sent" outcomes are retried, with backoff, an attempt limit and a maximum message age |
+| G2-4 | **Destinations:** Philippine mobile numbers only (`+639` and nine digits, D-043); others get `422 destination-not-supported` |
+| G2-5 | **Messages of a pending or suspended tenant stay queued**; they are neither sent nor failed |
+| G2-6 | **Segment limit and reporting window** come from the configured provider; both are unknown/disabled by default (no universal default, messaging reliability §5.3). The simulator's values are synthetic |
+| G2-7 | **The simulator is refused in production**, and production has no default provider (S6, PG-6) |
+| G2-8 | **Not implemented** (no decided values or features): rate limits (`429`), credit reservation and `402`, suppression lists, sender ID and API key management endpoints, webhooks, retention expiry |
+
+**Out of scope (unchanged):** real SMPP or telco adapters, any SMPP library, real credentials or endpoints,
+third-party aggregators, fallback or multi-provider routing, billing, pricing, production deployment, frontend
+changes, Kafka, RabbitMQ and Redis.

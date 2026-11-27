@@ -115,8 +115,8 @@ func decodePublicProblem(t *testing.T, rec *httptest.ResponseRecorder, body []by
 	return p
 }
 
-// The production router must not serve /v1 in Phase 3 (owner decision D4): the responses stay
-// exactly what Groups 1-3 produced for any unknown path.
+// Without its dependencies (RouterDeps.PublicAPI), the router does not serve /v1 (owner decision D4
+// until Phase 4 Group 2): the responses stay exactly what Groups 1-3 produced for any unknown path.
 func TestProductionRouterDoesNotMountPublicAPI(t *testing.T) {
 	deps, _ := testDeps(true)
 	h := NewRouter(deps)

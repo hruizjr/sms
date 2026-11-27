@@ -91,6 +91,8 @@ What happens:
    `sms_app` (logged as `sms-roles: sms_migrator and sms_app provisioned`).
 3. `migrate` applies any pending migrations and exits.
 4. `api` starts and becomes healthy.
+5. `dispatcher` starts (Phase 4 Group 2): it hands accepted messages to the in-process **simulator** and
+   applies its receipts. Nothing leaves the container; no SMS is sent.
 
 `--wait` returns when all of this has finished, or exits with an error, for example when a migration
 fails.
@@ -105,6 +107,7 @@ docker compose -f infra/local/compose.yaml ps -a
 
 Expected:
 - `postgres` and `api` show `(healthy)`;
+- `dispatcher` shows `Up` (it has no health check and publishes no port);
 - `migrate` shows `Exited (0)`;
 - `PORTS` shows only `127.0.0.1:...` addresses.
 
@@ -136,6 +139,45 @@ docker compose -f infra/local/compose.yaml logs migrate
 ```powershell
 docker compose -f infra/local/compose.yaml run --rm migrate status
 ```
+
+### 3a. Send a message through the simulator
+
+Create an active tenant, approve a sender ID and issue an API key with the local tool `smsctl` (it runs only
+with `APP_ENV` development or test, and prints the key **once**):
+
+```powershell
+docker compose -f infra/local/compose.yaml run --rm smsctl bootstrap --name "Demo Co" --sender-id EXAMPLECO
+```
+
+Copy the `smsk_...` line, then submit, follow and replay a message (synthetic numbers only; the last two digits
+of `+6390000000xx` choose the simulator's behaviour, listed in
+[`backend/README.md`, "Messaging"](../../backend/README.md#messaging-phase-4-group-2)):
+
+```powershell
+$key = 'smsk_...'
+$headers = @{ Authorization = "Bearer $key"; 'Idempotency-Key' = 'demo-1' }
+$body = '{"to":"+639000000001","sender_id":"EXAMPLECO","body":"Your code is 000000."}'
+$m = Invoke-RestMethod -Method Post http://127.0.0.1:8080/v1/messages -Headers $headers -ContentType 'application/json' -Body $body
+$m.status                                   # accepted
+Start-Sleep -Seconds 3
+(Invoke-RestMethod "http://127.0.0.1:8080/v1/messages/$($m.id)" -Headers @{ Authorization = "Bearer $key" }).status   # delivered
+(Invoke-WebRequest -Method Post http://127.0.0.1:8080/v1/messages -Headers $headers -ContentType 'application/json' -Body $body).Headers['Idempotent-Replayed']   # true
+```
+
+```bash
+key='smsk_...'
+curl -s -X POST http://127.0.0.1:8080/v1/messages -H "Authorization: Bearer $key" -H 'Idempotency-Key: demo-1' \
+  -H 'Content-Type: application/json' --data '{"to":"+639000000001","sender_id":"EXAMPLECO","body":"Your code is 000000."}'
+```
+
+Show what the dispatcher did with a message (history, attempts, receipts; internal, not part of the API):
+
+```powershell
+docker compose -f infra/local/compose.yaml run --rm smsctl message trace --tenant <tenant id> --message-id <msg_...>
+```
+
+Revoke a key with `smsctl api-key revoke --tenant <tenant id> --key-id <key id>` (`smsctl api-key list` shows
+the IDs).
 
 ## 4. Start the client portal (optional)
 
@@ -417,3 +459,7 @@ report the result in the pull request or to the owner:
 > - **Part A (fresh database):** passed on Windows on 2026-11-26.
 > - **Part B (existing-volume upgrade):** has **not** been run on Windows. It is verified on Linux only, by the
 >   local stack check in CI.
+>
+> **Phase 4 Group 2 changed the Compose file again** (the `dispatcher` service and the `smsctl` tool, same image).
+> That change has **not** been validated on Windows; it is verified on Linux by the local stack check in CI, and
+> the Windows CI job checks the Compose model (roles, simulator, no published port).

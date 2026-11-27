@@ -27,7 +27,8 @@ import (
 // Versions of the embedded migrations.
 const (
 	baselineVersion = 20261125041208 // migrations/20261125041208_baseline.sql
-	latestVersion   = 20261126175603 // migrations/20261126175603_create_tenants.sql
+	tenantsVersion  = 20261126175603 // migrations/20261126175603_create_tenants.sql
+	latestVersion   = 20261127150000 // migrations/20261127150000_create_messaging.sql
 )
 
 func testContext(t *testing.T) context.Context {
@@ -104,7 +105,13 @@ func TestIntegrationEmbeddedMigrations(t *testing.T) {
 
 	// The complete list of tables, each owned by the migration role. Update this list deliberately
 	// with every migration that adds or removes a table.
-	want := []string{"public.goose_db_version sms_migrator", "public.tenants sms_migrator"}
+	want := []string{
+		"public.api_keys sms_migrator", "public.dispatch_jobs sms_migrator", "public.goose_db_version sms_migrator",
+		"public.idempotency_keys sms_migrator", "public.message_bodies sms_migrator", "public.message_receipts sms_migrator",
+		"public.message_status_history sms_migrator", "public.messages sms_migrator", "public.provider_receipts sms_migrator",
+		"public.sender_ids sms_migrator", "public.submission_attempts sms_migrator", "public.tenants sms_migrator",
+	}
+	afterTenants := []string{"public.goose_db_version sms_migrator", "public.tenants sms_migrator"}
 	if got := tablesAndOwners(t, ctx, db); !slices.Equal(got, want) {
 		t.Errorf("tables after migrating = %v, want %v", got, want)
 	}
@@ -115,14 +122,21 @@ func TestIntegrationEmbeddedMigrations(t *testing.T) {
 		t.Errorf("second Up() = %d results, %v; want 0, nil", len(again), err)
 	}
 
-	// Down rolls back one migration at a time (local development and tests only): first the tenants
-	// table, then the baseline. Rolling back past zero is reported.
+	// Down rolls back one migration at a time (local development and tests only): first the
+	// messaging tables, then the tenants table, then the baseline. Rolling back past zero is reported.
+	if _, err := runner.Down(ctx); err != nil {
+		t.Fatalf("Down() error: %v", err)
+	}
+	assertVersion(t, ctx, runner, tenantsVersion)
+	if got := tablesAndOwners(t, ctx, db); !slices.Equal(got, afterTenants) {
+		t.Errorf("tables after rolling back the messaging migration = %v, want %v", got, afterTenants)
+	}
 	if _, err := runner.Down(ctx); err != nil {
 		t.Fatalf("Down() error: %v", err)
 	}
 	assertVersion(t, ctx, runner, baselineVersion)
-	if got := tablesAndOwners(t, ctx, db); !slices.Equal(got, want[:1]) {
-		t.Errorf("tables after rolling back the tenants migration = %v, want %v", got, want[:1])
+	if got := tablesAndOwners(t, ctx, db); !slices.Equal(got, afterTenants[:1]) {
+		t.Errorf("tables after rolling back the tenants migration = %v, want %v", got, afterTenants[:1])
 	}
 	if _, err := runner.Down(ctx); err != nil {
 		t.Fatalf("Down() error: %v", err)
