@@ -16,6 +16,8 @@
 #   created before role separation (it drops and recreates the application roles there).
 # - The unsafe-role tests change sms_app (BYPASSRLS, then a membership in sms_migrator) on this
 #   project's own server only, and restore the approved state before continuing.
+# - The messaging test creates a synthetic tenant and API key with smsctl in this project's database
+#   and sends synthetic messages to the in-process simulator only (no SMS, no network connection).
 # - The failed-migration test writes one deliberately invalid migration into backend/migrations and
 #   always removes it again (also on failure or Ctrl+C).
 # - Uses only docker, curl and standard shell tools. Extra Compose files can be added with the
@@ -39,7 +41,7 @@ P="$COMPOSE_PROJECT_NAME"
 API="http://127.0.0.1:${API_PORT:-8080}"
 BROKEN_MIGRATION="backend/migrations/29991231235959_local_stack_check_broken.sql"
 BASELINE_VERSION="20261125041208"
-LATEST_VERSION="20261126175603"
+LATEST_VERSION="20261127150000"
 failures=0
 
 compose() { docker compose "$@"; }
@@ -140,8 +142,61 @@ pass "api starts again after the membership is revoked"
 expect "GET /readyz is 200" equals "$(http_code /readyz)" 200
 expect "the api's database sessions use sms_app" equals "$(api_sessions_as)" sms_app
 
+echo "== End-to-end messaging through the simulator (Phase 4 Group 2)"
+bootstrap="$(compose run --rm -T smsctl bootstrap --name "Stack Check Co" --sender-id EXAMPLECO 2>&1)" || true
+api_key="$(grep -E '^smsk_' <<<"$bootstrap" | head -n 1 || true)"
+tenant_id="$(sed -n 's/^tenant: \([0-9a-f-]*\) (active)$/\1/p' <<<"$bootstrap")"
+hdr_file="$(mktemp)"
+resp_body="" resp_code=""
+# post_message <idempotency key> <json body>: sets resp_code and resp_body; headers go to $hdr_file.
+post_message() {
+  local out
+  out="$(curl -s -m 10 -w '\n%{http_code}' -D "$hdr_file" -X POST "$API/v1/messages" \
+    -H "Authorization: Bearer $api_key" -H "Content-Type: application/json" -H "Idempotency-Key: $1" --data "$2")"
+  resp_code="$(tail -n 1 <<<"$out")"
+  resp_body="$(head -n -1 <<<"$out")"
+}
+message_id_of() { grep -o '"id":"msg_[A-Za-z0-9]*"' <<<"$1" | head -n 1 | cut -d'"' -f4; }
+status_of() { grep -o '"status":"[a-z_]*"' <<<"$1" | head -n 1 | cut -d'"' -f4; }
+get_status() { status_of "$(curl -s -m 5 "$API/v1/messages/$1" -H "Authorization: Bearer $api_key")"; }
+# wait_for_status <message id> <status>: up to 30 seconds (the simulator reports receipts after 2s).
+wait_for_status() {
+  local i
+  for i in $(seq 1 30); do
+    [[ "$(get_status "$1")" == "$2" ]] && return 0
+    sleep 1
+  done
+  return 1
+}
+bootstrapped() { [[ -n "$tenant_id" && -n "$api_key" ]]; }
+accepted_with_id() { [[ "$resp_code" == 202 && -n "$(message_id_of "$resp_body")" && "$(status_of "$resp_body")" == accepted ]]; }
+replayed_same_id() { [[ "$resp_code" == 202 && "$(message_id_of "$resp_body")" == "$message_id" ]] && grep -qi '^Idempotent-Replayed: true' "$hdr_file"; }
+key_reused() { [[ "$resp_code" == 422 ]] && grep -q 'problems/idempotency-key-reused' <<<"$resp_body"; }
+key_not_logged() { ! compose logs --no-log-prefix 2>&1 | grep -qF "$api_key"; }
+
+expect "smsctl bootstrap created an active tenant and printed an API key once" bootstrapped
+post_message stack-check-1 '{"to":"+639000000001","sender_id":"EXAMPLECO","body":"Your code is 000000.","client_reference":"stack-1"}'
+message_id="$(message_id_of "$resp_body")"
+expect "POST /v1/messages is 202 with a message id and status accepted (got $resp_code)" accepted_with_id
+expect "the simulator's receipt makes it delivered" wait_for_status "$message_id" delivered
+post_message stack-check-1 '{"sender_id":"EXAMPLECO","to":"+639000000001","client_reference":"stack-1","body":"Your code is 000000."}'
+expect "an identical retry (other key order) is replayed with the same id" replayed_same_id
+post_message stack-check-1 '{"to":"+639000000001","sender_id":"EXAMPLECO","body":"Another text"}'
+expect "the same key with a different body is 422 idempotency-key-reused" key_reused
+post_message stack-check-2 '{"to":"+639000000030","sender_id":"EXAMPLECO","body":"Uncertain"}'
+uncertain_id="$(message_id_of "$resp_body")"
+expect "a simulated timeout is reported as submission_uncertain" wait_for_status "$uncertain_id" submission_uncertain
+sleep 3 # several dispatcher cycles
+trace="$(compose run --rm -T smsctl message trace --tenant "$tenant_id" --message-id "$uncertain_id" 2>&1 || true)"
+expect "the uncertain message was handed over exactly once (never resent)" equals "$(grep -c '^  #[0-9]* provider simulator' <<<"$trace")" 1
+expect "a request without an API key is 401" equals "$(http_code /v1/messages)" 401
+expect "the dispatcher's database sessions use sms_app" \
+  equals "$(psql_value "SELECT coalesce(string_agg(DISTINCT usename, ','), '') FROM pg_stat_activity WHERE application_name = 'sms-dispatcher'")" sms_app
+expect "no log contains the API key" key_not_logged
+rm -f "$hdr_file"
+
 echo "== Security settings"
-for svc in api migrate; do
+for svc in api migrate dispatcher; do
   expect "$svc runs as user 65532" equals "$(inspect "$svc" '{{.Config.User}}')" "65532:65532"
   expect "$svc has a read-only root filesystem" equals "$(inspect "$svc" '{{.HostConfig.ReadonlyRootfs}}')" true
   expect "$svc drops all capabilities" equals "$(inspect "$svc" '{{.HostConfig.CapDrop}}')" "[ALL]"

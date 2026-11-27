@@ -24,13 +24,15 @@ RUN go mod download && go mod verify
 COPY . .
 RUN go build -ldflags="-s -w -buildid=" -o /out/api ./cmd/api \
  && go build -ldflags="-s -w -buildid=" -o /out/migrate ./cmd/migrate \
- && go build -ldflags="-s -w -buildid=" -o /out/healthcheck ./cmd/healthcheck
+ && go build -ldflags="-s -w -buildid=" -o /out/healthcheck ./cmd/healthcheck \
+ && go build -ldflags="-s -w -buildid=" -o /out/dispatcher ./cmd/dispatcher \
+ && go build -ldflags="-s -w -buildid=" -o /out/smsctl ./cmd/smsctl
 
 # Runtime: distroless static (CA certificates, time zone data, /etc/passwd with "nonroot"); no shell,
 # no package manager. Runs as the unprivileged user 65532.
 FROM gcr.io/distroless/static-debian13:nonroot@sha256:8ce6dd87e9823c5b48dcfb2c8604714ccb351ce59607327bcc4957448da279b5
 
-COPY --from=build /out/api /out/migrate /out/healthcheck /usr/local/bin/
+COPY --from=build /out/api /out/migrate /out/healthcheck /out/dispatcher /out/smsctl /usr/local/bin/
 
 USER 65532:65532
 EXPOSE 8080

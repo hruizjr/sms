@@ -10,8 +10,8 @@ import (
 	"github.com/hruizjr/sms/backend/internal/middleware"
 )
 
-// MaxRequestBodyBytes caps request bodies for every route (AGENTS.md §9). No Group 1 route
-// accepts a body; individual routes may set a lower limit when they are added.
+// MaxRequestBodyBytes caps request bodies for every route (AGENTS.md §9). Routes may set a lower
+// limit (POST /v1/messages does).
 const MaxRequestBodyBytes = 1 << 20 // 1 MiB
 
 // RouterDeps are the dependencies of the application router.
@@ -26,6 +26,9 @@ type RouterDeps struct {
 	ReadinessTimeout time.Duration
 	// NewRequestID generates request IDs; nil uses middleware.NewRandomID.
 	NewRequestID middleware.IDGenerator
+	// PublicAPI, when set, mounts the public API v1 (POST /v1/messages, GET /v1/messages and
+	// GET /v1/messages/{message_id}) behind API key authentication. Without it, /v1 answers 404.
+	PublicAPI *PublicAPIDeps
 }
 
 // NewRouter returns the application HTTP handler with its middleware chain and routes.
@@ -67,6 +70,9 @@ func newRouter(deps RouterDeps, extra func(chi.Router)) http.Handler {
 		logger:    deps.Logger,
 	})
 
+	if deps.PublicAPI != nil {
+		mountMessagesAPI(r, *deps.PublicAPI, deps.Logger)
+	}
 	if extra != nil {
 		extra(r)
 	}

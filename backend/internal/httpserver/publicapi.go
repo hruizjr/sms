@@ -27,15 +27,15 @@ const (
 // mountPublicAPI registers the generated public API v1 routes (contracts/openapi/public-api-v1.yaml)
 // on r, served by impl through the generated strict (typed request/response) handler.
 //
-// It is deliberately NOT called by NewRouter: no /v1 endpoint is implemented in Phase 3, so the
-// production router keeps answering 404 for /v1/* (owner decision D4, Phase 3 Group 4). The first
-// endpoint implementation calls it; until then only tests do.
+// It is used only by the tests of the generated binding layer. The implemented endpoints are mounted
+// by mountMessagesAPI (messages.go), which uses the non-strict generated interface so that it can
+// validate the raw request body itself.
 //
 // What the generated layer does: routing, binding of path/query/header parameters to their declared
-// types, and JSON body decoding. What it does NOT do, and what the first endpoint implementation
-// must add before serving real traffic (owner decision D6): authentication and authorization, and
-// full OpenAPI request validation (patterns, lengths, enums, required body fields,
-// additionalProperties: false, rejecting null where the contract does not allow it, Content-Type).
+// types, and JSON body decoding. What it does NOT do (owner decision D6), and what mountMessagesAPI
+// adds: authentication and authorization, and full request validation against the contract
+// (patterns, lengths, enums, required body fields, additionalProperties: false, rejecting null where
+// the contract does not allow it, Content-Type).
 //
 // The generator's default error handlers write the raw Go error text as text/plain. They are always
 // replaced here, so clients receive RFC 9457 problem details with fixed, client-safe text only.

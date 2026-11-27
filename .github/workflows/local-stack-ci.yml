@@ -189,6 +189,10 @@ jobs:
           # Each backend service connects as its own role (Phase 4 Group 1), never as the bootstrap superuser.
           if ($model.services.migrate.environment.DB_USER -ne 'sms_migrator' -or $model.services.migrate.environment.DB_PASSWORD -ne $migratorPassword) { throw "migrate does not connect as sms_migrator" }
           if ($model.services.api.environment.DB_USER -ne 'sms_app' -or $model.services.api.environment.DB_PASSWORD -ne $appPassword) { throw "api does not connect as sms_app" }
+          # The dispatcher (Phase 4 Group 2) connects as sms_app and uses the simulator only.
+          if ($model.services.dispatcher.environment.DB_USER -ne 'sms_app' -or $model.services.dispatcher.environment.DB_PASSWORD -ne $appPassword) { throw "dispatcher does not connect as sms_app" }
+          if ($model.services.dispatcher.environment.SMS_PROVIDER -ne 'simulator') { throw "dispatcher is not configured with the simulator" }
+          if ($model.services.dispatcher.ports) { throw "dispatcher must not publish ports" }
           foreach ($svc in 'postgres', 'api') {
             foreach ($port in $model.services.$svc.ports) {
               if ($port.host_ip -ne '127.0.0.1') { throw "$svc publishes a port on '$($port.host_ip)', not 127.0.0.1" }

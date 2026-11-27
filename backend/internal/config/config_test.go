@@ -42,6 +42,24 @@ func defaultDatabase(sslMode SSLMode) DatabaseConfig {
 	}
 }
 
+func defaultProvider(name string) ProviderConfig {
+	return ProviderConfig{Name: name, Simulator: SimulatorConfig{ReceiptDelay: DefaultSimulatorReceiptDelay}}
+}
+
+func defaultDispatch() DispatchConfig {
+	return DispatchConfig{
+		PollInterval:   DefaultDispatchPollInterval,
+		BatchSize:      DefaultDispatchBatchSize,
+		Concurrency:    DefaultDispatchConcurrency,
+		SubmitTimeout:  DefaultDispatchSubmitTimeout,
+		Lease:          DefaultDispatchLease,
+		MaxAttempts:    DefaultDispatchMaxAttempts,
+		RetryBaseDelay: DefaultDispatchRetryBaseDelay,
+		RetryMaxDelay:  DefaultDispatchRetryMaxDelay,
+		MaxMessageAge:  DefaultDispatchMaxMessageAge,
+	}
+}
+
 func TestLoadDefaults(t *testing.T) {
 	t.Parallel()
 
@@ -63,6 +81,8 @@ func TestLoadDefaults(t *testing.T) {
 		Log:             LogConfig{Format: LogFormatText, Level: slog.LevelInfo},
 		Database:        defaultDatabase(SSLModeDisable),
 		ShutdownTimeout: DefaultShutdownTimeout,
+		Provider:        defaultProvider(ProviderSimulator),
+		Dispatch:        defaultDispatch(),
 	}
 	if cfg != want {
 		t.Errorf("Load() defaults:\n got %+v\nwant %+v", cfg, want)
@@ -113,6 +133,9 @@ func TestLoadValidCustomValues(t *testing.T) {
 		Log:             LogConfig{Format: LogFormatText, Level: slog.LevelDebug},
 		Database:        defaultDatabase(SSLModeVerifyFull),
 		ShutdownTimeout: 45 * time.Second,
+		// Production has no default provider (no production provider exists yet).
+		Provider: defaultProvider(""),
+		Dispatch: defaultDispatch(),
 	}
 	if cfg != want {
 		t.Errorf("Load() custom values:\n got %+v\nwant %+v", cfg, want)
@@ -440,6 +463,68 @@ func TestExplicitEnvironment(t *testing.T) {
 			got, ok := ExplicitEnvironment(env(tt.vars))
 			if got != tt.want || ok != tt.wantOK {
 				t.Errorf("ExplicitEnvironment() = %q, %v; want %q, %v", got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestLoadMessagingSettings(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := Load(env(map[string]string{
+		EnvSimulatorReceiptDelay:  "250ms",
+		EnvSimulatorMaxSegments:   "6",
+		EnvSimulatorReportWindow:  "2m",
+		EnvDispatchPollInterval:   "1s",
+		EnvDispatchBatchSize:      "50",
+		EnvDispatchConcurrency:    "8",
+		EnvDispatchSubmitTimeout:  "5s",
+		EnvDispatchLease:          "30s",
+		EnvDispatchMaxAttempts:    "3",
+		EnvDispatchRetryBaseDelay: "1s",
+		EnvDispatchRetryMaxDelay:  "10s",
+		EnvDispatchMaxMessageAge:  "1h",
+	}))
+	if err != nil {
+		t.Fatalf("Load() returned error: %v", err)
+	}
+	wantProvider := ProviderConfig{Name: ProviderSimulator, Simulator: SimulatorConfig{
+		ReceiptDelay: 250 * time.Millisecond, MaxSegments: 6, ReportWindow: 2 * time.Minute,
+	}}
+	wantDispatch := DispatchConfig{
+		PollInterval: time.Second, BatchSize: 50, Concurrency: 8, SubmitTimeout: 5 * time.Second,
+		Lease: 30 * time.Second, MaxAttempts: 3, RetryBaseDelay: time.Second, RetryMaxDelay: 10 * time.Second,
+		MaxMessageAge: time.Hour,
+	}
+	if cfg.Provider != wantProvider || cfg.Dispatch != wantDispatch {
+		t.Errorf("got provider %+v dispatch %+v\nwant provider %+v dispatch %+v", cfg.Provider, cfg.Dispatch, wantProvider, wantDispatch)
+	}
+	if cfg.Provider.ReportWindow() != 2*time.Minute {
+		t.Errorf("ReportWindow() = %s", cfg.Provider.ReportWindow())
+	}
+}
+
+func TestLoadRejectsInvalidMessagingSettings(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		vars map[string]string
+		key  string
+	}{
+		{"simulator in production", map[string]string{EnvAppEnv: "production", EnvSMSProvider: "simulator"}, EnvSMSProvider},
+		{"unknown provider", map[string]string{EnvSMSProvider: "acme"}, EnvSMSProvider},
+		{"lease not above submit timeout", map[string]string{EnvDispatchLease: "5s", EnvDispatchSubmitTimeout: "5s"}, EnvDispatchLease},
+		{"retry base above max", map[string]string{EnvDispatchRetryBaseDelay: "1m", EnvDispatchRetryMaxDelay: "1s"}, EnvDispatchRetryMaxDelay},
+		{"negative report window", map[string]string{EnvSimulatorReportWindow: "-1s"}, EnvSimulatorReportWindow},
+		{"zero batch", map[string]string{EnvDispatchBatchSize: "0"}, EnvDispatchBatchSize},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := Load(env(tc.vars))
+			if err == nil || !strings.Contains(err.Error(), tc.key) {
+				t.Errorf("Load() error = %v, want one naming %s", err, tc.key)
 			}
 		})
 	}

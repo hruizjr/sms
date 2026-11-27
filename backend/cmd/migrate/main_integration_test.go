@@ -59,16 +59,17 @@ func TestIntegrationMigrateCommands(t *testing.T) {
 	}{
 		{"version", exitOK, []string{"0"}},
 		{"status", exitOK, []string{"VERSION", "20261125041208", "pending", "20261125041208_baseline.sql",
-			"20261126175603_create_tenants.sql"}},
+			"20261126175603_create_tenants.sql", "20261127150000_create_messaging.sql"}},
 		{"up", exitOK, []string{"20261125041208_baseline.sql", "20261126175603_create_tenants.sql",
-			"database version: 20261126175603"}},
-		{"up", exitOK, []string{"no pending migrations", "database version: 20261126175603"}},
+			"20261127150000_create_messaging.sql", "database version: 20261127150000"}},
+		{"up", exitOK, []string{"no pending migrations", "database version: 20261127150000"}},
 		{"status", exitOK, []string{"applied"}},
-		{"version", exitOK, []string{"20261126175603"}},
+		{"version", exitOK, []string{"20261127150000"}},
+		{"down", exitOK, []string{"20261127150000_create_messaging.sql", "database version: 20261126175603"}},
 		{"down", exitOK, []string{"20261126175603_create_tenants.sql", "database version: 20261125041208"}},
 		{"down", exitOK, []string{"20261125041208_baseline.sql", "database version: 0"}},
 		{"down", exitError, nil},
-		{"up", exitOK, []string{"database version: 20261126175603"}},
+		{"up", exitOK, []string{"database version: 20261127150000"}},
 	}
 	for i, s := range steps {
 		code, out := runCmd(s.command)

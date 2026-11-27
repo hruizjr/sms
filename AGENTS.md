@@ -9,10 +9,10 @@
 | Field | Value |
 | ----- | ----- |
 | Project | Enterprise A2P SMS Platform (Philippines) |
-| Current phase | **Phase 3 — Walking skeleton: complete (2026-11-26).** All eight groups are merged: 0 (decisions), 1 (Go API skeleton), 2 (PostgreSQL foundation), 3 (OpenAPI contract for the public messages API), 4 (Go API contract integration: Go types and Chi routes generated from the contract; no endpoint mounted), 5 (frontend foundation: client portal shell and shared UI package; no features, no API calls), 6 (local development stack and expanded CI, PR #10) and 7 (PostgreSQL Row-Level Security evaluation, PR #11; the owner accepted ADR-0010 for tenant-owned control-plane tables) (groups renumbered by the owner, [decision log §9](docs/engineering/decision-log.md#9-owner-decisions--go-contract-integration-phase-3-group-4-2026-11-25)). Closure: [decision log §13](docs/engineering/decision-log.md#13-phase-3-closure-2026-11-26). **Phase 4 — Group 1 (database role separation, tenant-context helper, tenant registry, RLS catalog guard) authorized by the owner on 2026-11-26** ([decision log §18](docs/engineering/decision-log.md#18-owner-decisions--database-role-separation-and-tenant-registry-phase-4-group-1-2026-11-26)); no other Phase 4 group is authorized. |
-| Authorized scope | **Phase 3 walking skeleton** (owner approval 2026-11-25), complete, and **Phase 4 Group 1 only** (owner approval 2026-11-26; scope and exclusions in [decision log §18](docs/engineering/decision-log.md#18-owner-decisions--database-role-separation-and-tenant-registry-phase-4-group-1-2026-11-26)). Every other Phase 4 group needs explicit owner approval. Each implementation group starts only after the previous group is reviewed and merged. All other ADRs need separate owner approval. |
+| Current phase | **Phase 3 — Walking skeleton: complete (2026-11-26).** All eight groups are merged: 0 (decisions), 1 (Go API skeleton), 2 (PostgreSQL foundation), 3 (OpenAPI contract for the public messages API), 4 (Go API contract integration: Go types and Chi routes generated from the contract; no endpoint mounted), 5 (frontend foundation: client portal shell and shared UI package; no features, no API calls), 6 (local development stack and expanded CI, PR #10) and 7 (PostgreSQL Row-Level Security evaluation, PR #11; the owner accepted ADR-0010 for tenant-owned control-plane tables) (groups renumbered by the owner, [decision log §9](docs/engineering/decision-log.md#9-owner-decisions--go-contract-integration-phase-3-group-4-2026-11-25)). Closure: [decision log §13](docs/engineering/decision-log.md#13-phase-3-closure-2026-11-26). **Phase 4 — Group 1 (database role separation, tenant-context helper, tenant registry, RLS catalog guard) authorized by the owner on 2026-11-26** ([decision log §18](docs/engineering/decision-log.md#18-owner-decisions--database-role-separation-and-tenant-registry-phase-4-group-1-2026-11-26)) and merged. **Phase 4 — Group 2 (messaging backend and provider integration foundation, simulator only) authorized by the owner on 2026-11-27** ([decision log §19](docs/engineering/decision-log.md#19-owner-decisions--messaging-backend-and-provider-integration-foundation-phase-4-group-2-2026-11-27)); no other Phase 4 group is authorized. |
+| Authorized scope | **Phase 3 walking skeleton** (owner approval 2026-11-25), complete; **Phase 4 Group 1** (owner approval 2026-11-26; [decision log §18](docs/engineering/decision-log.md#18-owner-decisions--database-role-separation-and-tenant-registry-phase-4-group-1-2026-11-26)), merged; and **Phase 4 Group 2** (owner approval 2026-11-27; scope and exclusions in [decision log §19](docs/engineering/decision-log.md#19-owner-decisions--messaging-backend-and-provider-integration-foundation-phase-4-group-2-2026-11-27)). Every other Phase 4 group needs explicit owner approval. Each implementation group starts only after the previous group is reviewed and merged. All other ADRs need separate owner approval. |
 | Decision authority | The project owner has decision authority over day-to-day project matters. Decisions affecting pricing, product scope, or launch require business-partner approval in addition to the project owner's approval. Both approvals, including their dates, must be recorded before a decision is labelled approved. Supporting approval records are kept outside Git. Agents propose; they never record a partner approval that the owner has not confirmed in writing ([decision log §17](docs/engineering/decision-log.md#17-owner-decisions--business-decisions-review-phase-2-ex-9-2026-11-26)). |
-| Last updated | 2026-11-26 (Phase 3 closure; §12 MFA wording for owner decision D-021; §3.3 ADR-0012 status; EX-9 governance, operating model and billing wording: header, §2 rule 21, §3.1, §11.9, §17; Phase 4 Group 1: header, §1, §4, §7.1, §10.3, §10.7) |
+| Last updated | 2026-11-26 (Phase 3 closure; §12 MFA wording for owner decision D-021; §3.3 ADR-0012 status; EX-9 governance, operating model and billing wording: header, §2 rule 21, §3.1, §11.9, §17; Phase 4 Group 1: header, §1, §4, §7.1, §10.3, §10.7; 2026-11-27, Phase 4 Group 2: header, §1, §4) |
 
 ---
 
@@ -48,7 +48,7 @@ The repository contains documentation, repository hygiene files, the Go API skel
 and readiness endpoints, metrics, CI), the PostgreSQL foundation (connection pool, goose migrations without
 business tables, local Docker Compose database, integration tests), the draft OpenAPI contract for the
 public messages API in `contracts/openapi/`, Go types and Chi routes generated from that contract in
-`backend/internal/publicapi/` (no `/v1` endpoint is mounted or implemented), the frontend foundation in
+`backend/internal/publicapi/`, the frontend foundation in
 `frontend/` (client portal shell with one placeholder page, shared UI package, no features, no API calls),
 a local Docker Compose stack in `infra/` (PostgreSQL, a one-off migration service, the API) with expanded
 CI (stack check, secret scan, dependency review), and the Row-Level Security evaluation tests in
@@ -57,7 +57,10 @@ skeleton (technical foundation only) was added one reviewed group at a time and 
 adds the database foundation: separate database roles (`sms_migrator` for migrations, `sms_app` for the API, with
 checks that refuse unsafe roles), the transaction-local tenant-context helper, the platform-owned tenant registry
 (`tenants` table, sqlc queries, `internal/tenancy` repository without HTTP endpoints) and the RLS catalog guard in
-CI. **No other business functionality exists or is authorized.**
+CI. **Phase 4 Group 2** adds the working messaging backend: the public API v1 (`/v1/messages`) with Bearer API
+keys, the messaging engine and `dispatcher` (transactional outbox, submission attempts, receipts), the provisional
+provider interface with the **simulator** as the only provider (no real telco adapter; no SMS is sent), and the
+local administration tool `smsctl`. **No other business functionality exists or is authorized.**
 
 **Verified facts:** almost none. The business *intends* to become an A2P SMS aggregator. No telco
 agreement, technical integration, accreditation, regulatory authorization, or traffic volume has been
@@ -77,8 +80,11 @@ Phase 3 group tasks authorize only what [decision log §7](docs/engineering/deci
 lists: the approved dependencies, `go.mod` / `package.json`, migrations **without business tables**, CI, and
 local development tooling. Phase 4 Group 1 additionally authorizes only its own scope ([decision log §18](docs/engineering/decision-log.md#18-owner-decisions--database-role-separation-and-tenant-registry-phase-4-group-1-2026-11-26)):
 the database roles, the tenant-context helper, the `tenants` migration and its sqlc queries and repository, the
-pinned sqlc tool, and the RLS catalog guard. Customer authentication, tenant management, RBAC logic, billing, SMS submission,
-SMPP, telco integrations, queues, Kafka, Redis, and ClickHouse remain prohibited. The metrics endpoint must not
+pinned sqlc tool, and the RLS catalog guard. Phase 4 Group 2 additionally authorizes only its own scope
+([decision log §19](docs/engineering/decision-log.md#19-owner-decisions--messaging-backend-and-provider-integration-foundation-phase-4-group-2-2026-11-27)):
+the `/v1/messages` endpoints, API keys, the messaging tables, the dispatcher, the provider interface, the simulator and
+`smsctl`. User login, portal authentication, MFA, RBAC logic, billing, pricing, SMPP, real telco adapters or credentials,
+third-party routing, fallback routing, Kafka, RabbitMQ, Redis, and ClickHouse remain prohibited. The metrics endpoint must not
 be publicly exposed, and GitHub Actions are pinned to commit SHAs.
 
 ### 1.1 Document authority and conflicts
@@ -283,7 +289,7 @@ Details and gaps: [product brief](docs/product/product-brief.md) and
 
 ```
 AGENTS.md          This file
-backend/           Go module (cmd/ = executables, internal/ = modules)   — API + database foundation, tenant registry
+backend/           Go module (cmd/ = executables, internal/ = modules)   — API, messaging engine, dispatcher, simulator
 frontend/          React applications (pnpm workspace)                   — client portal shell + packages/ui (Group 5)
 contracts/         OpenAPI specs, event and webhook schemas              — draft public API v1 (Group 3)
 backend/internal/publicapi/  Go code GENERATED from contracts/openapi/  — never edit by hand (Group 4)

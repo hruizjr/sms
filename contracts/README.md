@@ -13,7 +13,7 @@ Current contents (Phase 3 Group 3):
 
 | Path | Contents |
 | ---- | -------- |
-| `openapi/public-api-v1.yaml` | **Draft** public developer API v1: message submission and status (not implemented) |
+| `openapi/public-api-v1.yaml` | **Draft** public developer API v1: message submission and status (implemented in Phase 4 Group 2, simulator provider only) |
 | `openapi/README.md` | Semantics of the public API, status reference, problem types, and open owner decisions |
 | `tests/` | Contract tests (Node.js built-in test runner, no extra dependencies) |
 | `redocly.yaml` | OpenAPI lint rules (`@redocly/cli`, approved in decision log §7.2) |

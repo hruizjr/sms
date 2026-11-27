@@ -227,6 +227,8 @@ jobs:
         run: |
           go build -trimpath -o bin/api ./cmd/api
           go build -trimpath -o bin/migrate ./cmd/migrate
+          go build -trimpath -o bin/dispatcher ./cmd/dispatcher
+          go build -trimpath -o bin/smsctl ./cmd/smsctl
 
       # Migrations run as the migration role (Phase 4 Group 1); the bootstrap superuser is refused.
       - name: Migration smoke test (up, status, down, up, as sms_migrator)
@@ -281,6 +283,47 @@ jobs:
           wait "${api_pid}"
           cat api.log
 
+      # Phase 4 Group 2: the whole messaging flow with the in-process simulator (no SMS, no network).
+      - name: Messaging smoke test (API, dispatcher and simulator, as sms_app)
+        env:
+          DB_USER: sms_app
+          DB_PASSWORD: ${{ env.DB_APP_PASSWORD }}
+          SIMULATOR_RECEIPT_DELAY: 200ms
+        run: |
+          set -euo pipefail
+          psql_sms() { docker exec "$(docker ps -q --filter "ancestor=${POSTGRES_IMAGE}")" psql -U sms -d sms -Atc "$1"; }
+          out="$(bin/smsctl bootstrap --name "CI Smoke Co" --sender-id EXAMPLECO)"
+          key="$(grep -E '^smsk_' <<<"${out}")"
+          echo "::add-mask::${key}"
+          bin/api > api.log 2>&1 &
+          api_pid=$!
+          bin/dispatcher > dispatcher.log 2>&1 &
+          dispatcher_pid=$!
+          for _ in $(seq 1 50); do
+            curl -fsS http://127.0.0.1:8080/readyz > /dev/null 2>&1 && break
+            sleep 0.2
+          done
+          post() { curl -sS -X POST http://127.0.0.1:8080/v1/messages -H "Authorization: Bearer ${key}" \
+            -H 'Content-Type: application/json' -H "Idempotency-Key: $1" --data "$2"; }
+          status() { curl -sS "http://127.0.0.1:8080/v1/messages/$1" -H "Authorization: Bearer ${key}" | grep -o '"status":"[a-z_]*"' | head -n 1 | cut -d'"' -f4; }
+          id_of() { grep -o '"id":"msg_[A-Za-z0-9]*"' <<<"$1" | cut -d'"' -f4; }
+          delivered="$(id_of "$(post ci-1 '{"to":"+639000000001","sender_id":"EXAMPLECO","body":"CI smoke test"}')")"
+          uncertain="$(id_of "$(post ci-2 '{"to":"+639000000030","sender_id":"EXAMPLECO","body":"CI smoke test"}')")"
+          for _ in $(seq 1 50); do
+            [ "$(status "${delivered}")" = delivered ] && [ "$(status "${uncertain}")" = submission_uncertain ] && break
+            sleep 0.2
+          done
+          test "$(status "${delivered}")" = delivered
+          test "$(status "${uncertain}")" = submission_uncertain
+          test "$(id_of "$(post ci-1 '{"to":"+639000000001","sender_id":"EXAMPLECO","body":"CI smoke test"}')")" = "${delivered}"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/v1/messages)" = 401
+          test "$(psql_sms "SELECT count(*) FROM submission_attempts")" = 2
+          test "$(psql_sms "SELECT string_agg(DISTINCT usename, ',') FROM pg_stat_activity WHERE application_name = 'sms-dispatcher'")" = sms_app
+          kill -TERM "${dispatcher_pid}" "${api_pid}"
+          wait "${dispatcher_pid}" "${api_pid}"
+          if grep -qF "${key}" api.log dispatcher.log; then echo "a log contains the API key"; exit 1; fi
+          cat dispatcher.log
+
       - name: API refuses to start with an unsafe database role
         env:
           SUPERUSER_PASSWORD: ci-throwaway-not-a-secret
@@ -296,6 +339,12 @@ jobs:
           }
           refuse sms "${SUPERUSER_PASSWORD}" 'refusing to use database role "sms" as the application role: is a superuser'
           refuse sms_migrator "${DB_MIGRATOR_PASSWORD}" 'as the application role: owns tables or other relations'
+          # The dispatcher applies the same check.
+          if DB_USER=sms DB_PASSWORD="${SUPERUSER_PASSWORD}" timeout 20 bin/dispatcher > refused.log 2>&1; then
+            echo "the dispatcher started as the bootstrap superuser"; cat refused.log; exit 1
+          fi
+          cat refused.log
+          grep -q 'refusing to use database role "sms" as the application role: is a superuser' refused.log
 
   lint:
     name: Go lint
