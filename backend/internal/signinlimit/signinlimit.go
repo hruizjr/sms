@@ -41,12 +41,24 @@
 // could be determined) maps to the single source ::/128, shared by all such requests, with the IPv4
 // limit.
 //
-// # Storage
+// # Storage and cleanup
 //
 // One bucket row per source seen within the time a bucket needs to refill, and one budget row per
-// source with reserved slots in an unexpired window. Run deletes the rest periodically, so the tables
-// hold at most the sources seen during one window (budgets) or one refill time (buckets) plus one
-// cleanup interval.
+// source that reserved a slot in an unexpired window. Run deletes the rest: one cycle every
+// CleanupInterval, each cycle a sequence of bounded batches (CleanupBatchSize rows, each batch its own
+// transaction) up to CleanupMaxBatches per table, so one cycle's work is bounded however many rows are
+// waiting. A batch locks its rows with FOR UPDATE SKIP LOCKED: cleanup never waits for a row that a
+// sign-in, or another instance's cleanup, holds, so it cannot deadlock with a sign-in (which locks an
+// IPv6 /48 before its /64) and several instances share the work instead of contending for it.
+// Correctness never depends on cleanup: an ended window restarts on its next reservation and a bucket
+// refills by computation, so a failed or skipped cleanup only leaves rows in place.
+//
+// The tables are bounded by the number of distinct sources seen per window, not by a fixed number: an
+// attacker who can send from many addresses creates one row per new address. Cleanup removes at most
+// CleanupBatchSize × CleanupMaxBatches rows per table per cycle and instance; a cycle that stops at
+// that bound is reported as incomplete (CleanupResult.Complete), which monitoring must alert on, and
+// edge rate limiting must bound the rate of new sources (security baseline S-12).
+
 package signinlimit
 
 import (
@@ -98,8 +110,16 @@ var DefaultConfig = Config{
 	RequestsPerSecond: DefaultRequestsPerSecond, RequestBurst: DefaultRequestBurst,
 }
 
-// CleanupInterval is how often Run deletes ended windows and full buckets.
-const CleanupInterval = time.Minute
+// Cleanup bounds. CleanupInterval is how often Run starts a cleanup cycle; a cycle deletes at most
+// CleanupMaxBatches batches of CleanupBatchSize rows from each table (50,000 rows per table, cycle and
+// instance), each batch bounded by cleanupBatchTimeout, and the cycle by cleanupCycleTimeout.
+const (
+	CleanupInterval     = time.Minute
+	CleanupBatchSize    = 1000
+	CleanupMaxBatches   = 50
+	cleanupBatchTimeout = 10 * time.Second
+	cleanupCycleTimeout = time.Minute
+)
 
 // ReportInterval is the least time between two platform events recording the refusals of one
 // source by the token bucket.
@@ -152,9 +172,20 @@ type Admission struct {
 
 // Limiter applies the layered limit. It is safe for concurrent use.
 type Limiter struct {
-	db  *database.DB
-	cfg Config
-	now func() time.Time
+	db      *database.DB
+	cfg     Config
+	now     func() time.Time
+	metrics CleanupMetrics
+	batch   int32 // rows per cleanup batch
+	batches int   // batches per table and cycle
+}
+
+// CleanupMetrics receives the outcome of every cleanup cycle run by Run (implemented by
+// observability.Metrics). succeeded is false when a batch failed; complete is false when the cycle
+// stopped at its work bound with rows possibly left; the deleted counts include the batches committed
+// before a failure.
+type CleanupMetrics interface {
+	ObserveSignInLimitCleanup(succeeded, complete bool, duration time.Duration, failureBudgetsDeleted, requestBucketsDeleted int64)
 }
 
 // Option configures a Limiter.
@@ -163,12 +194,20 @@ type Option func(*Limiter)
 // WithClock sets the clock (tests).
 func WithClock(now func() time.Time) Option { return func(l *Limiter) { l.now = now } }
 
+// WithCleanupMetrics reports every cleanup cycle of Run to m.
+func WithCleanupMetrics(m CleanupMetrics) Option { return func(l *Limiter) { l.metrics = m } }
+
+// WithCleanupBounds replaces CleanupBatchSize and CleanupMaxBatches (tests).
+func WithCleanupBounds(batchSize, maxBatches int) Option {
+	return func(l *Limiter) { l.batch, l.batches = int32(min(max(batchSize, 1), 1_000_000)), max(maxBatches, 1) } //nolint:gosec // bounded above
+}
+
 // New returns a Limiter. Every field of cfg must be positive.
 func New(db *database.DB, cfg Config, opts ...Option) (*Limiter, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	l := &Limiter{db: db, cfg: cfg, now: time.Now}
+	l := &Limiter{db: db, cfg: cfg, now: time.Now, batch: CleanupBatchSize, batches: CleanupMaxBatches}
 	for _, o := range opts {
 		o(l)
 	}
@@ -308,46 +347,106 @@ func wholeSeconds(d time.Duration) time.Duration {
 	return time.Duration(max(int64(math.Ceil(d.Seconds())), 1)) * time.Second
 }
 
-// Cleanup deletes ended or empty failure budgets and full token buckets, and returns how many rows
-// it deleted.
-func (l *Limiter) Cleanup(ctx context.Context) (int64, error) {
-	now := l.now()
-	q := sqlcgen.New(l.db.Pool())
-	budgets, err := q.DeleteEndedSignInFailureBudgets(ctx, now.Add(-l.cfg.FailureWindow))
-	if err != nil {
-		return 0, fmt.Errorf("delete ended sign-in failure budgets: %w", err)
-	}
-	refill := time.Duration(float64(l.cfg.RequestBurst) / l.cfg.RequestsPerSecond * float64(time.Second))
-	buckets, err := q.DeleteFullSignInRequestBuckets(ctx, sqlcgen.DeleteFullSignInRequestBucketsParams{
-		FullBefore: now.Add(-refill), ReportIntervalBefore: now.Add(-ReportInterval),
-	})
-	if err != nil {
-		return budgets, fmt.Errorf("delete full sign-in request buckets: %w", err)
-	}
-	return budgets + buckets, nil
+// CleanupResult is what one cleanup cycle deleted.
+type CleanupResult struct {
+	FailureBudgets int64 // budgets whose window had ended
+	RequestBuckets int64 // buckets that were full again
+	// Complete is false when a table still had rows to delete after CleanupMaxBatches batches: the
+	// cycle stopped at its work bound and the next cycle continues.
+	Complete bool
 }
 
-// Run calls Cleanup every CleanupInterval until ctx is done. Failures are logged and retried at the
-// next interval. Every API instance may run it; concurrent cleanups are harmless.
+// Cleanup runs one cleanup cycle: it deletes budgets whose window has ended and buckets that are
+// full again, in batches of at most CleanupBatchSize rows that each commit on their own, at most
+// CleanupMaxBatches per table. Rows locked by a sign-in or another cleanup are skipped, never waited
+// for. The tables are cleaned independently (a failure on one does not skip the other); on error it
+// returns what the committed batches deleted.
+func (l *Limiter) Cleanup(ctx context.Context) (CleanupResult, error) {
+	now := l.now()
+	q := sqlcgen.New(l.db.Pool())
+	var res CleanupResult
+	budgets, budgetsComplete, budgetsErr := l.deleteBatches(ctx, func(ctx context.Context) (int64, error) {
+		return q.DeleteEndedSignInFailureBudgets(ctx, sqlcgen.DeleteEndedSignInFailureBudgetsParams{
+			WindowEndedBefore: now.Add(-l.cfg.FailureWindow), BatchSize: l.batch,
+		})
+	})
+	refill := time.Duration(float64(l.cfg.RequestBurst) / l.cfg.RequestsPerSecond * float64(time.Second))
+	buckets, bucketsComplete, bucketsErr := l.deleteBatches(ctx, func(ctx context.Context) (int64, error) {
+		return q.DeleteFullSignInRequestBuckets(ctx, sqlcgen.DeleteFullSignInRequestBucketsParams{
+			FullBefore: now.Add(-refill), ReportIntervalBefore: now.Add(-ReportInterval), BatchSize: l.batch,
+		})
+	})
+	res = CleanupResult{FailureBudgets: budgets, RequestBuckets: buckets, Complete: budgetsComplete && bucketsComplete}
+	var errs []error
+	if budgetsErr != nil {
+		errs = append(errs, fmt.Errorf("delete ended sign-in failure budgets: %w", budgetsErr))
+	}
+	if bucketsErr != nil {
+		errs = append(errs, fmt.Errorf("delete full sign-in request buckets: %w", bucketsErr))
+	}
+	return res, errors.Join(errs...)
+}
+
+// deleteBatches runs batch until it deletes fewer than a full batch (complete) or l.batches batches
+// have run (not complete), and returns the rows deleted.
+func (l *Limiter) deleteBatches(ctx context.Context, batch func(context.Context) (int64, error)) (deleted int64, complete bool, err error) {
+	for range l.batches {
+		bctx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
+		n, err := batch(bctx)
+		cancel()
+		if err != nil {
+			return deleted, false, err
+		}
+		deleted += n
+		if n < int64(l.batch) {
+			return deleted, true, nil
+		}
+	}
+	return deleted, false, nil
+}
+
+// Run runs a cleanup cycle at once and then every CleanupInterval until ctx is done, reporting each
+// cycle to the CleanupMetrics (WithCleanupMetrics). A failed cycle is logged as an error and counted
+// as a failure; the next cycle tries again. Every API instance runs it; their batches skip each
+// other's rows.
 func (l *Limiter) Run(ctx context.Context, logger *slog.Logger) {
 	ticker := time.NewTicker(CleanupInterval)
 	defer ticker.Stop()
 	for {
+		if !l.cleanupCycle(ctx, logger) {
+			return
+		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			cctx, cancel := context.WithTimeout(ctx, time.Minute)
-			n, err := l.Cleanup(cctx)
-			cancel()
-			switch {
-			case errors.Is(err, context.Canceled) && ctx.Err() != nil:
-				return
-			case err != nil:
-				logger.Warn("sign-in limit cleanup failed", slog.String("error", err.Error()))
-			case n > 0:
-				logger.Debug("sign-in limit cleanup", slog.Int64("deleted", n))
-			}
 		}
 	}
+}
+
+// cleanupCycle runs and reports one cycle; it returns false when ctx ended.
+func (l *Limiter) cleanupCycle(ctx context.Context, logger *slog.Logger) bool {
+	start := time.Now()
+	cctx, cancel := context.WithTimeout(ctx, cleanupCycleTimeout)
+	res, err := l.Cleanup(cctx)
+	cancel()
+	if err != nil && ctx.Err() != nil {
+		return false // shutting down: not a cleanup failure
+	}
+	if l.metrics != nil {
+		l.metrics.ObserveSignInLimitCleanup(err == nil, res.Complete, time.Since(start), res.FailureBudgets, res.RequestBuckets)
+	}
+	attrs := []any{
+		slog.Int64("failure_budgets_deleted", res.FailureBudgets), slog.Int64("request_buckets_deleted", res.RequestBuckets),
+		slog.Bool("complete", res.Complete), slog.Duration("duration", time.Since(start)),
+	}
+	switch {
+	case err != nil:
+		logger.Error("sign-in limit cleanup failed", append(attrs, slog.String("error", err.Error()))...)
+	case !res.Complete:
+		logger.Warn("sign-in limit cleanup stopped at its work bound; rows remain", attrs...)
+	case res.FailureBudgets+res.RequestBuckets > 0:
+		logger.Debug("sign-in limit cleanup", attrs...)
+	}
+	return true
 }

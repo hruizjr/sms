@@ -62,6 +62,7 @@ const (
 	AuditActionPortalUserCreate         AuditAction = "portal_user.create"
 	AuditActionPortalUserSessionsRevoke AuditAction = "portal_user.sessions_revoke"
 	AuditActionPortalUserUnlock         AuditAction = "portal_user.unlock"
+	AuditActionSenderIdApprove          AuditAction = "sender_id.approve"
 )
 
 // Valid indicates whether the value is a known member of the AuditAction enum.
@@ -86,6 +87,8 @@ func (e AuditAction) Valid() bool {
 	case AuditActionPortalUserSessionsRevoke:
 		return true
 	case AuditActionPortalUserUnlock:
+		return true
+	case AuditActionSenderIdApprove:
 		return true
 	default:
 		return false
@@ -332,8 +335,9 @@ type ApiKeyScope string
 // `portal.account_locked` (repeated failed attempts locked the account), `api_key.create`,
 // `api_key.revoke`, `api_key.list` (recorded only when refused), `audit_log.list` (recorded only
 // when refused), and, performed by the platform's administration tool, `portal_user.create`,
-// `portal_user.unlock` (the account lockout was cleared) and `portal_user.sessions_revoke` (the
-// user's sessions were ended).
+// `portal_user.unlock` (the account lockout was cleared), `portal_user.sessions_revoke` (the
+// user's sessions were ended) and `sender_id.approve` (a sender ID was approved for the
+// organization; `details.sender_id` names it).
 type AuditAction string
 
 // AuditDetails Structured, non-secret details. Only the fields that apply are present.
@@ -359,6 +363,9 @@ type AuditDetails struct {
 	// Role The role of a refused user, or the role given to a created user.
 	Role *Role `json:"role,omitempty"`
 
+	// SenderId The sender ID that was approved (`sender_id.approve` only).
+	SenderId *string `json:"sender_id,omitempty"`
+
 	// Via The administration tool that performed a system action (`smsctl`).
 	Via *string `json:"via,omitempty"`
 }
@@ -370,8 +377,9 @@ type AuditEvent struct {
 	// `portal.account_locked` (repeated failed attempts locked the account), `api_key.create`,
 	// `api_key.revoke`, `api_key.list` (recorded only when refused), `audit_log.list` (recorded only
 	// when refused), and, performed by the platform's administration tool, `portal_user.create`,
-	// `portal_user.unlock` (the account lockout was cleared) and `portal_user.sessions_revoke` (the
-	// user's sessions were ended).
+	// `portal_user.unlock` (the account lockout was cleared), `portal_user.sessions_revoke` (the
+	// user's sessions were ended) and `sender_id.approve` (a sender ID was approved for the
+	// organization; `details.sender_id` names it).
 	Action AuditAction `json:"action"`
 
 	// Actor The actor or target of an event.

@@ -1203,8 +1203,9 @@ components:
         `portal.account_locked` (repeated failed attempts locked the account), `api_key.create`,
         `api_key.revoke`, `api_key.list` (recorded only when refused), `audit_log.list` (recorded only
         when refused), and, performed by the platform's administration tool, `portal_user.create`,
-        `portal_user.unlock` (the account lockout was cleared) and `portal_user.sessions_revoke` (the
-        user's sessions were ended).
+        `portal_user.unlock` (the account lockout was cleared), `portal_user.sessions_revoke` (the
+        user's sessions were ended) and `sender_id.approve` (a sender ID was approved for the
+        organization; `details.sender_id` names it).
       enum:
         - portal.sign_in
         - portal.sign_out
@@ -1216,6 +1217,7 @@ components:
         - portal_user.create
         - portal_user.unlock
         - portal_user.sessions_revoke
+        - sender_id.approve
     AuditOutcome:
       type: string
       description: |
@@ -1280,6 +1282,11 @@ components:
           type: string
           maxLength: 32
           description: The administration tool that performed a system action (`smsctl`).
+        sender_id:
+          type: string
+          minLength: 1
+          maxLength: 32
+          description: The sender ID that was approved (`sender_id.approve` only).
         dedup_interval_seconds:
           type: integer
           minimum: 1

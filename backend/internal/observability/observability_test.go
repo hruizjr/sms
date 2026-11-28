@@ -116,3 +116,59 @@ func TestMetricsHandlerExposesHTTPMetrics(t *testing.T) {
 		}
 	}
 }
+
+// Sign-in limit cleanup cycles: successes and failures counted separately, a failure never moves the
+// last-success time, incomplete cycles counted, deletions per table; every series exists before the
+// first cycle.
+func TestObserveSignInLimitCleanup(t *testing.T) {
+	t.Parallel()
+
+	m := NewMetrics()
+	if n := testutil.CollectAndCount(m.cleanupRuns); n != 2 {
+		t.Fatalf("%d cleanup run series before any cycle, want 2 (success, failure)", n)
+	}
+	if got := testutil.ToFloat64(m.cleanupLastSuccess); got != 0 {
+		t.Fatalf("last success before any cycle = %v, want 0", got)
+	}
+
+	before := float64(time.Now().Unix())
+	m.ObserveSignInLimitCleanup(true, true, 20*time.Millisecond, 7, 3)
+	last := testutil.ToFloat64(m.cleanupLastSuccess)
+	if last < before {
+		t.Errorf("last success = %v, want at least %v", last, before)
+	}
+	m.ObserveSignInLimitCleanup(false, false, time.Second, 2, 0)
+	m.ObserveSignInLimitCleanup(true, false, time.Second, 50000, 0)
+
+	for _, tt := range []struct {
+		name string
+		got  float64
+		want float64
+	}{
+		{"success runs", testutil.ToFloat64(m.cleanupRuns.WithLabelValues("success")), 2},
+		{"failed runs", testutil.ToFloat64(m.cleanupRuns.WithLabelValues("failure")), 1},
+		{"incomplete runs", testutil.ToFloat64(m.cleanupIncomplete), 2},
+		{"budgets deleted", testutil.ToFloat64(m.cleanupDeleted.WithLabelValues("failure_budgets")), 50009},
+		{"buckets deleted", testutil.ToFloat64(m.cleanupDeleted.WithLabelValues("request_buckets")), 3},
+	} {
+		if tt.got != tt.want {
+			t.Errorf("%s = %v, want %v", tt.name, tt.got, tt.want)
+		}
+	}
+	if got := testutil.ToFloat64(m.cleanupLastSuccess); got < last {
+		t.Errorf("last success moved backwards: %v < %v", got, last)
+	}
+
+	rec := httptest.NewRecorder()
+	m.Handler().ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/metrics", nil))
+	body := rec.Body.String()
+	for _, name := range []string{
+		"sms_signin_limit_cleanup_runs_total", "sms_signin_limit_cleanup_incomplete_runs_total",
+		"sms_signin_limit_cleanup_duration_seconds", "sms_signin_limit_cleanup_deleted_rows_total",
+		"sms_signin_limit_cleanup_last_success_timestamp_seconds",
+	} {
+		if !strings.Contains(body, name) {
+			t.Errorf("metrics output does not contain %s", name)
+		}
+	}
+}

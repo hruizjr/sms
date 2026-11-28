@@ -341,6 +341,14 @@ logs remain operational logging only.
 | `api_key.revoke` | success, denied | `apikey.Service.Revoke`, the portal handler |
 | `api_key.list`, `audit_log.list` | denied only | the portal handler |
 | `portal_user.create`, `portal_user.unlock`, `portal_user.sessions_revoke` | success (actor `system`, details `via: smsctl`; creation also `role`) | `portal.Service.CreateUser`, `Unlock`, `RevokeUserSessions` (used by `smsctl`), in the same transaction as the change |
+| `sender_id.approve` | success (actor `system`, details `sender_id` and `via: smsctl`; no target) — a new approval only; approving an already approved sender ID changes and records nothing | `messaging.Service.ApproveSenderID` (`smsctl sender-id approve` and `bootstrap`), in the same transaction as the approval |
+
+**System actor.** Administration through `smsctl` is recorded with the actor `system` and `via: smsctl`: the tool
+has no operator identity (it runs with the API's database credentials), so these events do not say which person
+acted. Attributing an action to an operator needs authenticated, MFA-protected internal administrators (D-021).
+**Not audited yet:** the `smsctl` tenant registry commands (`tenant create`, the activation in `tenant create` and
+`bootstrap`, `tenant suspend`, `tenant reactivate`). They change a platform-owned table and need a platform
+administration audit design (security baseline S-14); no workaround writes them to a tenant's log.
 
 - **Tables.** `security_audit_events` is tenant-owned (forced RLS, the approved policy). Events that belong to no
   organization — a sign-in for an address that is not registered (the address is **not** stored), malformed
@@ -405,14 +413,55 @@ reveals nothing about any account, and never counts toward, starts or extends an
   taken by one atomic upsert; the budgets of an attempt are reserved in one transaction, always in the same order
   (`/48` before `/64`), each by an atomic upsert that serializes concurrent attempts on its row, and the transaction
   is rolled back when any budget would exceed its limit. Clock differences between instances cannot add tokens.
-- **Storage.** One bucket row per source seen within a refill time (10 s by default) and one budget row per source
-  with reserved slots in an open window; every API process deletes the rest every minute. Rows are bounded by the
-  request rate times the window.
+- **Cleanup.** Every API process runs a cleanup cycle at start and then every minute
+  (`signinlimit.Limiter.Run`). A cycle deletes budgets whose window has ended and buckets that are full again, in
+  batches of at most 1,000 rows, each batch its own short transaction, and at most 50 batches per table: at most
+  50,000 rows per table, cycle and process, so a high-cardinality attack cannot make one cycle monopolize the
+  database. Each batch chooses its rows with `FOR UPDATE SKIP LOCKED`: cleanup never waits for a row that a sign-in
+  (or another process's cleanup) holds. It skips the row, and a later cycle takes it. A sign-in therefore cannot
+  deadlock with cleanup. The former single `DELETE` locked rows in table order and could deadlock with a sign-in
+  that locks an IPv6 `/48` before its `/64` (final review of PR #23; reproduced, and fixed with a regression test).
+  Several processes share the work instead of contending for it. A batch is chosen through the `window_start_at`
+  or `refilled_at` index and deleted through the primary key, so it costs the same however many rows wait.
+- **Empty budgets.** A budget whose slots were all refunded (successful sign-ins) is **not** deleted early: it stays
+  until its window ends, like any other. An empty budget and an absent one behave the same. Deleting empty budgets
+  early would need an index on the counter, which every reservation and refund changes, making each of those
+  updates a non-HOT update.
+- **Correctness does not depend on cleanup.** An ended window restarts on its next reservation and a bucket's tokens
+  are computed from the time, so a failed or skipped cycle only leaves rows in place.
+- **Storage is not bounded by a fixed number.** The tables hold one bucket row per source seen within a refill time
+  (10 s by default, longer for a source refused within the last five minutes) and one budget row per source with
+  a reservation in an open window, plus up to one cleanup interval. A row is created by any request from a new
+  source, without authentication, so the tables grow with the **rate of new source addresses** (IPv6 sources are
+  plentiful). If new sources arrive faster than cleanup's work bound removes them, the backlog grows; the cycle is
+  then reported as incomplete. Edge rate limiting (S-12) and monitoring of the metrics below are what bound it in
+  production.
+- **Metrics** (on the metrics listener, labels without addresses, users or tenants):
+  `sms_signin_limit_cleanup_runs_total{result="success"|"failure"}` (their sum is the number of attempts),
+  `sms_signin_limit_cleanup_incomplete_runs_total` (stopped at the work bound or failed, rows possibly left),
+  `sms_signin_limit_cleanup_duration_seconds` (histogram), `sms_signin_limit_cleanup_deleted_rows_total{table}`
+  (`failure_budgets`, `request_buckets`), and `sms_signin_limit_cleanup_last_success_timestamp_seconds` (0 until a
+  cycle succeeds; a failed cycle never moves it). A failed cycle is logged as an error, and an incomplete one as a
+  warning. The alert conditions production monitoring must configure are in the security baseline (§9.1).
 - **Audit.** One platform event per refused budget and window, and per refusing bucket and five minutes; a flood
   cannot multiply audit writes.
-- **Known limits.** An attacker holding many `/48`s (or many IPv4 addresses) gets a budget for each; shared-address
-  griefing (failures from one NAT address exhausting its budget for everyone behind it) is bounded by the budget
-  size but not prevented. Edge rate limiting or a WAF in front of the API is a production gate.
+- **Known limits.**
+  - **Many networks.** An attacker holding many `/48`s (or many IPv4 addresses) gets a budget for each.
+  - **No token bucket per `/48`.** Every `/64` of a `/48` has its own token bucket; only the failure budget is
+    aggregated per `/48`.
+  - **Valid accounts.** A successful sign-in returns its failure slots, so sign-ins with **valid credentials** (an
+    attacker's own account, or several) are limited only by the token bucket of each source (10 per second). They
+    can keep the shared password-hashing queue full from a few addresses. The bounded hasher protects memory and CPU,
+    but other users then receive `503`. Hashing admission is first-come-first-served, not fair per source.
+  - **Shared addresses.** Failures from one NAT address can exhaust its budget for everyone behind it. The budget size
+    bounds this but does not prevent it.
+  - **Shared pool.** In a load test on the 4-vCPU development container, a sign-in flood on the same host raised `/v1/messages`
+    latency (p50 about 4 ms → about 80 ms) whether or not cleanup ran: the flood and the messages API share CPU and
+    the database pool.
+
+  Edge rate limiting or a WAF in front of the API, capacity measurements on production hardware, and an evaluation of
+  per-`/48` request limits and fair hashing admission are production gates (security baseline S-12); no new
+  threshold is set here.
 
 ### Client IP addresses
 
@@ -821,8 +870,9 @@ govulncheck reports type errors in the standard library rather than results.
 - **Readiness logging:** review the access-log severity of `/readyz` 503 responses (currently `ERROR`,
   per the Group 1 rule for status ≥ 500).
 - **Security, later groups:** audit tamper evidence (S-8), an audit retention period and expiry (S-4), an internal
-  view of platform security events (needs the admin portal with MFA, D-021), and per-tenant or per-key public API
-  rate limits are not implemented.
+  view of platform security events (needs the admin portal with MFA, D-021), auditing of the `smsctl` tenant
+  registry commands (S-14), per-tenant or per-key public API rate limits, and the production monitoring and alerting
+  of security baseline §9.1 (only the metrics marked implemented there exist) are not implemented.
 - **Messaging, later groups:** rate limits, credit reservation and billing, suppression lists, sender ID and API
   key management endpoints, webhooks, real provider adapters (after official specifications and approval), and
   retention expiry of message bodies are not implemented.

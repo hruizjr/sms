@@ -89,7 +89,8 @@ CREATE TABLE security_audit_events (
         'portal.sign_in', 'portal.sign_out', 'portal.account_locked',
         'api_key.list', 'api_key.create', 'api_key.revoke',
         'audit_log.list',
-        'portal_user.create', 'portal_user.unlock', 'portal_user.sessions_revoke'
+        'portal_user.create', 'portal_user.unlock', 'portal_user.sessions_revoke',
+        'sender_id.approve'
     )),
     CONSTRAINT ck_security_audit_events__outcome CHECK (outcome IN ('success', 'failure', 'denied', 'enforced')),
     -- "enforced" (a security control was applied: the account was locked) is the outcome of an

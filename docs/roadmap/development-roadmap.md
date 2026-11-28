@@ -193,8 +193,13 @@ credentials, network connectivity (VPN/IP allowlisting).
   with automated expiry (S-4, PG-4) decided and implemented.
 - [ ] `TRUSTED_PROXIES` set to the production load balancer's or reverse proxy's actual addresses (the API refuses to
   start in production without it, G6-15), edge rate limiting or a WAF in front of the API, the password-hashing
-  limits measured on the production hardware, and the sign-in limit defaults reviewed against observed traffic
-  (S-12).
+  limits measured on the production hardware, database-pool contention tested during sign-in floods, the sign-in
+  limit defaults reviewed against observed traffic, and per-`/48` request limits and fair hashing admission evaluated
+  (S-12, G6-24).
+- [ ] Monitoring and alerting of the security controls configured from the metrics and alert conditions of security
+  baseline §9.1, and the monitoring not yet implemented there added (S-13, G6-23).
+- [ ] Platform administration audit (tenant creation, activation, suspension, reactivation; operator attribution)
+  designed and implemented (S-14, G6-25).
 - [ ] Rate limits of the public API per tenant and API key (security baseline §7).
 
 ### Phase 10 — Controlled pilot

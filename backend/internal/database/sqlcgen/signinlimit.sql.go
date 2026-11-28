@@ -12,14 +12,41 @@ import (
 )
 
 const deleteEndedSignInFailureBudgets = `-- name: DeleteEndedSignInFailureBudgets :execrows
-DELETE FROM portal_sign_in_failure_budgets
-WHERE window_start_at <= $1::timestamptz OR failure_count = 0
+
+DELETE FROM portal_sign_in_failure_budgets AS b
+WHERE b.source = ANY (ARRAY(
+        SELECT c.source
+        FROM portal_sign_in_failure_budgets AS c
+        WHERE c.window_start_at <= $1::timestamptz
+        ORDER BY c.window_start_at
+        LIMIT $2
+        FOR UPDATE SKIP LOCKED
+    ))
+  AND b.window_start_at <= $1::timestamptz
 `
 
-// Removes budgets whose window has ended or that hold no reserved slot (an absent row is the same as
-// an empty budget).
-func (q *Queries) DeleteEndedSignInFailureBudgets(ctx context.Context, windowEndedBefore time.Time) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteEndedSignInFailureBudgets, windowEndedBefore)
+type DeleteEndedSignInFailureBudgetsParams struct {
+	WindowEndedBefore time.Time
+	BatchSize         int32
+}
+
+// Cleanup (Limiter.Cleanup). Each statement deletes one bounded batch and commits on its own. The
+// rows of a batch are chosen with FOR UPDATE SKIP LOCKED, so cleanup never waits for a row that a
+// sign-in (or another API instance's cleanup) has locked: it skips the row and a later cycle takes it.
+// A sign-in may wait for the few milliseconds of one batch, but cleanup never waits for a sign-in, so
+// the two cannot deadlock whatever order they lock rows in (a sign-in locks an IPv6 /48 before its
+// /64; one unbatched DELETE locked rows in table order and could deadlock with it). Locking re-checks
+// the latest version of each row, so a row that a sign-in moved to a new window is left alone; the
+// DELETE repeats the predicate as a second check.
+// Deletes up to batch_size budgets whose window has ended (window_start_at <= window_ended_before),
+// oldest first; an ended window holds nothing (the next reservation would start a new one). The batch
+// is chosen through ix_portal_sign_in_failure_budgets__window_start_at and deleted through the
+// primary key, so a batch costs the same however many rows wait. A budget whose reserved slots were
+// all refunded stays until its window ends, like any other: an empty budget and an absent one behave
+// the same, and keeping it avoids an index on the counter (which every reservation and refund
+// changes, so such an index would make every one of those updates a non-HOT update).
+func (q *Queries) DeleteEndedSignInFailureBudgets(ctx context.Context, arg DeleteEndedSignInFailureBudgetsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteEndedSignInFailureBudgets, arg.WindowEndedBefore, arg.BatchSize)
 	if err != nil {
 		return 0, err
 	}
@@ -27,20 +54,32 @@ func (q *Queries) DeleteEndedSignInFailureBudgets(ctx context.Context, windowEnd
 }
 
 const deleteFullSignInRequestBuckets = `-- name: DeleteFullSignInRequestBuckets :execrows
-DELETE FROM portal_sign_in_request_buckets
-WHERE refilled_at <= $1::timestamptz
-  AND (refusal_reported_at IS NULL OR refusal_reported_at <= $2::timestamptz)
+DELETE FROM portal_sign_in_request_buckets AS b
+WHERE b.source = ANY (ARRAY(
+        SELECT c.source
+        FROM portal_sign_in_request_buckets AS c
+        WHERE c.refilled_at <= $1::timestamptz
+          AND (c.refusal_reported_at IS NULL OR c.refusal_reported_at <= $2::timestamptz)
+        ORDER BY c.refilled_at
+        LIMIT $3
+        FOR UPDATE SKIP LOCKED
+    ))
+  AND b.refilled_at <= $1::timestamptz
+  AND (b.refusal_reported_at IS NULL OR b.refusal_reported_at <= $2::timestamptz)
 `
 
 type DeleteFullSignInRequestBucketsParams struct {
 	FullBefore           time.Time
 	ReportIntervalBefore time.Time
+	BatchSize            int32
 }
 
-// Removes buckets that have refilled completely (an absent row is the same as a full bucket) and
-// whose last refusal report is older than the report interval.
+// Deletes up to batch_size buckets that have refilled completely (an absent row is the same as a full
+// bucket) and whose last refusal report is older than the report interval, least recently used first.
+// The batch is chosen through ix_portal_sign_in_request_buckets__refilled_at and deleted through the
+// primary key.
 func (q *Queries) DeleteFullSignInRequestBuckets(ctx context.Context, arg DeleteFullSignInRequestBucketsParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteFullSignInRequestBuckets, arg.FullBefore, arg.ReportIntervalBefore)
+	result, err := q.db.Exec(ctx, deleteFullSignInRequestBuckets, arg.FullBefore, arg.ReportIntervalBefore, arg.BatchSize)
 	if err != nil {
 		return 0, err
 	}

@@ -11,11 +11,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/hruizjr/sms/backend/internal/apikey"
 	"github.com/hruizjr/sms/backend/internal/config"
 	"github.com/hruizjr/sms/backend/internal/database"
 	"github.com/hruizjr/sms/backend/internal/database/dbtest"
 	"github.com/hruizjr/sms/backend/internal/portal"
+	"github.com/hruizjr/sms/backend/internal/tenancy"
 )
 
 func TestIntegrationBootstrapIssuesAWorkingKeyAndRevokes(t *testing.T) {
@@ -67,6 +70,19 @@ func TestIntegrationBootstrapIssuesAWorkingKeyAndRevokes(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
+	// The sender ID approval is in the organization's audit log, as the system actor via smsctl.
+	tid, err := tenancy.ParseID(tenantID[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var approval string
+	if err := db.InTenantTx(ctx, tid, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT actor_type || ' ' || (details->>'sender_id') || ' ' || (details->>'via') FROM security_audit_events
+			WHERE tenant_id = $1 AND action = 'sender_id.approve'`, tid.String()).Scan(&approval)
+	}); err != nil || approval != "system EXAMPLECO smsctl" {
+		t.Errorf("sender ID approval event = %q, %v; want %q", approval, err, "system EXAMPLECO smsctl")
+	}
+
 	keys := apikey.NewService(db)
 	p, err := keys.Authenticate(ctx, token[1])
 	if err != nil || !p.Has(apikey.ScopeMessagesSend) || !p.Has(apikey.ScopeMessagesRead) {

@@ -58,7 +58,7 @@ func TestIntegrationPublicAPIEndToEnd(t *testing.T) {
 		if _, err := tenants.Activate(ctx, tn.ID); err != nil {
 			t.Fatal(err)
 		}
-		if err := msgs.ApproveSenderID(ctx, tn.ID, "EXAMPLECO"); err != nil {
+		if err := msgs.ApproveSenderID(ctx, tn.ID, "EXAMPLECO", "test"); err != nil {
 			t.Fatal(err)
 		}
 		_, token, err := keys.Create(ctx, tn.ID, "test", []apikey.Scope{apikey.ScopeMessagesSend, apikey.ScopeMessagesRead}, audit.System, "")

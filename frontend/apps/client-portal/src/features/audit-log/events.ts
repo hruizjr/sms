@@ -18,6 +18,7 @@ export const ACTION_LABELS: Record<AuditAction, string> = {
   'portal_user.create': 'User creation',
   'portal_user.unlock': 'Account unlock',
   'portal_user.sessions_revoke': 'Session revocation',
+  'sender_id.approve': 'Sender ID approval',
 };
 
 export const ACTIONS = Object.keys(ACTION_LABELS) as AuditAction[];
@@ -76,6 +77,8 @@ export function eventTitle(event: AuditEvent): string {
       return 'Account unlocked';
     case 'portal_user.sessions_revoke':
       return 'Sessions ended';
+    case 'sender_id.approve':
+      return 'Sender ID approved';
   }
 }
 
@@ -94,9 +97,10 @@ export function reasonText(event: AuditEvent): string {
   return REASONS[reason] ?? reason;
 }
 
-/** A short secondary line: the key concerned, the user administered, or the reason. */
+/** A short secondary line: the key concerned, the user administered, the sender ID, or the reason. */
 export function eventSummary(event: AuditEvent): string {
   if (event.action.startsWith('portal_user.') && event.target?.email) return event.target.email;
+  if (event.details.sender_id !== undefined) return event.details.sender_id;
   const name = event.details.api_key_name;
   const reason = reasonText(event);
   if (name !== undefined) return reason === '' ? `“${name}”` : `“${name}” · ${reason}`;

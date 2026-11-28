@@ -1755,8 +1755,30 @@ the contract changes). G6-7 is **superseded** by G6-11; G6-2, G6-4 and G6-8 are 
 | G6-19 | **Production requirement:** an external immutable audit export or externally anchored integrity evidence (security baseline S-8). An internal PostgreSQL hash chain is not claimed to protect against a database superuser |
 | G6-20 | **Engineering corrections and contract changes.** The migration sets `lock_timeout` (5 s; tested); the local stack check derives the expected migration versions from the migration files and checks `migrate status`. Portal API contract: `AuditOutcome` gains `enforced` (a stored outcome changes from `success` to `enforced` for one action — the portal API is not yet published, and the Group 6 PR is unmerged, so no client depends on the old value); `AuditAction` gains the three `portal_user.*` actions; `AuditDetails` gains `dedup_interval_seconds`; sign-in and API key creation gain `503 service-busy`. The public API is unchanged |
 
+### 23.2 Final remediation (2026-11-28)
+
+The final review of commit `761487a` confirmed one defect. The rate-limit cleanup was one `DELETE` that locked
+expired rows in table order, and it could deadlock with a sign-in reservation, which locks an IPv6 `/48` budget
+before its `/64`. It was reproduced in a throwaway database. The review also found gaps: cleanup failures had no
+metric, the token-bucket description in the PR was inaccurate, `smsctl sender-id approve` was not audited, and the
+authentication-availability and monitoring requirements were not written down.
+
+The owner authorized the remediation below on 2026-11-28 (PR #23 stays a Draft). G6-21, G6-23, G6-24 and G6-25
+follow the owner's instructions. The batch bounds in G6-21 and the handling of empty budgets in G6-22 are
+engineering choices made within that authorization and are reported for owner review. No rate-limit threshold
+changes.
+
+| # | Decision |
+| - | -------- |
+| G6-21 | **Cleanup without lock waits.** Cleanup deletes bounded batches whose rows are chosen with `FOR UPDATE SKIP LOCKED`, so it never waits for a row a sign-in (or another instance's cleanup) holds and cannot deadlock with a sign-in. The sign-in lock order (`/48` before `/64`) is unchanged. Each batch is its own transaction: at most 1,000 rows per batch and 50 batches per table and cycle, a 10 s timeout per batch and 60 s per cycle. A cycle runs at process start and then every minute. A batch is chosen through the `window_start_at` / `refilled_at` index and deleted through the primary key. The two tables are cleaned independently. Correctness never depends on cleanup. Regression tests drive the original interaction step by step, synchronized on PostgreSQL lock waits; a control test shows the former statement deadlocks |
+| G6-22 | **Empty budgets stay until their window ends.** The `OR failure_count = 0` predicate, which forced a full scan, is removed. It is not split into a second query, because that would need an index on the counter that every reservation and refund changes (no HOT updates). An empty budget behaves like an absent one |
+| G6-23 | **Cleanup metrics and monitoring requirements.** `sms_signin_limit_cleanup_runs_total{result}`, `_incomplete_runs_total`, `_duration_seconds`, `_deleted_rows_total{table}` and `_last_success_timestamp_seconds`, with no address, user or tenant labels. A failed cycle never moves the last-success time. The alert conditions production monitoring must configure, and the monitoring not yet implemented, are in security baseline §9.1 (S-13) |
+| G6-24 | **Authentication availability is a production gate.** Valid-account sign-ins refund their failure slots and can saturate the shared hashing queue from several sources. Production requirements (S-12): Argon2 throughput measured on production hardware; database-pool contention tested during sign-in floods; an aggregate all-attempt limit per IPv6 `/48` evaluated; fair or per-source hashing admission evaluated; edge rate limiting or a WAF before public deployment; 429, 503 and hashing-queue monitoring. No new threshold without a measured rationale and owner approval |
+| G6-25 | **Sender ID approval audited; platform administration audit is a gate.** `smsctl sender-id approve` (and `bootstrap`) records `sender_id.approve` in the organization's log in the same transaction as the approval, as `sms_app` in the tenant's context. The actor is `system`, with `details.sender_id` and `via: smsctl`; no operator identity is invented. A repeated approval records nothing. Contract: `AuditAction` gains `sender_id.approve` and `AuditDetails` gains `sender_id` (additive). Tenant creation, activation, suspension and reactivation remain unaudited until a platform administration audit design is approved (security baseline S-14; owner: the admin portal / platform administration group) |
+
 **Open (owner decisions or later groups):** audit retention period and expiry (S-4); the external immutable audit
-export (S-8, G6-19); edge rate limiting and production capacity measurements (S-12); an internal, MFA-protected view of platform security events (admin portal, D-021); rate limits of the
+export (S-8, G6-19); edge rate limiting and production capacity measurements (S-12, G6-24); production monitoring
+and alerting (S-13, G6-23); the platform administration audit (S-14, G6-25); an internal, MFA-protected view of platform security events (admin portal, D-021); rate limits of the
 public API per tenant and key (security baseline §7); trusted-proxy configuration of the production hosting
 (D-145). **Out of scope (unchanged):** real SMPP or telco adapters, billing, pricing, user management, admin portal,
 Kafka, RabbitMQ and Redis.

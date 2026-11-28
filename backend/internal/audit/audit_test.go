@@ -42,20 +42,26 @@ func TestEventValidation(t *testing.T) {
 	if err := deduplicated.validate(); err != nil {
 		t.Fatalf("deduplicated refusal: %v", err)
 	}
+	approval := Event{Action: ActionSenderIDApprove, Outcome: OutcomeSuccess, Actor: System, Details: Details{SenderID: "EXAMPLECO", Via: "smsctl"}}
+	if err := approval.validate(); err != nil {
+		t.Fatalf("sender ID approval: %v", err)
+	}
 	invalid := map[string]Event{
-		"platform action":        {Action: ActionSignInRateLimited, Outcome: OutcomeDenied, Actor: Anonymous},
-		"unknown action":         {Action: "portal.password_reset", Outcome: OutcomeSuccess, Actor: Anonymous},
-		"unknown outcome":        {Action: ActionSignIn, Outcome: "maybe", Actor: Anonymous},
-		"success for a lock":     {Action: ActionAccountLocked, Outcome: OutcomeSuccess, Actor: System, Target: &Target{Type: TargetPortalUser, ID: user}},
-		"enforced for a sign-in": {Action: ActionSignIn, Outcome: OutcomeEnforced, Actor: Anonymous},
-		"bad dedup key":          {Action: ActionAPIKeyList, Outcome: OutcomeDenied, Actor: PortalUser(user), DedupKey: "Denied; DROP"},
-		"long dedup key":         {Action: ActionAPIKeyList, Outcome: OutcomeDenied, Actor: PortalUser(user), DedupKey: strings.Repeat("a", 161)},
-		"user without ID":        {Action: ActionSignIn, Outcome: OutcomeSuccess, Actor: Actor{Type: ActorPortalUser}},
-		"anonymous with ID":      {Action: ActionSignIn, Outcome: OutcomeFailure, Actor: Actor{Type: ActorAnonymous, ID: user}},
-		"unknown actor":          {Action: ActionSignIn, Outcome: OutcomeFailure, Actor: Actor{Type: "api_key", ID: user}},
-		"target without ID":      {Action: ActionSignIn, Outcome: OutcomeFailure, Actor: Anonymous, Target: &Target{Type: TargetPortalUser}},
-		"unknown target type":    {Action: ActionSignIn, Outcome: OutcomeFailure, Actor: Anonymous, Target: &Target{Type: "message", ID: user}},
-		"zero-valued everything": {},
+		"approval without sender": {Action: ActionSenderIDApprove, Outcome: OutcomeSuccess, Actor: System},
+		"sender on another event": {Action: ActionSignIn, Outcome: OutcomeSuccess, Actor: PortalUser(user), Details: Details{SenderID: "X"}},
+		"platform action":         {Action: ActionSignInRateLimited, Outcome: OutcomeDenied, Actor: Anonymous},
+		"unknown action":          {Action: "portal.password_reset", Outcome: OutcomeSuccess, Actor: Anonymous},
+		"unknown outcome":         {Action: ActionSignIn, Outcome: "maybe", Actor: Anonymous},
+		"success for a lock":      {Action: ActionAccountLocked, Outcome: OutcomeSuccess, Actor: System, Target: &Target{Type: TargetPortalUser, ID: user}},
+		"enforced for a sign-in":  {Action: ActionSignIn, Outcome: OutcomeEnforced, Actor: Anonymous},
+		"bad dedup key":           {Action: ActionAPIKeyList, Outcome: OutcomeDenied, Actor: PortalUser(user), DedupKey: "Denied; DROP"},
+		"long dedup key":          {Action: ActionAPIKeyList, Outcome: OutcomeDenied, Actor: PortalUser(user), DedupKey: strings.Repeat("a", 161)},
+		"user without ID":         {Action: ActionSignIn, Outcome: OutcomeSuccess, Actor: Actor{Type: ActorPortalUser}},
+		"anonymous with ID":       {Action: ActionSignIn, Outcome: OutcomeFailure, Actor: Actor{Type: ActorAnonymous, ID: user}},
+		"unknown actor":           {Action: ActionSignIn, Outcome: OutcomeFailure, Actor: Actor{Type: "api_key", ID: user}},
+		"target without ID":       {Action: ActionSignIn, Outcome: OutcomeFailure, Actor: Anonymous, Target: &Target{Type: TargetPortalUser}},
+		"unknown target type":     {Action: ActionSignIn, Outcome: OutcomeFailure, Actor: Anonymous, Target: &Target{Type: "message", ID: user}},
+		"zero-valued everything":  {},
 	}
 	for name, ev := range invalid {
 		if err := ev.validate(); err == nil {
@@ -70,7 +76,7 @@ func TestDetailsFields(t *testing.T) {
 	until := time.Date(2026, 11, 28, 9, 15, 0, 0, time.UTC)
 	b, err := json.Marshal(Details{
 		Reason: ReasonTooManyAttempts, APIKeyName: "n", APIKeyScopes: []string{"messages:send"}, Role: "viewer",
-		RequiredPermission: "api_keys:manage", LockedUntil: &until, Via: "smsctl", DedupIntervalSeconds: 300,
+		RequiredPermission: "api_keys:manage", LockedUntil: &until, Via: "smsctl", SenderID: "EXAMPLECO", DedupIntervalSeconds: 300,
 		Limit: 5, WindowSeconds: 60, RatePerSecond: 10, SourcePrefixLength: 48,
 	})
 	if err != nil {
@@ -81,7 +87,7 @@ func TestDetailsFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"api_key_name", "api_key_scopes", "dedup_interval_seconds", "limit", "locked_until", "rate_per_second", "reason",
-		"required_permission", "role", "source_prefix_length", "via", "window_seconds"}
+		"required_permission", "role", "sender_id", "source_prefix_length", "via", "window_seconds"}
 	if len(fields) != len(want) {
 		t.Errorf("Details fields = %v, want %v", fields, want)
 	}

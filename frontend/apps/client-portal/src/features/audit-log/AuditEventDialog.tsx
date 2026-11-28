@@ -65,6 +65,11 @@ function EventDetails({ event }: { event: AuditEvent }) {
           )}
         </DescriptionItem>
       )}
+      {details.sender_id !== undefined && (
+        <DescriptionItem term="Sender ID">
+          <span className="font-mono text-xs break-words">{details.sender_id}</span>
+        </DescriptionItem>
+      )}
       {details.api_key_scopes !== undefined && (
         <DescriptionItem term="Permissions">
           <span className="flex flex-wrap gap-1">

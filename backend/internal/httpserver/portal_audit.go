@@ -95,7 +95,7 @@ func toPortalAuditEvent(e audit.Entry) portalapi.AuditEvent {
 		out.Target = &t
 	}
 	d := e.Details
-	out.Details = portalapi.AuditDetails{ApiKeyName: optionalString(d.APIKeyName), Via: optionalString(d.Via)}
+	out.Details = portalapi.AuditDetails{ApiKeyName: optionalString(d.APIKeyName), Via: optionalString(d.Via), SenderId: optionalString(d.SenderID)}
 	if d.Reason != "" {
 		reason := string(d.Reason)
 		out.Details.Reason = &reason

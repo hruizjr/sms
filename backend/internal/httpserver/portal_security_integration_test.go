@@ -389,7 +389,7 @@ func TestIntegrationPortalAuditLog(t *testing.T) {
 	fixed := time.Date(2026, 11, 28, 9, 1, 0, 0, time.UTC)
 	h := e.routerWith(t, e.limiter(t, highSignInLimits, time.Now), e.accounts, func() time.Time { return fixed })
 	tenantA, tenantB := e.tenant(t, "Audit Co A"), e.tenant(t, "Audit Co B")
-	if err := e.msgs.ApproveSenderID(e.ctx, tenantA, "AUDITCO"); err != nil {
+	if err := e.msgs.ApproveSenderID(e.ctx, tenantA, "AUDITCO", "test"); err != nil {
 		t.Fatal(err)
 	}
 	user := func(tenantID tenancy.ID, email string, role portal.Role) {
@@ -558,6 +558,7 @@ func TestIntegrationPortalAuditLog(t *testing.T) {
 	)
 	failedSender := summary{"portal.sign_in", "failure", "anonymous", "portal_user " + s, "invalid_password"}
 	want := []summary{
+		{"sender_id.approve", "success", "system", "", ""},
 		{"portal_user.create", "success", "system", "portal_user " + o, ""},
 		{"portal_user.create", "success", "system", "portal_user " + s, ""},
 		{"portal_user.create", "success", "system", "portal_user " + v, ""},
@@ -596,6 +597,10 @@ func TestIntegrationPortalAuditLog(t *testing.T) {
 			if ev.RequestId == nil || *ev.RequestId != "audit-req-1" || ev.SourceIp == nil || *ev.SourceIp != "203.0.113.50" ||
 				ev.UserAgent == nil || *ev.UserAgent != "Mozilla/5.0 (Audit Test)" {
 				t.Errorf("sign-in source: request %v ip %v agent %v", ev.RequestId, ev.SourceIp, ev.UserAgent)
+			}
+		case ev.Action == "sender_id.approve":
+			if ev.Details.SenderId == nil || *ev.Details.SenderId != "AUDITCO" || ev.Details.Via == nil || *ev.Details.Via != "test" || ev.Target != nil {
+				t.Errorf("sender ID approval details: %+v, target %+v", ev.Details, ev.Target)
 			}
 		case ev.Action == "api_key.create" && ev.Outcome == "success" && *ev.Details.ApiKeyName == "Order notifications":
 			if ev.Target.Id == nil || *ev.Target.Id != sendKey.ApiKey.Id || len(*ev.Details.ApiKeyScopes) != 2 {

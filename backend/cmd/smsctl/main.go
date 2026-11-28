@@ -188,7 +188,7 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		if err := c.messages.ApproveSenderID(ctx, t.ID, *sender); err != nil {
+		if err := c.messages.ApproveSenderID(ctx, t.ID, *sender, smsctlName); err != nil {
 			return err
 		}
 		say(c.out, "sender ID approved: %s\n", *sender)
@@ -228,7 +228,7 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		if *sender == "" {
 			return usageError{"--sender-id is required"}
 		}
-		if err := c.messages.ApproveSenderID(ctx, id, *sender); err != nil {
+		if err := c.messages.ApproveSenderID(ctx, id, *sender, smsctlName); err != nil {
 			return err
 		}
 		say(c.out, "sender ID approved: %s\n", *sender)
@@ -378,8 +378,8 @@ func (c *cli) createActiveTenant(ctx context.Context, name string) (tenancy.Tena
 	return t, nil
 }
 
-// smsctlName names this tool in the audit events of the API keys it creates and revokes (actor
-// "system", details.via).
+// smsctlName names this tool in the audit events of the API keys it creates and revokes and of the
+// sender IDs it approves (actor "system", details.via).
 const smsctlName = "smsctl"
 
 func (c *cli) createKey(ctx context.Context, tenantID tenancy.ID, label, scopes string) error {

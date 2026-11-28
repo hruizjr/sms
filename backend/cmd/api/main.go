@@ -149,11 +149,12 @@ func run() error {
 		FailuresPerIPv4: cfg.SignInLimit.FailuresPerIPv4, FailuresPerIPv6Subnet: cfg.SignInLimit.FailuresPerIPv6Subnet,
 		FailuresPerIPv6Aggregate: cfg.SignInLimit.FailuresPerIPv6Aggregate, FailureWindow: cfg.SignInLimit.FailureWindow,
 		RequestsPerSecond: cfg.SignInLimit.RequestsPerSecond, RequestBurst: cfg.SignInLimit.RequestBurst,
-	})
+	}, signinlimit.WithCleanupMetrics(metrics))
 	if err != nil {
 		return err
 	}
-	// Deletes ended rate-limit windows until shutdown; waited for before the pool is closed.
+	// Deletes ended rate-limit windows (at once, then every minute) until shutdown, reporting every
+	// cycle to the metrics; waited for before the pool is closed.
 	cleanupCtx, stopCleanup := context.WithCancel(ctx)
 	cleanupDone := make(chan struct{})
 	go func() {

@@ -28,6 +28,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/hruizjr/sms/backend/internal/audit"
 	"github.com/hruizjr/sms/backend/internal/database"
 	"github.com/hruizjr/sms/backend/internal/database/sqlcgen"
 	"github.com/hruizjr/sms/backend/internal/messaging/provider"
@@ -272,14 +273,29 @@ func (s *Service) Get(ctx context.Context, tenantID tenancy.ID, id MessageID) (M
 }
 
 // ApproveSenderID approves senderID for tenantID (local administration; there is no public
-// sender-ID management API).
-func (s *Service) ApproveSenderID(ctx context.Context, tenantID tenancy.ID, senderID string) error {
+// sender-ID management API). A new approval is recorded in the organization's security audit log
+// (sender_id.approve, system actor, details naming the sender ID and via, the administration tool) in
+// the same transaction: the approval exists only together with its event. Approving a sender ID that
+// is already approved changes nothing and records nothing. The actor is the system: the local
+// administration tool has no operator identity, so the event does not say which person approved.
+func (s *Service) ApproveSenderID(ctx context.Context, tenantID tenancy.ID, senderID, via string) error {
 	if n := utf8.RuneCountInString(senderID); n < 1 || n > 32 {
 		return fmt.Errorf("sender ID must be 1 to 32 characters")
 	}
-	return s.db.InTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
-		return sqlcgen.New(tx).ApproveSenderID(ctx, sqlcgen.ApproveSenderIDParams{TenantID: pgUUID(tenantID), SenderID: senderID})
+	err := s.db.InTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		n, err := sqlcgen.New(tx).ApproveSenderID(ctx, sqlcgen.ApproveSenderIDParams{TenantID: pgUUID(tenantID), SenderID: senderID})
+		if err != nil || n == 0 {
+			return err
+		}
+		return audit.Insert(ctx, tx, tenantID, audit.Event{
+			Action: audit.ActionSenderIDApprove, Outcome: audit.OutcomeSuccess, Actor: audit.System,
+			Details: audit.Details{SenderID: senderID, Via: via},
+		})
 	})
+	if err != nil {
+		return fmt.Errorf("approve sender ID: %w", err)
+	}
+	return nil
 }
 
 // ListSenderIDs returns the approved sender IDs of tenantID, in order.

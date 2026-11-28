@@ -89,6 +89,8 @@ const (
 	ActionPortalUserUnlock Action = "portal_user.unlock"
 	// ActionPortalUserSessionsRevoke: the local administration tool ended a portal user's sessions.
 	ActionPortalUserSessionsRevoke Action = "portal_user.sessions_revoke"
+	// ActionSenderIDApprove: the local administration tool approved a sender ID for the organization.
+	ActionSenderIDApprove Action = "sender_id.approve"
 )
 
 // Actions of platform events (platform_security_events): no organization can be identified.
@@ -101,7 +103,7 @@ const (
 var TenantActions = []Action{
 	ActionSignIn, ActionSignOut, ActionAccountLocked,
 	ActionAPIKeyCreate, ActionAPIKeyRevoke, ActionAPIKeyList, ActionAuditLogList,
-	ActionPortalUserCreate, ActionPortalUserUnlock, ActionPortalUserSessionsRevoke,
+	ActionPortalUserCreate, ActionPortalUserUnlock, ActionPortalUserSessionsRevoke, ActionSenderIDApprove,
 }
 
 // platformActions are the actions of platform events.
@@ -196,6 +198,8 @@ type Details struct {
 	LockedUntil *time.Time `json:"locked_until,omitempty"`
 	// Via names the local administration tool for actions it performed ("smsctl").
 	Via string `json:"via,omitempty"`
+	// SenderID is the sender ID that was approved (ActionSenderIDApprove; a sender name, not secret).
+	SenderID string `json:"sender_id,omitempty"`
 	// DedupIntervalSeconds is set on a refusal recorded once per actor, action and interval of this
 	// many seconds: repeated refusals in the same interval are not recorded again.
 	DedupIntervalSeconds int `json:"dedup_interval_seconds,omitempty"`
@@ -371,6 +375,8 @@ func (ev Event) validate() error {
 		return fmt.Errorf("%w: outcome %q is not valid for %q", ErrInvalidEvent, ev.Outcome, ev.Action)
 	case ev.DedupKey != "" && !dedupKeyAllowed(ev.DedupKey):
 		return fmt.Errorf("%w: deduplication key %q", ErrInvalidEvent, ev.DedupKey)
+	case (ev.Details.SenderID != "") != (ev.Action == ActionSenderIDApprove):
+		return fmt.Errorf("%w: a sender ID belongs to %q events only, and is required there", ErrInvalidEvent, ActionSenderIDApprove)
 	}
 	switch ev.Actor.Type {
 	case ActorPortalUser:

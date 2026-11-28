@@ -138,7 +138,7 @@ func TestIntegrationPortalEndToEnd(t *testing.T) {
 		if _, err := tenants.Activate(ctx, tn.ID); err != nil {
 			t.Fatal(err)
 		}
-		if err := msgs.ApproveSenderID(ctx, tn.ID, sender); err != nil {
+		if err := msgs.ApproveSenderID(ctx, tn.ID, sender, "test"); err != nil {
 			t.Fatal(err)
 		}
 		return tn.ID

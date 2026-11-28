@@ -55,15 +55,48 @@ SET tokens = CASE WHEN LEAST(@burst::float8, b.tokens + GREATEST(0, date_part('e
     END
 RETURNING tokens, last_allowed, last_reported;
 
+-- Cleanup (Limiter.Cleanup). Each statement deletes one bounded batch and commits on its own. The
+-- rows of a batch are chosen with FOR UPDATE SKIP LOCKED, so cleanup never waits for a row that a
+-- sign-in (or another API instance's cleanup) has locked: it skips the row and a later cycle takes it.
+-- A sign-in may wait for the few milliseconds of one batch, but cleanup never waits for a sign-in, so
+-- the two cannot deadlock whatever order they lock rows in (a sign-in locks an IPv6 /48 before its
+-- /64; one unbatched DELETE locked rows in table order and could deadlock with it). Locking re-checks
+-- the latest version of each row, so a row that a sign-in moved to a new window is left alone; the
+-- DELETE repeats the predicate as a second check.
+
 -- name: DeleteEndedSignInFailureBudgets :execrows
--- Removes budgets whose window has ended or that hold no reserved slot (an absent row is the same as
--- an empty budget).
-DELETE FROM portal_sign_in_failure_budgets
-WHERE window_start_at <= @window_ended_before::timestamptz OR failure_count = 0;
+-- Deletes up to batch_size budgets whose window has ended (window_start_at <= window_ended_before),
+-- oldest first; an ended window holds nothing (the next reservation would start a new one). The batch
+-- is chosen through ix_portal_sign_in_failure_budgets__window_start_at and deleted through the
+-- primary key, so a batch costs the same however many rows wait. A budget whose reserved slots were
+-- all refunded stays until its window ends, like any other: an empty budget and an absent one behave
+-- the same, and keeping it avoids an index on the counter (which every reservation and refund
+-- changes, so such an index would make every one of those updates a non-HOT update).
+DELETE FROM portal_sign_in_failure_budgets AS b
+WHERE b.source = ANY (ARRAY(
+        SELECT c.source
+        FROM portal_sign_in_failure_budgets AS c
+        WHERE c.window_start_at <= @window_ended_before::timestamptz
+        ORDER BY c.window_start_at
+        LIMIT @batch_size
+        FOR UPDATE SKIP LOCKED
+    ))
+  AND b.window_start_at <= @window_ended_before::timestamptz;
 
 -- name: DeleteFullSignInRequestBuckets :execrows
--- Removes buckets that have refilled completely (an absent row is the same as a full bucket) and
--- whose last refusal report is older than the report interval.
-DELETE FROM portal_sign_in_request_buckets
-WHERE refilled_at <= @full_before::timestamptz
-  AND (refusal_reported_at IS NULL OR refusal_reported_at <= @report_interval_before::timestamptz);
+-- Deletes up to batch_size buckets that have refilled completely (an absent row is the same as a full
+-- bucket) and whose last refusal report is older than the report interval, least recently used first.
+-- The batch is chosen through ix_portal_sign_in_request_buckets__refilled_at and deleted through the
+-- primary key.
+DELETE FROM portal_sign_in_request_buckets AS b
+WHERE b.source = ANY (ARRAY(
+        SELECT c.source
+        FROM portal_sign_in_request_buckets AS c
+        WHERE c.refilled_at <= @full_before::timestamptz
+          AND (c.refusal_reported_at IS NULL OR c.refusal_reported_at <= @report_interval_before::timestamptz)
+        ORDER BY c.refilled_at
+        LIMIT @batch_size
+        FOR UPDATE SKIP LOCKED
+    ))
+  AND b.refilled_at <= @full_before::timestamptz
+  AND (b.refusal_reported_at IS NULL OR b.refusal_reported_at <= @report_interval_before::timestamptz);

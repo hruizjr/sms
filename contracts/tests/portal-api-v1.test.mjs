@@ -216,9 +216,11 @@ test('password checks declare 503 service-busy with Retry-After', () => {
 test('refused requests carry their deduplication interval; administration actions are listed', () => {
   const details = spec.components.schemas.AuditDetails.properties;
   assert.equal(details.dedup_interval_seconds.type, 'integer');
-  for (const action of ['portal_user.create', 'portal_user.unlock', 'portal_user.sessions_revoke']) {
+  for (const action of ['portal_user.create', 'portal_user.unlock', 'portal_user.sessions_revoke', 'sender_id.approve']) {
     assert.ok(spec.components.schemas.AuditAction.enum.includes(action), action);
   }
+  assert.equal(details.sender_id.type, 'string');
+  assert.equal(details.sender_id.maxLength, 32);
 });
 
 test('API keys report when they were last used, nullable', () => {

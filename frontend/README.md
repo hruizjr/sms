@@ -33,7 +33,8 @@ dialog (request ID, IP address, browser). The API keys page shows when each key 
 when it never was; recorded at most once a minute). A sign-in refused by the per-source limits (`429`), or a busy service
 (`503`, also on API key creation), explains how long to wait, from `Retry-After`. Each event's outcome badge shows the
 stored outcome exactly (an account lock is stored as **Enforced**; no badge relabels another value). Sender and
-Viewer see no audit log link; the server refuses them in any case.
+Viewer see no audit log link; the server refuses them in any case. A sender ID approval by the administration tool
+appears as "Sender ID approved" with the sender ID (decision log §23.2).
 
 Not here yet, each needing separate owner approval: an admin portal; billing or cost display; user or sender ID
 management; bulk sending; router, data-fetching, form or headless UI libraries.

@@ -276,11 +276,12 @@ export interface components {
          *     `portal.account_locked` (repeated failed attempts locked the account), `api_key.create`,
          *     `api_key.revoke`, `api_key.list` (recorded only when refused), `audit_log.list` (recorded only
          *     when refused), and, performed by the platform's administration tool, `portal_user.create`,
-         *     `portal_user.unlock` (the account lockout was cleared) and `portal_user.sessions_revoke` (the
-         *     user's sessions were ended).
+         *     `portal_user.unlock` (the account lockout was cleared), `portal_user.sessions_revoke` (the
+         *     user's sessions were ended) and `sender_id.approve` (a sender ID was approved for the
+         *     organization; `details.sender_id` names it).
          * @enum {string}
          */
-        AuditAction: "portal.sign_in" | "portal.sign_out" | "portal.account_locked" | "api_key.create" | "api_key.revoke" | "api_key.list" | "audit_log.list" | "portal_user.create" | "portal_user.unlock" | "portal_user.sessions_revoke";
+        AuditAction: "portal.sign_in" | "portal.sign_out" | "portal.account_locked" | "api_key.create" | "api_key.revoke" | "api_key.list" | "audit_log.list" | "portal_user.create" | "portal_user.unlock" | "portal_user.sessions_revoke" | "sender_id.approve";
         /** @description Structured, non-secret details. Only the fields that apply are present. */
         AuditDetails: {
             /** @description The name of the API key that was created or revoked. */
@@ -304,6 +305,8 @@ export interface components {
             required_permission?: components["schemas"]["Permission"];
             /** @description The role of a refused user, or the role given to a created user. */
             role?: components["schemas"]["Role"];
+            /** @description The sender ID that was approved (`sender_id.approve` only). */
+            sender_id?: string;
             /** @description The administration tool that performed a system action (`smsctl`). */
             via?: string;
         };

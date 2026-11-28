@@ -176,16 +176,35 @@ func TestIntegrationFailureBudgetReserveAndRefund(t *testing.T) {
 		t.Errorf("first refusal of the new window: %+v, want reported", r)
 	}
 
-	// Cleanup removes ended windows and empty budgets only.
+	// Cleanup removes ended windows only. A budget whose slots were all refunded stays until its
+	// window ends (an empty budget behaves like an absent one).
 	c.Advance(16 * time.Minute)
 	admit(t, ctx, l, "203.0.113.12") // a pending slot in an open window
 	empty := admit(t, ctx, l, "203.0.113.13")
 	refund(t, ctx, l, empty)
-	if _, err := l.Cleanup(ctx); err != nil {
+	res, err := l.Cleanup(ctx)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if n := count(t, ctx, admin, `SELECT count(*) FROM portal_sign_in_failure_budgets`); n != 1 {
-		t.Errorf("%d budgets after cleanup, want 1 (the open one)", n)
+	if res.FailureBudgets != 2 || !res.Complete { // the two ended windows of .10 and .11
+		t.Errorf("cleanup = %+v, want 2 ended budgets deleted, complete", res)
+	}
+	if n := count(t, ctx, admin, `SELECT count(*) FROM portal_sign_in_failure_budgets`); n != 2 {
+		t.Errorf("%d budgets after cleanup, want 2 (the open and the open empty one)", n)
+	}
+	// The empty budget keeps counting in its own window: a failure after the refund is counted.
+	if a := admit(t, ctx, l, "203.0.113.13"); !a.Allowed {
+		t.Fatal("empty budget refused")
+	}
+	if n := count(t, ctx, admin, `SELECT failure_count FROM portal_sign_in_failure_budgets WHERE source = '203.0.113.13/32'`); n != 1 {
+		t.Errorf("failure_count of the empty budget after one failure = %d, want 1", n)
+	}
+	c.Advance(15 * time.Minute)
+	if res, err := l.Cleanup(ctx); err != nil || res.FailureBudgets != 2 {
+		t.Errorf("cleanup after the windows ended = %+v, %v; want 2 deleted", res, err)
+	}
+	if n := count(t, ctx, admin, `SELECT count(*) FROM portal_sign_in_failure_budgets`); n != 0 {
+		t.Errorf("%d budgets after their windows ended, want 0", n)
 	}
 }
 

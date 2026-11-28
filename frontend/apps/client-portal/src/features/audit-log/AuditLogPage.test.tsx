@@ -228,6 +228,37 @@ describe('AuditLogPage', () => {
     expect(dialog).toHaveTextContent('Rolesender');
   });
 
+  it('describes a sender ID approval by the administration tool', async () => {
+    renderApp(
+      '/audit-log',
+      withAudit('owner', () =>
+        page([
+          auditEventFixture({
+            action: 'sender_id.approve',
+            outcome: 'success',
+            actor: { type: 'system', id: null, email: null },
+            target: null,
+            request_id: null,
+            source_ip: null,
+            user_agent: null,
+            details: { sender_id: 'EXAMPLECO', via: 'smsctl' },
+          }),
+        ]),
+      ),
+    );
+    const table = await screen.findByRole('table');
+    const row = within(table).getAllByRole('row')[1];
+    expect(row).toHaveTextContent('Sender ID approved');
+    expect(row).toHaveTextContent('System (smsctl)');
+    expect(row).toHaveTextContent('EXAMPLECO');
+    fireEvent.click(
+      within(table).getByRole('button', { name: /^Details of “Sender ID approved”/ }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Sender ID approved' });
+    expect(dialog).toHaveTextContent('Sender IDEXAMPLECO');
+    expect(screen.getByRole('option', { name: 'Sender ID approval' })).toBeInTheDocument();
+  });
+
   it('refuses an end date before the start date without a request', async () => {
     const { transport } = renderApp(
       '/audit-log',
