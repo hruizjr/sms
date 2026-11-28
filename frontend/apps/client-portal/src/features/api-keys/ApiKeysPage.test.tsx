@@ -263,7 +263,12 @@ describe('API keys page', () => {
     fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Billing' } });
     typePassword(dialog, 'not my password');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create key' }));
-    expect(await within(dialog).findByText(/password is incorrect/)).toBeInTheDocument();
+    // The same message covers a locked account (the server does not say which).
+    expect(
+      await within(dialog).findByText(
+        'The password is incorrect, or your account is temporarily locked after too many attempts.',
+      ),
+    ).toBeInTheDocument();
     const field = within(dialog).getByLabelText('Your current password');
     expect(field).toHaveValue('');
     expect(field).toHaveAttribute('aria-invalid', 'true');
@@ -277,6 +282,25 @@ describe('API keys page', () => {
     expect(document.body.innerHTML).not.toContain('not my password');
   });
   /* eslint-enable no-restricted-properties */
+
+  it('explains a server refusal of the role (403 forbidden) and shows no key', async () => {
+    renderApp(
+      '/api-keys',
+      signedIn('owner', {
+        [LIST]: () => keys(),
+        [CREATE]: () => problem(403, 'forbidden'),
+      }),
+    );
+    const dialog = await openCreateDialog();
+    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Billing' } });
+    typePassword(dialog);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create key' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Your role does not allow managing API keys.',
+    );
+    expect(within(dialog).getByLabelText('Your current password')).toHaveValue('');
+    expect(screen.queryByLabelText('Your new API key')).not.toBeInTheDocument();
+  });
 
   it('asks for confirmation before revoking, and can be cancelled', async () => {
     const { transport } = renderApp(

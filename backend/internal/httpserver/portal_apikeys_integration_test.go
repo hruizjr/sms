@@ -101,13 +101,14 @@ func TestIntegrationPortalAPIKeys(t *testing.T) {
 		}
 	}
 
-	// 2. Senders and viewers may not manage keys (MVP-03: owners only).
+	// 2. Senders and viewers may not manage keys (MVP-03: owners only), even with their own correct
+	// current password: the permission is checked before re-authentication.
 	for name, c := range map[string]*portalClient{"sender": sender, "viewer": viewer} {
 		if code, _, b := c.do(http.MethodGet, "/portal/v1/api-keys", "", nil); code != http.StatusForbidden || problemType(t, b) != "forbidden" {
 			t.Errorf("%s lists keys: %d %s", name, code, b)
 		}
-		if code, _, b := c.send(http.MethodPost, "/portal/v1/api-keys", createBody, nil); code != http.StatusForbidden || problemType(t, b) != "forbidden" {
-			t.Errorf("%s creates a key: %d %s", name, code, b)
+		if code, _, b := c.send(http.MethodPost, "/portal/v1/api-keys", createBody, nil); code != http.StatusForbidden || problemType(t, b) != "forbidden" || strings.Contains(string(b), "smsk_") {
+			t.Errorf("%s creates a key with a correct password: %d %s", name, code, b)
 		}
 		if code, _, b := c.send(http.MethodDelete, existingPath, "", nil); code != http.StatusForbidden || problemType(t, b) != "forbidden" {
 			t.Errorf("%s revokes a key: %d %s", name, code, b)
@@ -156,8 +157,29 @@ func TestIntegrationPortalAPIKeys(t *testing.T) {
 	if code != http.StatusForbidden || problemType(t, b) != "reauthentication-failed" || strings.Contains(string(b), "smsk_") || strings.Contains(string(b), wrongPassword) {
 		t.Errorf("wrong password: %d %s", code, b)
 	}
+
+	// Regression (G4-7): the password must be the signed-in owner's own. Another owner's correct
+	// password does not re-authenticate this owner.
+	otherOwnerPassword := "a different owner password"
+	if _, err := accounts.CreateUser(ctx, tenantA, "second-owner@a.example.invalid", portal.RoleOwner, otherOwnerPassword); err != nil {
+		t.Fatal(err)
+	}
+	secondOwner := &portalClient{t: t, h: h}
+	if code, b := secondOwner.signIn("second-owner@a.example.invalid", otherOwnerPassword); code != http.StatusOK {
+		t.Fatalf("second owner sign-in: %d %s", code, b)
+	}
+	if code, _, b := owner.send(http.MethodPost, "/portal/v1/api-keys", `{"name":"k","scopes":["messages:send"],"current_password":"`+otherOwnerPassword+`"}`, nil); code != http.StatusForbidden || problemType(t, b) != "reauthentication-failed" {
+		t.Errorf("owner with another owner's password: %d %s", code, b)
+	}
+	if code, _, b := secondOwner.send(http.MethodPost, "/portal/v1/api-keys", withPassword(`"name":"k","scopes":["messages:send"]`), nil); code != http.StatusForbidden || problemType(t, b) != "reauthentication-failed" {
+		t.Errorf("second owner with the first owner's password: %d %s", code, b)
+	}
+
+	// Regression (G4-7): none of the requests above (no session, wrong role, no CSRF token, invalid
+	// or missing current_password, wrong or someone else's password) created a key; the tenant still
+	// has only the key created before the test.
 	if keysNow, err := keys.List(ctx, tenantA); err != nil || len(keysNow) != 1 {
-		t.Errorf("a key was created despite the wrong password: %d keys, %v", len(keysNow), err)
+		t.Errorf("a key was created without a successful re-authentication: %d keys, %v", len(keysNow), err)
 	}
 
 	// 6. Create: 201 with the full key once, uncached; the key is never logged.
