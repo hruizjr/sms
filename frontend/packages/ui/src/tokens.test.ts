@@ -54,6 +54,12 @@ const textPairs: [foreground: string, background: string][] = [
   ['text', 'info-subtle'],
   ['text', 'success-subtle'],
   ['code-foreground', 'code'],
+  ['nav-foreground', 'nav'],
+  ['nav-muted', 'nav'],
+  ['nav-active-foreground', 'nav-raised'],
+  ['nav-foreground', 'nav-raised'],
+  ['nav-muted', 'nav-raised'],
+  ['nav-active-foreground', 'nav'],
 ];
 
 // Focus indicators and component boundaries against the backgrounds they sit on:
@@ -70,6 +76,8 @@ const nonTextPairs: [foreground: string, background: string][] = [
   ['focus', 'surface-subtle'],
   ['border-strong', 'surface-subtle'],
   ['focus', 'primary-subtle'],
+  ['nav-focus', 'nav'],
+  ['nav-focus', 'nav-raised'],
 ];
 
 describe('design tokens', () => {

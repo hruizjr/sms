@@ -12,12 +12,13 @@ export type BadgeProps = {
   children: ReactNode;
 };
 
+/* A tinted background with a light border of the same hue; the text has AA contrast on the tint. */
 const toneClasses: Record<BadgeTone, string> = {
   neutral: 'border-border bg-surface-subtle text-text-muted',
-  info: 'border-info bg-info-subtle text-info',
-  success: 'border-success bg-success-subtle text-success',
-  warning: 'border-warning bg-warning-subtle text-warning',
-  danger: 'border-danger bg-danger-subtle text-danger',
+  info: 'border-info/30 bg-info-subtle text-info',
+  success: 'border-success/30 bg-success-subtle text-success',
+  warning: 'border-warning/30 bg-warning-subtle text-warning',
+  danger: 'border-danger/30 bg-danger-subtle text-danger',
 };
 
 /** A compact label for a status or attribute: tinted background, border, optional icon and text. */
@@ -25,7 +26,7 @@ export function Badge({ tone = 'neutral', icon, className, children }: BadgeProp
   return (
     <span
       className={classNames(
-        'inline-flex items-center gap-1 rounded-control border px-2 py-0.5 text-xs leading-5 font-medium whitespace-nowrap',
+        'inline-flex items-center gap-1 rounded-full border px-2 py-px text-xs leading-5 font-medium whitespace-nowrap',
         toneClasses[tone],
         className,
       )}

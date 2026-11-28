@@ -85,7 +85,7 @@ export function ComposePage({ newIdempotencyKey = defaultKey }: ComposePageProps
   return (
     <div>
       <PageHeader
-        back={{ to: '/messages', label: 'Messages' }}
+        breadcrumbs={[{ to: '/messages', label: 'Messages' }]}
         title="Send SMS"
         description="Send one SMS to one Philippine mobile number. Acceptance is confirmed immediately; delivery is reported later by the provider."
       />
@@ -306,140 +306,202 @@ function ComposeForm({ newIdempotencyKey }: { newIdempotencyKey: () => string })
           : '';
 
   return (
-    <div className="grid items-start gap-6 lg:grid-cols-3">
-      <Card heading="Compose" className="lg:col-span-2">
-        <form noValidate onSubmit={onReview} className="space-y-5">
-          {failure !== undefined && (
-            <Alert tone="error" title={failure.title}>
-              {failure.detail}
-            </Alert>
-          )}
-          <div className="grid gap-5 sm:grid-cols-2">
-            <TextField
-              label="Recipient mobile number"
-              type="tel"
-              name="to"
-              inputMode="tel"
-              autoComplete="off"
-              placeholder="+639171234567"
-              value={fields.to}
-              onChange={(e) => {
-                update('to', e.target.value);
-              }}
-              disabled={reviewing}
-              error={errors.to}
-              hint="One Philippine mobile number in international format (+639…)."
-            />
-            <SelectField
-              label="Sender ID"
-              name="sender_id"
-              value={fields.senderId}
-              onChange={(e) => {
-                update('senderId', e.target.value);
-              }}
-              disabled={reviewing}
-              error={errors.senderId}
-              hint="Only your organization’s approved sender IDs are listed."
-            >
-              <option value="">Choose a sender ID</option>
-              {senderIds.ids.map((id) => (
-                <option key={id} value={id}>
-                  {id}
-                </option>
-              ))}
-            </SelectField>
-          </div>
-          <TextAreaField
-            label="Message"
-            name="body"
-            rows={7}
-            value={fields.body}
-            onChange={(e) => {
-              update('body', e.target.value);
-            }}
-            disabled={reviewing}
-            error={errors.body}
-            hint={
-              <span
-                aria-live="polite"
-                data-testid="message-counter"
-                className="flex flex-wrap justify-between gap-x-4 gap-y-1"
-              >
-                <span className="tabular-nums">
-                  {characters} / {MAX_CHARACTERS} characters
-                </span>
-                {segmentsText !== '' && <span>{segmentsText}</span>}
-              </span>
-            }
-          />
-          {!reviewing && (
-            <div className="flex justify-end border-t border-border pt-4">
-              <Button type="submit">Review message</Button>
-            </div>
-          )}
-        </form>
-      </Card>
-
-      {reviewing ? (
-        <div ref={reviewRef} tabIndex={-1} className="focus:outline-none">
-          <Card heading="Review and send" description="Check the details before sending.">
-            <dl className="divide-y divide-border">
-              <ReviewRow term="Recipients">1 ({normalizeNumber(fields.to)})</ReviewRow>
-              <ReviewRow term="Sender ID">{fields.senderId}</ReviewRow>
-              <ReviewRow term="Segments">
-                {estimate.status === 'ready'
-                  ? `${String(estimate.value.segment_count)} · ${encodingLabel(estimate.value.encoding)}`
-                  : 'Calculated by the platform on submission'}
-              </ReviewRow>
-              <ReviewRow term="Estimated cost">
-                Not available: billing is not enabled yet.
-              </ReviewRow>
-            </dl>
-            <p className="mt-3 text-xs text-text-muted">
-              Acceptance means the platform stored your message for sending; delivery is reported
-              later by the provider.
-            </p>
-            <div className="mt-4 flex flex-col gap-2">
-              <Button loading={sending} onClick={() => void send()}>
-                {sending ? 'Sending…' : 'Send message'}
-              </Button>
-              <Button
-                variant="secondary"
-                disabled={sending}
-                onClick={() => {
-                  setReviewing(false);
+    <div className="space-y-6">
+      <Steps reviewing={reviewing} />
+      <div className="grid items-start gap-6 lg:grid-cols-3">
+        <Card
+          heading="Compose"
+          description="Recipient, sender ID and message text"
+          className="lg:col-span-2"
+        >
+          <form noValidate onSubmit={onReview} className="space-y-5">
+            {failure !== undefined && (
+              <Alert tone="error" title={failure.title}>
+                {failure.detail}
+              </Alert>
+            )}
+            <div className="grid gap-5 sm:grid-cols-2">
+              <TextField
+                label="Recipient mobile number"
+                type="tel"
+                name="to"
+                inputMode="tel"
+                autoComplete="off"
+                placeholder="+639171234567"
+                value={fields.to}
+                onChange={(e) => {
+                  update('to', e.target.value);
                 }}
+                disabled={reviewing}
+                error={errors.to}
+                hint="One Philippine mobile number in international format (+639…)."
+              />
+              <SelectField
+                label="Sender ID"
+                name="sender_id"
+                value={fields.senderId}
+                onChange={(e) => {
+                  update('senderId', e.target.value);
+                }}
+                disabled={reviewing}
+                error={errors.senderId}
+                hint="Only your organization’s approved sender IDs are listed."
               >
-                Edit
-              </Button>
+                <option value="">Choose a sender ID</option>
+                {senderIds.ids.map((id) => (
+                  <option key={id} value={id}>
+                    {id}
+                  </option>
+                ))}
+              </SelectField>
             </div>
-          </Card>
-        </div>
-      ) : (
-        <Card heading="Sending guidelines">
-          <ul className="space-y-3 text-text-muted">
-            <Guideline>One recipient per message; Philippine mobile numbers only.</Guideline>
-            <Guideline>
-              Up to {MAX_CHARACTERS} characters. Long messages are split into segments; characters
-              outside GSM-7 switch the whole message to Unicode (UCS-2), which fits fewer characters
-              per segment.
-            </Guideline>
-            <Guideline>
-              Each send has its own request key, so a repeated click or a retry never creates a
-              duplicate message.
-            </Guideline>
-          </ul>
+            <TextAreaField
+              label="Message"
+              name="body"
+              rows={7}
+              value={fields.body}
+              onChange={(e) => {
+                update('body', e.target.value);
+              }}
+              disabled={reviewing}
+              error={errors.body}
+              hint={
+                <span
+                  aria-live="polite"
+                  data-testid="message-counter"
+                  className="flex flex-wrap justify-between gap-x-4 gap-y-1"
+                >
+                  <span className="tabular-nums">
+                    {characters} / {MAX_CHARACTERS} characters
+                  </span>
+                  {segmentsText !== '' && <span className="tabular-nums">{segmentsText}</span>}
+                </span>
+              }
+            />
+            {!reviewing && (
+              <div className="flex justify-end border-t border-border pt-4">
+                <Button type="submit">
+                  Review message
+                  <Icon name="chevronRight" />
+                </Button>
+              </div>
+            )}
+          </form>
         </Card>
-      )}
+
+        {reviewing ? (
+          <div ref={reviewRef} tabIndex={-1} className="focus:outline-none lg:sticky lg:top-8">
+            <Card
+              heading="Review and send"
+              description="Check the details before sending."
+              className="ring-1 ring-primary/30"
+            >
+              <dl className="divide-y divide-border">
+                <ReviewRow term="Recipients">
+                  <span className="tabular-nums">1 ({normalizeNumber(fields.to)})</span>
+                </ReviewRow>
+                <ReviewRow term="Sender ID">{fields.senderId}</ReviewRow>
+                <ReviewRow term="Message">
+                  <span className="block max-h-40 overflow-y-auto rounded-control border border-border bg-surface-subtle px-3 py-2 break-words whitespace-pre-wrap">
+                    {fields.body}
+                  </span>
+                </ReviewRow>
+                <ReviewRow term="Segments">
+                  {estimate.status === 'ready'
+                    ? `${String(estimate.value.segment_count)} · ${encodingLabel(estimate.value.encoding)}`
+                    : 'Calculated by the platform on submission'}
+                </ReviewRow>
+                <ReviewRow term="Estimated cost">
+                  Not available: billing is not enabled yet.
+                </ReviewRow>
+              </dl>
+              <p className="mt-4 text-xs text-text-muted">
+                Acceptance means the platform stored your message for sending; delivery is reported
+                later by the provider.
+              </p>
+              <div className="mt-4 flex flex-col gap-2">
+                <Button loading={sending} onClick={() => void send()}>
+                  {!sending && <Icon name="send" />}
+                  {sending ? 'Sending…' : 'Send message'}
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={sending}
+                  onClick={() => {
+                    setReviewing(false);
+                  }}
+                >
+                  Edit
+                </Button>
+              </div>
+            </Card>
+          </div>
+        ) : (
+          <Card heading="Sending guidelines">
+            <ul className="space-y-3 text-text-muted">
+              <Guideline>One recipient per message; Philippine mobile numbers only.</Guideline>
+              <Guideline>
+                Up to {MAX_CHARACTERS} characters. Long messages are split into segments; characters
+                outside GSM-7 switch the whole message to Unicode (UCS-2), which fits fewer
+                characters per segment.
+              </Guideline>
+              <Guideline>
+                Each send has its own request key, so a repeated click or a retry never creates a
+                duplicate message.
+              </Guideline>
+            </ul>
+          </Card>
+        )}
+      </div>
     </div>
+  );
+}
+
+/** Where the sender is in the two-step flow; the current step is marked for assistive technology. */
+function Steps({ reviewing }: { reviewing: boolean }) {
+  const steps = ['Compose', 'Review and send'];
+  const current = reviewing ? 1 : 0;
+  return (
+    <ol aria-label="Progress" className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
+      {steps.map((label, i) => {
+        const done = i < current;
+        const active = i === current;
+        return (
+          <li
+            key={label}
+            aria-current={active ? 'step' : undefined}
+            className="flex items-center gap-2"
+          >
+            {i > 0 && <span aria-hidden="true" className="h-px w-6 bg-border-strong" />}
+            <span
+              aria-hidden="true"
+              className={`flex size-6 items-center justify-center rounded-full text-xs font-semibold ${
+                active
+                  ? 'bg-primary text-primary-foreground'
+                  : done
+                    ? 'bg-primary-subtle text-primary'
+                    : 'border border-border-strong text-text-muted'
+              }`}
+            >
+              {done ? <Icon name="check" className="size-3.5" /> : i + 1}
+            </span>
+            <span className={active ? 'font-medium text-text' : 'text-text-muted'}>
+              <span className="sr-only">Step {i + 1}: </span>
+              {label}
+              {done && <span className="sr-only"> (completed)</span>}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
 function ReviewRow({ term, children }: { term: string; children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-0.5 py-2.5 first:pt-0">
+    <div className="flex flex-col gap-1 py-3 first:pt-0">
       <dt className="text-xs font-medium text-text-muted">{term}</dt>
-      <dd className="text-sm text-text">{children}</dd>
+      <dd className="min-w-0 text-sm text-text">{children}</dd>
     </div>
   );
 }

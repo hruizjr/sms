@@ -13,7 +13,7 @@ describe('messages page', () => {
         [FIRST]: () =>
           json(200, {
             data: [
-              messageFixture(),
+              messageFixture({ status_updated_at: '2026-11-27T08:07:00Z' }),
               messageFixture({
                 id: 'msg_2',
                 to: '+639000000030',
@@ -33,12 +33,21 @@ describe('messages page', () => {
     const first = within(firstRow);
     expect(first.getByText('+639000000001')).toBeInTheDocument();
     expect(first.getByText('EXAMPLECO')).toBeInTheDocument();
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((th) => th.textContent),
+    ).toEqual(['Recipient', 'Status', 'Sender ID', 'Segments', 'Submitted', 'Last update']);
     expect(first.getByRole('link', { name: 'msg_06H1WH346HSF13TPPJR44P43PW' })).toHaveAttribute(
       'href',
       '/messages/msg_06H1WH346HSF13TPPJR44P43PW',
     );
-    // Shown in Philippine time.
-    expect(first.getByText(/Nov 27, 2026.*4:00.PM PHT/)).toBeInTheDocument();
+    // Submitted and last update, in Philippine time; segments are a column of their own.
+    const cells = first.getAllByRole('cell').map((cell) => cell.textContent);
+    expect(cells).toHaveLength(6);
+    expect(cells[3]).toBe('1');
+    expect(cells[4]).toMatch(/^Nov 27, 2026.*4:00.PM PHT$/);
+    expect(cells[5]).toMatch(/^Nov 27, 2026.*4:07.PM PHT$/);
     expect(first.getByText('Delivered')).toBeInTheDocument();
     expect(within(secondRow).getByText('Uncertain')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument();
@@ -103,5 +112,38 @@ describe('messages page', () => {
       await screen.findByRole('heading', { level: 1, name: 'Message details' }),
     ).toBeInTheDocument();
     expect(window.location.pathname).toBe('/messages/msg_1');
+  });
+
+  it('filters by status, explains an empty result and returns to all messages', async () => {
+    const { transport } = renderApp(
+      '/messages',
+      signedIn('owner', {
+        [FIRST]: () => json(200, { data: [messageFixture()], next_cursor: null }),
+        'GET /portal/v1/messages?limit=25&status=failed': () =>
+          json(200, { data: [], next_cursor: null }),
+      }),
+    );
+    await screen.findByRole('table');
+    fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'failed' } });
+    const empty = await screen.findByRole('region', { name: 'No messages with this status' });
+    expect(empty).toHaveTextContent('“Failed”');
+    expect(transport.calls.map((c) => c.path)).toContain(
+      '/portal/v1/messages?limit=25&status=failed',
+    );
+    fireEvent.click(within(empty).getByRole('button', { name: 'Show all messages' }));
+    expect(await screen.findByRole('table')).toBeInTheDocument();
+    expect(screen.getByLabelText('Status')).toHaveValue('');
+  });
+
+  it('shows the count of loaded messages and offers sending only to roles that may send', async () => {
+    renderApp(
+      '/messages',
+      signedIn('viewer', {
+        [FIRST]: () => json(200, { data: [messageFixture()], next_cursor: null }),
+      }),
+    );
+    await screen.findByRole('table');
+    expect(screen.getByText(/Showing/)).toHaveTextContent('Showing 1 message');
+    expect(screen.queryByRole('link', { name: 'Send SMS' })).not.toBeInTheDocument();
   });
 });

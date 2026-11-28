@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import {
   CSRF,
@@ -228,5 +228,26 @@ describe('compose page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     // A single sender ID is preselected.
     expect(await screen.findByLabelText('Sender ID')).toHaveValue('EXAMPLECO');
+  });
+
+  it('marks the current step and shows the message text in the review', async () => {
+    renderApp('/messages/new', signedIn('owner', routes()));
+    const steps = within(await screen.findByRole('list', { name: 'Progress' }));
+    expect(steps.getByText('Compose').closest('li')).toHaveAttribute('aria-current', 'step');
+    await fill('+639000000001', 'Line one\nLine two');
+    fireEvent.click(screen.getByRole('button', { name: 'Review message' }));
+    const review = await screen.findByRole('region', { name: 'Review and send' });
+    // The text is shown as typed, line breaks included.
+    expect(within(review).getByText(/Line one/).textContent).toBe('Line one\nLine two');
+    expect(steps.getByText('Review and send').closest('li')).toHaveAttribute(
+      'aria-current',
+      'step',
+    );
+    expect(steps.getByText('Compose').closest('li')).toHaveTextContent('(completed)');
+    // The fields are locked during the review; Edit unlocks them.
+    expect(screen.getByLabelText('Message')).toBeDisabled();
+    fireEvent.click(within(review).getByRole('button', { name: 'Edit' }));
+    expect(screen.getByLabelText('Message')).toBeEnabled();
+    expect(steps.getByText('Compose').closest('li')).toHaveAttribute('aria-current', 'step');
   });
 });

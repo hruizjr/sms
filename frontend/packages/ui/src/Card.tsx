@@ -10,13 +10,15 @@ export type CardProps = {
   description?: ReactNode;
   /** Controls at the right of the heading (for example a button). */
   actions?: ReactNode;
+  /** A footer row with a subtle background (for example pagination or a note). */
+  footer?: ReactNode;
   /** "none" lets content such as a table reach the card's edges. Defaults to "md". */
   padding?: 'md' | 'none';
   className?: string;
   children: ReactNode;
 };
 
-const cardClasses = 'rounded-card border border-border bg-surface shadow-sm';
+const cardClasses = 'overflow-hidden rounded-card border border-border bg-surface shadow-xs';
 
 /** A bordered panel. With a heading it is a named region with a header row. */
 export function Card({
@@ -24,28 +26,44 @@ export function Card({
   headingLevel = 2,
   description,
   actions,
+  footer,
   padding = 'md',
   className,
   children,
 }: CardProps) {
   const headingId = useId();
   const bodyPadding = padding === 'md' ? 'p-4 sm:p-5' : '';
+  const footerRow = footer !== undefined && (
+    <div className="border-t border-border bg-surface-subtle px-4 py-3 text-sm text-text-muted sm:px-5">
+      {footer}
+    </div>
+  );
   if (heading === undefined) {
-    return <div className={classNames(cardClasses, bodyPadding, className)}>{children}</div>;
+    return (
+      <div className={classNames(cardClasses, className)}>
+        <div className={bodyPadding}>{children}</div>
+        {footerRow}
+      </div>
+    );
   }
   const Heading = `h${String(headingLevel)}` as 'h2' | 'h3' | 'h4';
   return (
     <section aria-labelledby={headingId} className={classNames(cardClasses, className)}>
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
-        <div className="min-w-0 space-y-0.5">
-          <Heading id={headingId} className="text-sm font-semibold text-text">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border px-4 py-3 sm:px-5">
+        <div className="min-w-0">
+          <Heading id={headingId} className="text-sm leading-6 font-semibold text-text">
             {heading}
           </Heading>
-          {description !== undefined && <p className="text-sm text-text-muted">{description}</p>}
+          {description !== undefined && (
+            <p className="text-xs leading-5 text-text-muted">{description}</p>
+          )}
         </div>
-        {actions !== undefined && <div className="flex shrink-0 gap-2">{actions}</div>}
+        {actions !== undefined && (
+          <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>
+        )}
       </div>
       <div className={classNames('text-sm text-text', bodyPadding)}>{children}</div>
+      {footerRow}
     </section>
   );
 }

@@ -91,194 +91,228 @@ export function MessagesPage() {
     }
   }
 
+  const loaded = state.status === 'loaded' ? state : undefined;
   return (
     <div>
       <PageHeader
         title="Messages"
         description="SMS sent by your organization from this portal and through the API, newest first."
         actions={
-          <>
-            <Button
-              variant="secondary"
-              onClick={refresh}
-              disabled={state.status === 'loading'}
-              aria-label="Refresh messages"
-            >
-              <Icon name="refresh" />
-              Refresh
-            </Button>
-            {canSend && (
-              <ButtonLink to="/messages/new" icon="plus">
-                Send SMS
-              </ButtonLink>
-            )}
-          </>
+          canSend ? (
+            <ButtonLink to="/messages/new" icon="plus">
+              Send SMS
+            </ButtonLink>
+          ) : undefined
         }
       />
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <label htmlFor={filterId} className="text-sm font-medium text-text">
-          Status
-        </label>
-        <select
-          id={filterId}
-          value={filter}
-          onChange={(e) => {
-            setFilter(e.target.value as MessageStatus | '');
-            setState({ status: 'loading' });
-            setMoreError(undefined);
-          }}
-          className="min-h-9 rounded-control border border-border-strong bg-surface px-3 text-sm text-text shadow-sm hover:border-text-muted"
-        >
-          <option value="">All statuses</option>
-          {STATUS_FILTERS.map((s) => (
-            <option key={s} value={s}>
-              {STATUS_INFO[s].label}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {state.status === 'loading' && <Skeleton lines={6} label="Loading messages…" />}
-
-      {state.status === 'error' && (
-        <Alert
-          tone="error"
-          title="Could not load messages"
-          action={
-            <Button variant="secondary" size="sm" onClick={refresh}>
-              Try again
-            </Button>
-          }
-        >
-          {state.message}
-        </Alert>
-      )}
-
-      {state.status === 'loaded' && state.messages.length === 0 && filter !== '' && (
-        <EmptyState
-          icon="messages"
-          title="No messages with this status"
-          action={
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setFilter('');
+      <Card
+        padding="none"
+        footer={
+          loaded !== undefined && loaded.messages.length > 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p aria-live="polite">
+                Showing{' '}
+                <span className="font-medium text-text tabular-nums">{loaded.messages.length}</span>{' '}
+                {loaded.messages.length === 1 ? 'message' : 'messages'}
+                {loaded.nextCursor !== null && ' · more available'}
+              </p>
+              {loaded.nextCursor !== null && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  loading={loadingMore}
+                  onClick={() => {
+                    if (loaded.nextCursor !== null) void loadMore(loaded.nextCursor);
+                  }}
+                >
+                  Load more
+                </Button>
+              )}
+            </div>
+          ) : undefined
+        }
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <label htmlFor={filterId} className="text-sm font-medium text-text">
+              Status
+            </label>
+            <select
+              id={filterId}
+              value={filter}
+              onChange={(e) => {
+                setFilter(e.target.value as MessageStatus | '');
                 setState({ status: 'loading' });
+                setMoreError(undefined);
               }}
+              className="min-h-8 min-w-0 rounded-control border border-border-strong bg-surface px-2.5 text-sm text-text shadow-xs hover:border-text-muted"
             >
-              Show all messages
-            </Button>
-          }
-        >
-          No message of your organization currently has the status “{STATUS_INFO[filter].label}”.
-        </EmptyState>
-      )}
+              <option value="">All statuses</option>
+              {STATUS_FILTERS.map((s) => (
+                <option key={s} value={s}>
+                  {STATUS_INFO[s].label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={refresh}
+            disabled={state.status === 'loading'}
+            aria-label="Refresh messages"
+          >
+            <Icon name="refresh" />
+            <span className="hidden sm:inline">Refresh</span>
+          </Button>
+        </div>
 
-      {state.status === 'loaded' && state.messages.length === 0 && filter === '' && (
-        <EmptyState
-          icon="messages"
-          title="No messages yet"
-          action={
-            canSend ? (
-              <ButtonLink to="/messages/new" icon="plus">
-                Send your first SMS
-              </ButtonLink>
-            ) : undefined
-          }
-        >
-          Messages your organization sends, from this portal or through the API, appear here.
-        </EmptyState>
-      )}
+        {state.status === 'loading' && (
+          <Skeleton variant="table" bare lines={6} label="Loading messages…" />
+        )}
 
-      {state.status === 'loaded' && state.messages.length > 0 && (
-        <div className="space-y-4">
-          <MessageTable messages={state.messages} />
-          {moreError !== undefined && <Alert tone="error" title={moreError} />}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-text-muted" aria-live="polite">
-              Showing {state.messages.length} {state.messages.length === 1 ? 'message' : 'messages'}
-              {state.nextCursor !== null && ' (more available)'}
-            </p>
-            {state.nextCursor !== null && (
+        {state.status === 'error' && (
+          <div className="p-4 sm:p-5">
+            <Alert
+              tone="error"
+              title="Could not load messages"
+              action={
+                <Button variant="secondary" size="sm" onClick={refresh}>
+                  Try again
+                </Button>
+              }
+            >
+              {state.message}
+            </Alert>
+          </div>
+        )}
+
+        {loaded?.messages.length === 0 && filter !== '' && (
+          <EmptyState
+            bare
+            icon="messages"
+            title="No messages with this status"
+            action={
               <Button
                 variant="secondary"
-                loading={loadingMore}
                 onClick={() => {
-                  if (state.nextCursor !== null) void loadMore(state.nextCursor);
+                  setFilter('');
+                  setState({ status: 'loading' });
                 }}
               >
-                Load more
+                Show all messages
               </Button>
+            }
+          >
+            No message of your organization currently has the status “{STATUS_INFO[filter].label}”.
+          </EmptyState>
+        )}
+
+        {loaded?.messages.length === 0 && filter === '' && (
+          <EmptyState
+            bare
+            icon="messages"
+            title="No messages yet"
+            action={
+              canSend ? (
+                <ButtonLink to="/messages/new" icon="plus">
+                  Send your first SMS
+                </ButtonLink>
+              ) : undefined
+            }
+          >
+            Messages your organization sends, from this portal or through the API, appear here.
+          </EmptyState>
+        )}
+
+        {loaded !== undefined && loaded.messages.length > 0 && (
+          <>
+            <MessageTable messages={loaded.messages} />
+            {moreError !== undefined && (
+              <div className="border-t border-border p-4 sm:px-5">
+                <Alert tone="error" title={moreError} />
+              </div>
             )}
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </Card>
     </div>
   );
 }
 
+const th = 'px-4 py-2.5 text-xs font-medium text-text-muted first:pl-5 last:pr-5';
+const td = 'md:px-4 md:py-3 md:first:pl-5 md:last:pr-5';
+
 /**
- * A table on wide screens (1280 px and up); on smaller screens each row becomes a compact card (no page-level
- * horizontal scrolling, AGENTS.md §8.8). Long identifiers are truncated visually and kept whole in
- * the accessible name and the tooltip.
+ * A table from 768 px; below that each row becomes a compact card (no page-level horizontal
+ * scrolling, AGENTS.md §8.8). Segments and the last status update are shown from 1280 px. The whole
+ * row opens the message: the message ID is the row's link, and its click area covers the row.
  */
 function MessageTable({ messages }: { messages: Message[] }) {
   return (
-    <Card padding="none" className="overflow-hidden">
-      <table className="w-full text-left text-sm">
-        <caption className="sr-only">Messages, newest first</caption>
-        <thead className="hidden border-b border-border bg-surface-subtle text-xs text-text-muted xl:table-header-group">
-          <tr>
-            <th scope="col" className="px-4 py-2.5 font-medium">
-              Recipient
-            </th>
-            <th scope="col" className="px-4 py-2.5 font-medium">
-              Status
-            </th>
-            <th scope="col" className="px-4 py-2.5 font-medium">
-              Sender ID
-            </th>
-            <th scope="col" className="px-4 py-2.5 font-medium">
-              Message ID
-            </th>
-            <th scope="col" className="px-4 py-2.5 text-right font-medium">
-              Submitted
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {messages.map((m) => (
-            <tr
-              key={m.id}
-              className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-4 py-3 transition-colors hover:bg-surface-subtle xl:table-row xl:p-0"
+    <table className="w-full text-left text-sm">
+      <caption className="sr-only">Messages, newest first</caption>
+      <thead className="hidden border-b border-border bg-surface-subtle md:table-header-group">
+        <tr>
+          <th scope="col" className={th}>
+            Recipient
+          </th>
+          <th scope="col" className={th}>
+            Status
+          </th>
+          <th scope="col" className={th}>
+            Sender ID
+          </th>
+          <th scope="col" className={`${th} hidden text-right xl:table-cell`}>
+            Segments
+          </th>
+          <th scope="col" className={th}>
+            Submitted
+          </th>
+          <th scope="col" className={`${th} hidden xl:table-cell`}>
+            Last update
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {messages.map((m) => (
+          <tr
+            key={m.id}
+            className="relative grid grid-cols-2 gap-x-3 gap-y-1 border-t border-border px-4 py-3 transition-colors first:border-t-0 hover:bg-surface-subtle md:table-row md:p-0"
+          >
+            <td className={`min-w-0 ${td}`}>
+              <p className="font-medium text-text tabular-nums">{m.to}</p>
+              <Link
+                to={`/messages/${m.id}`}
+                className="block truncate font-mono text-xs text-text-muted after:absolute after:inset-0 hover:text-primary hover:underline md:max-w-56"
+              >
+                {m.id}
+              </Link>
+            </td>
+            <td className={`self-start justify-self-end ${td}`}>
+              <StatusBadge status={m.status} />
+            </td>
+            <td className={`text-text-muted md:text-text ${td}`}>
+              <span className="sr-only md:hidden">Sender ID </span>
+              {m.sender_id}
+            </td>
+            <td className={`hidden text-right tabular-nums xl:table-cell ${td}`}>
+              {m.segment_count}
+            </td>
+            <td
+              className={`justify-self-end text-xs whitespace-nowrap text-text-muted tabular-nums md:text-sm ${td}`}
             >
-              <td className="font-medium text-text tabular-nums xl:px-4 xl:py-3">{m.to}</td>
-              <td className="justify-self-end xl:px-4 xl:py-3">
-                <StatusBadge status={m.status} />
-              </td>
-              <td className="text-text-muted xl:px-4 xl:py-3 xl:text-text">
-                <span className="text-xs xl:hidden">Sender </span>
-                {m.sender_id}
-              </td>
-              <td className="col-span-2 row-start-3 min-w-0 xl:px-4 xl:py-3">
-                <Link
-                  to={`/messages/${m.id}`}
-                  className="flex items-center gap-1 font-mono text-xs text-primary hover:underline"
-                >
-                  <span className="truncate xl:max-w-56" title={m.id}>
-                    {m.id}
-                  </span>
-                  <Icon name="chevronRight" className="size-3.5" />
-                </Link>
-              </td>
-              <td className="justify-self-end text-right text-xs whitespace-nowrap text-text-muted xl:px-4 xl:py-3">
-                {formatDateTime(m.accepted_at, 'short')}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </Card>
+              {formatDateTime(m.accepted_at, 'short')}
+            </td>
+            <td
+              className={`hidden text-sm whitespace-nowrap text-text-muted tabular-nums xl:table-cell ${td}`}
+            >
+              {formatDateTime(m.status_updated_at, 'short')}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }

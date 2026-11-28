@@ -19,6 +19,13 @@ a sidebar (menu button below 1024 px), one page header and status badge style, r
 page to list, create (name, permissions and the owner's current password) and revoke keys. A new key is shown **once**, held in memory only, with a
 copy button and a `curl` example that uses a placeholder, never the key.
 
+Phase 4 Group 5 refined the portal into an enterprise console without changing its features or API use
+([decision log §22](../docs/engineering/decision-log.md#22-phase-4-group-5--enterprise-client-portal-ui-2026-11-28)):
+a dark sidebar (a modal menu panel below 1024 px), breadcrumbs, a toolbar and footer inside the messages table
+(table from 768 px, the whole row opens the message), a status panel, label–value list, copyable message ID and
+status timeline on message details, a step indicator and message preview in the compose review, and refined tokens
+with contrast tests.
+
 Not here yet, each needing separate owner approval: an admin portal; billing or cost display; user or sender ID
 management; bulk sending; router, data-fetching, form or headless UI libraries.
 
@@ -42,7 +49,8 @@ frontend/
 │       └── src/
 │           ├── main.tsx
 │           ├── app/                App (routes), error boundary
-│           ├── components/         App shell (sidebar), page header, alerts, empty states, skeletons, form fields
+│           ├── components/         App shell (sidebar, menu panel), page header (breadcrumbs), alerts, empty states,
+│           │                       skeletons, form fields, description list, copy button
 │           ├── features/auth/      Session context (sign-in, sign-out, central 401 handling), sign-in page
 │           ├── features/messages/  Messages list, message details, compose, status presentation
 │           ├── features/api-keys/  API keys page, create and revoke dialogs, one-time key display (owners)

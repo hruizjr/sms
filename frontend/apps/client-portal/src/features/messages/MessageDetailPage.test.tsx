@@ -1,4 +1,4 @@
-import { act, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { detailFixture, json, problem, signedIn } from '../../test/fake-api';
 import { renderApp } from '../../test/render';
@@ -94,5 +94,40 @@ describe('message detail page', () => {
       await vi.advanceTimersByTimeAsync(REFRESH_INTERVAL_MS * 3);
     });
     expect(transport.calls.filter((c) => c.path.endsWith('PW')).length).toBe(reads);
+  });
+
+  it('shows a breadcrumb back to the messages and marks the current status', async () => {
+    renderApp(PATH, signedIn('viewer', { [API]: () => json(200, detailFixture()) }));
+    await screen.findByRole('region', { name: 'Summary' });
+    const breadcrumb = within(screen.getByRole('navigation', { name: 'Breadcrumb' }));
+    expect(breadcrumb.getByRole('link', { name: 'Messages' })).toHaveAttribute('href', '/messages');
+    expect(breadcrumb.getByText('Message details')).toHaveAttribute('aria-current', 'page');
+    const history = within(screen.getByRole('region', { name: 'Status history' })).getAllByRole(
+      'listitem',
+    );
+    expect(history.at(-1)).toHaveTextContent('DeliveredCurrent');
+    expect(history[0]).not.toHaveTextContent('Current');
+  });
+
+  it('copies the message ID', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    try {
+      renderApp(PATH, signedIn('viewer', { [API]: () => json(200, detailFixture()) }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Copy message ID' }));
+      expect(await screen.findByText('Copied')).toBeInTheDocument();
+      expect(writeText).toHaveBeenCalledWith('msg_06H1WH346HSF13TPPJR44P43PW');
+    } finally {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
+    }
+  });
+
+  it('says when no status change is recorded yet', async () => {
+    renderApp(
+      PATH,
+      signedIn('owner', { [API]: () => json(200, detailFixture({ status_history: [] })) }),
+    );
+    const history = await screen.findByRole('region', { name: 'Status history' });
+    expect(history).toHaveTextContent('No status changes recorded yet.');
   });
 });

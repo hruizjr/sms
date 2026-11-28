@@ -58,9 +58,9 @@ export function NewApiKeyPanel({
   return (
     <section
       aria-labelledby={headingId}
-      className="overflow-hidden rounded-card border border-success bg-surface shadow-sm"
+      className="overflow-hidden rounded-card border border-success/40 bg-surface shadow-xs"
     >
-      <div className="flex items-start gap-3 border-b border-border bg-success-subtle px-4 py-3 sm:px-5">
+      <div className="flex items-start gap-3 border-b border-success/30 bg-success-subtle px-4 py-3 sm:px-5">
         <Icon name="check" className="mt-0.5 size-5 text-success" />
         <div className="min-w-0">
           <h2
@@ -110,7 +110,7 @@ export function NewApiKeyPanel({
 
         <div
           id={`${keyFieldId}-warning`}
-          className="flex gap-3 rounded-control border border-warning bg-warning-subtle p-3 text-sm text-text"
+          className="flex gap-3 rounded-control border border-warning/40 bg-warning-subtle p-3 text-sm text-text"
         >
           <Icon name="alert" className="mt-0.5 size-5 text-warning" />
           <p>

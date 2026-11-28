@@ -4,10 +4,10 @@ import type { ReactNode } from 'react';
 export type AlertTone = 'error' | 'success' | 'info' | 'warning';
 
 const toneClasses: Record<AlertTone, { box: string; icon: string }> = {
-  error: { box: 'border-danger bg-danger-subtle', icon: 'text-danger' },
-  success: { box: 'border-success bg-success-subtle', icon: 'text-success' },
-  info: { box: 'border-info bg-info-subtle', icon: 'text-info' },
-  warning: { box: 'border-warning bg-warning-subtle', icon: 'text-warning' },
+  error: { box: 'border-danger/40 bg-danger-subtle', icon: 'text-danger' },
+  success: { box: 'border-success/40 bg-success-subtle', icon: 'text-success' },
+  info: { box: 'border-info/40 bg-info-subtle', icon: 'text-info' },
+  warning: { box: 'border-warning/40 bg-warning-subtle', icon: 'text-warning' },
 };
 
 const toneIcons: Record<AlertTone, IconName> = {
@@ -43,7 +43,7 @@ export function Alert({
   return (
     <div
       role={tone === 'error' ? 'alert' : 'status'}
-      className={`flex gap-3 rounded-card border p-4 text-sm text-text ${classes.box}`}
+      className={`flex gap-3 rounded-card border px-4 py-3 text-sm text-text ${classes.box}`}
     >
       <Icon name={toneIcons[tone]} className={`mt-0.5 size-5 ${classes.icon}`} />
       <div className="min-w-0 flex-1">
@@ -51,7 +51,7 @@ export function Alert({
           <span className="sr-only">{toneLabels[tone]}: </span>
           {title ?? toneLabels[tone]}
         </p>
-        {children !== undefined && <div className="mt-1">{children}</div>}
+        {children !== undefined && <div className="mt-0.5 text-text">{children}</div>}
         {action !== undefined && <div className="mt-3">{action}</div>}
       </div>
     </div>

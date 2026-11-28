@@ -344,6 +344,10 @@ describe('API keys page', () => {
     const rows = within(screen.getByRole('table')).getAllByRole('row');
     expect(rows[1]).toHaveTextContent('Revoked');
     expect(screen.queryByRole('button', { name: /Revoke API key/ })).not.toBeInTheDocument();
+    // Focus does not fall back to the page: it moves to "Create API key".
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Create API key' })).toHaveFocus();
+    });
     expect(transport.calls.find((c) => c.method === 'DELETE')).toMatchObject({
       headers: { 'X-CSRF-Token': CSRF },
     });
