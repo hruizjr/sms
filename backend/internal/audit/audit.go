@@ -16,8 +16,19 @@
 //
 // The application role may insert (and, for its own tenant, read) audit events but has no UPDATE,
 // DELETE or TRUNCATE privilege; triggers additionally reject those statements by any role, including
-// the table owner. Database superusers, and the table owner after disabling the triggers, can still
-// alter rows: the log is append-only under the application's permissions, not tamper-proof.
+// the table owner. The application cannot choose an event's ID or time either: PostgreSQL assigns
+// both when the row is inserted, so an event can be neither back-dated nor made to collide with an
+// existing one. Database superusers, and the table owner after disabling the triggers, can still alter
+// rows: the log is append-only under the application's permissions, not tamper-proof, and evidence
+// that holds against a superuser needs an external immutable export (security baseline S-8).
+//
+// # Deduplication
+//
+// Some events would otherwise be written once per request, so that a caller could multiply audit
+// writes at will: the refusals of a signed-in user's requests and the attempts on a locked account.
+// They carry a DedupKey built from server-side values only (DeniedKey, LockedAttemptKey); the database
+// writes the first event of a key and silently skips every later one (INSERT ... ON CONFLICT DO
+// NOTHING on a unique index). No existing event is modified and no auxiliary record is created.
 //
 // # Same transaction
 //
@@ -72,6 +83,12 @@ const (
 	ActionAPIKeyRevoke Action = "api_key.revoke"
 	// ActionAuditLogList: reading the audit log (recorded only when refused).
 	ActionAuditLogList Action = "audit_log.list"
+	// ActionPortalUserCreate: the local administration tool created a portal user.
+	ActionPortalUserCreate Action = "portal_user.create"
+	// ActionPortalUserUnlock: the local administration tool cleared a portal user's lockout.
+	ActionPortalUserUnlock Action = "portal_user.unlock"
+	// ActionPortalUserSessionsRevoke: the local administration tool ended a portal user's sessions.
+	ActionPortalUserSessionsRevoke Action = "portal_user.sessions_revoke"
 )
 
 // Actions of platform events (platform_security_events): no organization can be identified.
@@ -84,6 +101,7 @@ const (
 var TenantActions = []Action{
 	ActionSignIn, ActionSignOut, ActionAccountLocked,
 	ActionAPIKeyCreate, ActionAPIKeyRevoke, ActionAPIKeyList, ActionAuditLogList,
+	ActionPortalUserCreate, ActionPortalUserUnlock, ActionPortalUserSessionsRevoke,
 }
 
 // platformActions are the actions of platform events.
@@ -97,11 +115,14 @@ const (
 	OutcomeSuccess Outcome = "success"
 	OutcomeFailure Outcome = "failure" // the actor could not prove who they are (credentials)
 	OutcomeDenied  Outcome = "denied"  // refused by policy: missing permission, rate limit
+	// OutcomeEnforced: the platform applied a security control (an account lock). It is the outcome
+	// of ActionAccountLocked, and of nothing else.
+	OutcomeEnforced Outcome = "enforced"
 )
 
 // Valid reports whether o is a known outcome.
 func (o Outcome) Valid() bool {
-	return o == OutcomeSuccess || o == OutcomeFailure || o == OutcomeDenied
+	return o == OutcomeSuccess || o == OutcomeFailure || o == OutcomeDenied || o == OutcomeEnforced
 }
 
 // ActorType is who performed the action.
@@ -157,6 +178,8 @@ const (
 	ReasonOrganizationNotActive Reason = "organization_not_active"
 	ReasonInsufficientRole      Reason = "insufficient_role"
 	ReasonTooManyAttempts       Reason = "too_many_attempts"
+	ReasonTooManyRequests       Reason = "too_many_requests" // platform events only: the all-attempt rate
+	ReasonTooManyFailures       Reason = "too_many_failures" // platform events only: a failure budget
 )
 
 // Details are the event's structured metadata. The fields are fixed and none holds a secret: an API
@@ -173,27 +196,61 @@ type Details struct {
 	LockedUntil *time.Time `json:"locked_until,omitempty"`
 	// Via names the local administration tool for actions it performed ("smsctl").
 	Via string `json:"via,omitempty"`
-	// MaxAttempts and WindowSeconds are the rate limit that was exceeded.
-	MaxAttempts   int `json:"max_attempts,omitempty"`
-	WindowSeconds int `json:"window_seconds,omitempty"`
+	// DedupIntervalSeconds is set on a refusal recorded once per actor, action and interval of this
+	// many seconds: repeated refusals in the same interval are not recorded again.
+	DedupIntervalSeconds int `json:"dedup_interval_seconds,omitempty"`
+
+	// Platform events only: the sign-in limit that refused (Limit is a failure budget's limit or the
+	// token bucket's burst), its window or rate, and the prefix length of the limited source.
+	Limit              int     `json:"limit,omitempty"`
+	WindowSeconds      int     `json:"window_seconds,omitempty"`
+	RatePerSecond      float64 `json:"rate_per_second,omitempty"`
+	SourcePrefixLength int     `json:"source_prefix_length,omitempty"`
 }
 
-// Event is a tenant security event.
+// Event is a tenant security event. Its ID and time are assigned by the database.
 type Event struct {
-	OccurredAt time.Time
-	Action     Action
-	Outcome    Outcome
-	Actor      Actor
-	Target     *Target // nil when the action concerns no single resource
-	Details    Details
+	Action  Action
+	Outcome Outcome
+	Actor   Actor
+	Target  *Target // nil when the action concerns no single resource
+	Details Details
+	// DedupKey, when set, records the event only if the organization has no event with this key yet
+	// (DeniedKey, LockedAttemptKey). Empty: always recorded.
+	DedupKey string
 }
 
-// PlatformEvent is a security event that belongs to no identifiable organization.
+// PlatformEvent is a security event that belongs to no identifiable organization. Its ID and time are
+// assigned by the database.
 type PlatformEvent struct {
-	OccurredAt time.Time
-	Action     Action
-	Outcome    Outcome
-	Details    Details
+	Action  Action
+	Outcome Outcome
+	Details Details
+}
+
+// DeniedInterval is the interval within which the refusals of one actor's requests for one action
+// are recorded once (owner decision, decision log §23).
+const DeniedInterval = 5 * time.Minute
+
+// DeniedKey is the deduplication key of a refused request of actor for action at now: one event per
+// actor, action and DeniedInterval (intervals are aligned to the Unix epoch).
+func DeniedKey(actor Actor, action Action, now time.Time) string {
+	interval := now.UTC().Truncate(DeniedInterval).Unix()
+	return fmt.Sprintf("denied:%s:%x:%d", action, actor.ID, interval)
+}
+
+// LockedAttemptKey is the deduplication key of an attempt (action) on the locked account userID:
+// one event per account, action and lock (identified by the time the lock ends).
+func LockedAttemptKey(action Action, userID [16]byte, lockedUntil time.Time) string {
+	return fmt.Sprintf("locked:%s:%x:%d", action, userID, lockedUntil.UTC().UnixMicro())
+}
+
+// dedupKeyAllowed is the form of a deduplication key (the database checks the same).
+func dedupKeyAllowed(k string) bool {
+	if len(k) < 1 || len(k) > 160 {
+		return false
+	}
+	return strings.Trim(k, "abcdefghijklmnopqrstuvwxyz0123456789_.:-") == ""
 }
 
 // Source is the request an event came from. Every field is optional (the local administration tool
@@ -243,7 +300,8 @@ var ErrInvalidEvent = errors.New("invalid audit event")
 
 // Insert writes ev for tenantID through tx. tx MUST be a transaction of database.DB.InTenantTx for
 // tenantID, so that the event commits or rolls back with the change it records. The request source is
-// taken from ctx (WithSource).
+// taken from ctx (WithSource). An event whose DedupKey the organization already has is not written,
+// and that is not an error.
 func Insert(ctx context.Context, tx pgx.Tx, tenantID tenancy.ID, ev Event) error {
 	if err := ev.validate(); err != nil {
 		return err
@@ -254,15 +312,15 @@ func Insert(ctx context.Context, tx pgx.Tx, tenantID tenancy.ID, ev Event) error
 	}
 	src := SourceFrom(ctx)
 	params := sqlcgen.InsertSecurityAuditEventParams{
-		TenantID:   pgtype.UUID{Bytes: tenantID, Valid: true},
-		OccurredAt: ev.OccurredAt.UTC(),
-		Action:     string(ev.Action),
-		Outcome:    string(ev.Outcome),
-		ActorType:  string(ev.Actor.Type),
-		RequestID:  optional(src.RequestID),
-		SourceIp:   optionalAddr(src.IP),
-		UserAgent:  optional(NormalizeUserAgent(src.UserAgent)),
-		Details:    details,
+		TenantID:  pgtype.UUID{Bytes: tenantID, Valid: true},
+		Action:    string(ev.Action),
+		Outcome:   string(ev.Outcome),
+		ActorType: string(ev.Actor.Type),
+		RequestID: optional(src.RequestID),
+		SourceIp:  optionalAddr(src.IP),
+		UserAgent: optional(NormalizeUserAgent(src.UserAgent)),
+		Details:   details,
+		DedupKey:  optional(ev.DedupKey),
 	}
 	if ev.Actor.Type == ActorPortalUser {
 		params.ActorID = pgtype.UUID{Bytes: ev.Actor.ID, Valid: true}
@@ -272,7 +330,7 @@ func Insert(ctx context.Context, tx pgx.Tx, tenantID tenancy.ID, ev Event) error
 		params.TargetType = &t
 		params.TargetID = pgtype.UUID{Bytes: ev.Target.ID, Valid: true}
 	}
-	if err := sqlcgen.New(tx).InsertSecurityAuditEvent(ctx, params); err != nil {
+	if _, err := sqlcgen.New(tx).InsertSecurityAuditEvent(ctx, params); err != nil {
 		return fmt.Errorf("record audit event %s: %w", ev.Action, err)
 	}
 	return nil
@@ -281,7 +339,7 @@ func Insert(ctx context.Context, tx pgx.Tx, tenantID tenancy.ID, ev Event) error
 // InsertPlatform writes a platform event through db (a pool, a connection or a transaction; no tenant
 // context is needed or used). The request source is taken from ctx (WithSource).
 func InsertPlatform(ctx context.Context, db sqlcgen.DBTX, ev PlatformEvent) error {
-	if !slices.Contains(platformActions, ev.Action) || !ev.Outcome.Valid() || ev.OccurredAt.IsZero() {
+	if !slices.Contains(platformActions, ev.Action) || !ev.Outcome.Valid() || ev.Outcome == OutcomeEnforced {
 		return fmt.Errorf("%w: platform event %q (%q)", ErrInvalidEvent, ev.Action, ev.Outcome)
 	}
 	details, err := json.Marshal(ev.Details)
@@ -290,13 +348,12 @@ func InsertPlatform(ctx context.Context, db sqlcgen.DBTX, ev PlatformEvent) erro
 	}
 	src := SourceFrom(ctx)
 	err = sqlcgen.New(db).InsertPlatformSecurityEvent(ctx, sqlcgen.InsertPlatformSecurityEventParams{
-		OccurredAt: ev.OccurredAt.UTC(),
-		Action:     string(ev.Action),
-		Outcome:    string(ev.Outcome),
-		RequestID:  optional(src.RequestID),
-		SourceIp:   optionalAddr(src.IP),
-		UserAgent:  optional(NormalizeUserAgent(src.UserAgent)),
-		Details:    details,
+		Action:    string(ev.Action),
+		Outcome:   string(ev.Outcome),
+		RequestID: optional(src.RequestID),
+		SourceIp:  optionalAddr(src.IP),
+		UserAgent: optional(NormalizeUserAgent(src.UserAgent)),
+		Details:   details,
 	})
 	if err != nil {
 		return fmt.Errorf("record platform security event %s: %w", ev.Action, err)
@@ -310,8 +367,10 @@ func (ev Event) validate() error {
 		return fmt.Errorf("%w: unknown action %q", ErrInvalidEvent, ev.Action)
 	case !ev.Outcome.Valid():
 		return fmt.Errorf("%w: unknown outcome %q", ErrInvalidEvent, ev.Outcome)
-	case ev.OccurredAt.IsZero():
-		return fmt.Errorf("%w: no time", ErrInvalidEvent)
+	case (ev.Outcome == OutcomeEnforced) != (ev.Action == ActionAccountLocked):
+		return fmt.Errorf("%w: outcome %q is not valid for %q", ErrInvalidEvent, ev.Outcome, ev.Action)
+	case ev.DedupKey != "" && !dedupKeyAllowed(ev.DedupKey):
+		return fmt.Errorf("%w: deduplication key %q", ErrInvalidEvent, ev.DedupKey)
 	}
 	switch ev.Actor.Type {
 	case ActorPortalUser:

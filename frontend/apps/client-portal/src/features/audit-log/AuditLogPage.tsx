@@ -75,7 +75,7 @@ export function AuditLogPage() {
     <div>
       <PageHeader
         title="Audit log"
-        description="Security events of your organization: sign-ins, account locks, API key changes and refused requests. Events are recorded as they happen and cannot be changed or deleted."
+        description="Security events of your organization: sign-ins, account locks, API key changes, refused requests and account administration. Events are recorded as they happen. The platform’s application cannot change or delete them; this is not tamper-proof storage, and a database administrator with full access still could."
       />
       {hasPermission(session, 'audit_log:read') ? (
         <AuditLog />

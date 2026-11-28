@@ -30,8 +30,10 @@ Phase 4 Group 6 ([decision log §23](../docs/engineering/decision-log.md#23-phas
 adds the **audit log** page (`/audit-log`, owners only, "Security" in the navigation): the organization's security
 events newest first, filters by event, outcome and Philippine-time date range, "Load more", and a read-only details
 dialog (request ID, IP address, browser). The API keys page shows when each key was **last used** ("Never used"
-when it never was; recorded at most once a minute). A sign-in refused by the per-source rate limit (`429`) explains
-how long to wait, from `Retry-After`. Sender and Viewer see no audit log link; the server refuses them in any case.
+when it never was; recorded at most once a minute). A sign-in refused by the per-source limits (`429`), or a busy service
+(`503`, also on API key creation), explains how long to wait, from `Retry-After`. Each event's outcome badge shows the
+stored outcome exactly (an account lock is stored as **Enforced**; no badge relabels another value). Sender and
+Viewer see no audit log link; the server refuses them in any case.
 
 Not here yet, each needing separate owner approval: an admin portal; billing or cost display; user or sender ID
 management; bulk sending; router, data-fetching, form or headless UI libraries.

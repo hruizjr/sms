@@ -38,7 +38,7 @@ func (a *portalAPI) ListAuditEvents(w http.ResponseWriter, r *http.Request, para
 	if params.Outcome != nil {
 		outcome := audit.Outcome(*params.Outcome)
 		if !outcome.Valid() {
-			errs = append(errs, portalParamError("outcome", "invalid_value", "Must be success, failure or denied."))
+			errs = append(errs, portalParamError("outcome", "invalid_value", "Must be success, failure, denied or enforced."))
 		}
 		f.Outcome = &outcome
 	}
@@ -118,6 +118,10 @@ func toPortalAuditEvent(e audit.Entry) portalapi.AuditEvent {
 	if d.LockedUntil != nil {
 		until := d.LockedUntil.UTC()
 		out.Details.LockedUntil = &until
+	}
+	if d.DedupIntervalSeconds > 0 {
+		seconds := d.DedupIntervalSeconds
+		out.Details.DedupIntervalSeconds = &seconds
 	}
 	return out
 }

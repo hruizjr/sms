@@ -185,7 +185,7 @@ func (s *Service) Create(ctx context.Context, tenantID tenancy.ID, label string,
 		}
 		key = keyFromRow(row.ID, row.TenantID, row.Label, row.Scopes, row.CreatedAt, row.RevokedAt, row.LastUsedAt)
 		return audit.Insert(ctx, tx, tenantID, audit.Event{
-			OccurredAt: s.now(), Action: audit.ActionAPIKeyCreate, Outcome: audit.OutcomeSuccess, Actor: actor,
+			Action: audit.ActionAPIKeyCreate, Outcome: audit.OutcomeSuccess, Actor: actor,
 			Target:  &audit.Target{Type: audit.TargetAPIKey, ID: key.ID},
 			Details: audit.Details{APIKeyName: key.Label, APIKeyScopes: names, Via: via},
 		})
@@ -211,7 +211,7 @@ func (s *Service) Revoke(ctx context.Context, tenantID tenancy.ID, keyID [16]byt
 		}
 		key = keyFromRow(row.ID, row.TenantID, row.Label, row.Scopes, row.CreatedAt, row.RevokedAt, row.LastUsedAt)
 		return audit.Insert(ctx, tx, tenantID, audit.Event{
-			OccurredAt: s.now(), Action: audit.ActionAPIKeyRevoke, Outcome: audit.OutcomeSuccess, Actor: actor,
+			Action: audit.ActionAPIKeyRevoke, Outcome: audit.OutcomeSuccess, Actor: actor,
 			Target:  &audit.Target{Type: audit.TargetAPIKey, ID: key.ID},
 			Details: audit.Details{APIKeyName: key.Label, Via: via},
 		})

@@ -48,7 +48,12 @@ const EVENTS: AuditEvent[] = [
       email: 'viewer@example.invalid',
     },
     target: null,
-    details: { reason: 'insufficient_role', role: 'viewer', required_permission: 'audit_log:read' },
+    details: {
+      reason: 'insufficient_role',
+      role: 'viewer',
+      required_permission: 'audit_log:read',
+      dedup_interval_seconds: 300,
+    },
   }),
 ];
 
@@ -112,14 +117,14 @@ describe('AuditLogPage', () => {
     );
   });
 
-  it('shows an account lock as “Locked” with the end of the lock', async () => {
+  it('shows an account lock with its stored outcome “Enforced” and the end of the lock', async () => {
     renderApp(
       '/audit-log',
       withAudit('owner', () =>
         page([
           auditEventFixture({
             action: 'portal.account_locked',
-            outcome: 'success',
+            outcome: 'enforced',
             actor: { type: 'system', id: null, email: null },
             target: {
               type: 'portal_user',
@@ -134,7 +139,8 @@ describe('AuditLogPage', () => {
     const table = await screen.findByRole('table');
     const row = within(table).getAllByRole('row')[1];
     expect(row).toHaveTextContent('Account locked');
-    expect(row).toHaveTextContent('Locked');
+    // The badge shows the stored outcome itself: no override relabels another value.
+    expect(row).toHaveTextContent('Enforced');
     expect(row).not.toHaveTextContent('Success');
     expect(row).toHaveTextContent('System');
     fireEvent.click(within(table).getByRole('button', { name: /^Details of “Account locked”/ }));
@@ -171,6 +177,55 @@ describe('AuditLogPage', () => {
       expect([...(auditCalls(transport.calls).at(-1)?.keys() ?? [])]).toEqual(['limit']);
     });
     expect(screen.getByLabelText('Event')).toHaveValue('');
+  });
+
+  it('offers every stored outcome, including “Enforced”, as a filter', async () => {
+    const { transport } = renderApp(
+      '/audit-log',
+      withAudit('owner', () => page(EVENTS)),
+    );
+    await screen.findByRole('table');
+    const options = within(screen.getByLabelText('Outcome'))
+      .getAllByRole('option')
+      .map((o) => o.textContent);
+    expect(options).toEqual(expect.arrayContaining(['Success', 'Failure', 'Denied', 'Enforced']));
+    fireEvent.change(screen.getByLabelText('Outcome'), { target: { value: 'enforced' } });
+    await waitFor(() => {
+      expect(auditCalls(transport.calls).at(-1)?.get('outcome')).toBe('enforced');
+    });
+  });
+
+  it('describes administration events and does not claim tamper-proof storage', async () => {
+    renderApp(
+      '/audit-log',
+      withAudit('owner', () =>
+        page([
+          auditEventFixture({
+            action: 'portal_user.create',
+            outcome: 'success',
+            actor: { type: 'system', id: null, email: null },
+            target: {
+              type: 'portal_user',
+              id: '0193f0a1-0000-7000-8000-0000000000dd',
+              email: 'new@example.invalid',
+            },
+            request_id: null,
+            source_ip: null,
+            user_agent: null,
+            details: { role: 'sender', via: 'smsctl' },
+          }),
+        ]),
+      ),
+    );
+    const table = await screen.findByRole('table');
+    expect(within(table).getAllByRole('row')[1]).toHaveTextContent('User created');
+    expect(within(table).getAllByRole('row')[1]).toHaveTextContent('System (smsctl)');
+    expect(within(table).getAllByRole('row')[1]).toHaveTextContent('new@example.invalid');
+    expect(screen.queryByText(/cannot be changed or deleted/)).not.toBeInTheDocument();
+    expect(screen.getByText(/this is not tamper-proof storage/)).toBeInTheDocument();
+    fireEvent.click(within(table).getByRole('button', { name: /^Details of “User created”/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'User created' });
+    expect(dialog).toHaveTextContent('Rolesender');
   });
 
   it('refuses an end date before the start date without a request', async () => {
@@ -265,6 +320,9 @@ describe('AuditLogPage', () => {
     expect(dialog).toHaveTextContent('viewer@example.invalid');
     expect(dialog).toHaveTextContent('audit_log:read');
     expect(dialog).toHaveTextContent('role viewer');
+    expect(dialog).toHaveTextContent(
+      'Repeated refusals of this user and action within 5 minutes are recorded once.',
+    );
     expect(dialog).toHaveTextContent('203.0.113.10');
     expect(dialog).toHaveTextContent('Mozilla/5.0 (Example)');
     expect(dialog).toHaveTextContent('9b2f4c1e7d3a5b60');

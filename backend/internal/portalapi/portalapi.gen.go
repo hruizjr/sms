@@ -52,13 +52,16 @@ func (e ApiKeyScope) Valid() bool {
 
 // Defines values for AuditAction.
 const (
-	AuditActionApiKeyCreate        AuditAction = "api_key.create"
-	AuditActionApiKeyList          AuditAction = "api_key.list"
-	AuditActionApiKeyRevoke        AuditAction = "api_key.revoke"
-	AuditActionAuditLogList        AuditAction = "audit_log.list"
-	AuditActionPortalAccountLocked AuditAction = "portal.account_locked"
-	AuditActionPortalSignIn        AuditAction = "portal.sign_in"
-	AuditActionPortalSignOut       AuditAction = "portal.sign_out"
+	AuditActionApiKeyCreate             AuditAction = "api_key.create"
+	AuditActionApiKeyList               AuditAction = "api_key.list"
+	AuditActionApiKeyRevoke             AuditAction = "api_key.revoke"
+	AuditActionAuditLogList             AuditAction = "audit_log.list"
+	AuditActionPortalAccountLocked      AuditAction = "portal.account_locked"
+	AuditActionPortalSignIn             AuditAction = "portal.sign_in"
+	AuditActionPortalSignOut            AuditAction = "portal.sign_out"
+	AuditActionPortalUserCreate         AuditAction = "portal_user.create"
+	AuditActionPortalUserSessionsRevoke AuditAction = "portal_user.sessions_revoke"
+	AuditActionPortalUserUnlock         AuditAction = "portal_user.unlock"
 )
 
 // Valid indicates whether the value is a known member of the AuditAction enum.
@@ -78,6 +81,12 @@ func (e AuditAction) Valid() bool {
 		return true
 	case AuditActionPortalSignOut:
 		return true
+	case AuditActionPortalUserCreate:
+		return true
+	case AuditActionPortalUserSessionsRevoke:
+		return true
+	case AuditActionPortalUserUnlock:
+		return true
 	default:
 		return false
 	}
@@ -85,15 +94,18 @@ func (e AuditAction) Valid() bool {
 
 // Defines values for AuditOutcome.
 const (
-	Denied  AuditOutcome = "denied"
-	Failure AuditOutcome = "failure"
-	Success AuditOutcome = "success"
+	Denied   AuditOutcome = "denied"
+	Enforced AuditOutcome = "enforced"
+	Failure  AuditOutcome = "failure"
+	Success  AuditOutcome = "success"
 )
 
 // Valid indicates whether the value is a known member of the AuditOutcome enum.
 func (e AuditOutcome) Valid() bool {
 	switch e {
 	case Denied:
+		return true
+	case Enforced:
 		return true
 	case Failure:
 		return true
@@ -318,8 +330,10 @@ type ApiKeyScope string
 
 // AuditAction What happened: `portal.sign_in` (a sign-in, successful or not), `portal.sign_out`,
 // `portal.account_locked` (repeated failed attempts locked the account), `api_key.create`,
-// `api_key.revoke`, `api_key.list` (recorded only when refused) and `audit_log.list` (recorded only
-// when refused).
+// `api_key.revoke`, `api_key.list` (recorded only when refused), `audit_log.list` (recorded only
+// when refused), and, performed by the platform's administration tool, `portal_user.create`,
+// `portal_user.unlock` (the account lockout was cleared) and `portal_user.sessions_revoke` (the
+// user's sessions were ended).
 type AuditAction string
 
 // AuditDetails Structured, non-secret details. Only the fields that apply are present.
@@ -327,6 +341,10 @@ type AuditDetails struct {
 	// ApiKeyName The name of the API key that was created or revoked.
 	ApiKeyName   *string        `json:"api_key_name,omitempty"`
 	ApiKeyScopes *[]ApiKeyScope `json:"api_key_scopes,omitempty"`
+
+	// DedupIntervalSeconds Set on a refused request: further refusals of the same user and action within the same
+	// interval of this many seconds are not recorded again.
+	DedupIntervalSeconds *int `json:"dedup_interval_seconds,omitempty"`
 
 	// LockedUntil When the account lock ends.
 	LockedUntil *time.Time `json:"locked_until,omitempty"`
@@ -338,9 +356,7 @@ type AuditDetails struct {
 	// RequiredPermission A permission of the signed-in user. Operations state the one they require (`x-required-permission`).
 	RequiredPermission *Permission `json:"required_permission,omitempty"`
 
-	// Role Client portal role (MVP-03). `owner` and `sender` may read and send messages; `viewer` may only
-	// read (G3-3). Only `owner` manages API keys (MVP-03) and reads the security audit log. User
-	// management is not part of this version.
+	// Role The role of a refused user, or the role given to a created user.
 	Role *Role `json:"role,omitempty"`
 
 	// Via The administration tool that performed a system action (`smsctl`).
@@ -352,8 +368,10 @@ type AuditDetails struct {
 type AuditEvent struct {
 	// Action What happened: `portal.sign_in` (a sign-in, successful or not), `portal.sign_out`,
 	// `portal.account_locked` (repeated failed attempts locked the account), `api_key.create`,
-	// `api_key.revoke`, `api_key.list` (recorded only when refused) and `audit_log.list` (recorded only
-	// when refused).
+	// `api_key.revoke`, `api_key.list` (recorded only when refused), `audit_log.list` (recorded only
+	// when refused), and, performed by the platform's administration tool, `portal_user.create`,
+	// `portal_user.unlock` (the account lockout was cleared) and `portal_user.sessions_revoke` (the
+	// user's sessions were ended).
 	Action AuditAction `json:"action"`
 
 	// Actor The actor or target of an event.
@@ -366,7 +384,8 @@ type AuditEvent struct {
 
 	// Outcome `success`; `failure` (the credentials or the confirmed password were not accepted); `denied`
 	// (refused by policy, for example a role without the permission or an organization that is not
-	// active).
+	// active); `enforced` (the platform applied a security control: the outcome of
+	// `portal.account_locked`, and of no other action).
 	Outcome AuditOutcome `json:"outcome"`
 
 	// RequestId The request identifier (`X-Request-ID`), or `null` for actions outside a request.
@@ -391,7 +410,8 @@ type AuditEventList struct {
 
 // AuditOutcome `success`; `failure` (the credentials or the confirmed password were not accepted); `denied`
 // (refused by policy, for example a role without the permission or an organization that is not
-// active).
+// active); `enforced` (the platform applied a security control: the outcome of
+// `portal.account_locked`, and of no other action).
 type AuditOutcome string
 
 // AuditParty The actor or target of an event.
@@ -688,6 +708,9 @@ type NotFound = Problem
 
 // PayloadTooLarge RFC 9457 problem details; `detail` never contains internal error text.
 type PayloadTooLarge = Problem
+
+// ServiceBusy RFC 9457 problem details; `detail` never contains internal error text.
+type ServiceBusy = Problem
 
 // TooManySignInAttempts RFC 9457 problem details; `detail` never contains internal error text.
 type TooManySignInAttempts = Problem

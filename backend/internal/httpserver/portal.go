@@ -70,9 +70,12 @@ type PortalAuditService interface {
 	List(ctx context.Context, tenantID tenancy.ID, f audit.Filter) ([]audit.Entry, string, error)
 }
 
-// SignInLimiter counts sign-in attempts per source address (implemented by signinlimit.Limiter).
+// SignInLimiter applies the layered per-source sign-in limits (implemented by signinlimit.Limiter).
 type SignInLimiter interface {
-	Attempt(ctx context.Context, ip netip.Addr) (signinlimit.Decision, error)
+	// Admit takes a token of the source's all-attempt bucket and reserves its failed-attempt slots.
+	Admit(ctx context.Context, ip netip.Addr) (signinlimit.Admission, error)
+	// Refund returns the slots of an attempt that succeeded or whose password was never checked.
+	Refund(ctx context.Context, res signinlimit.Reservation) error
 	Config() signinlimit.Config
 }
 
@@ -84,7 +87,8 @@ type PortalDeps struct {
 	APIKeys       PortalAPIKeyService
 	Audit         PortalAuditService
 	SignInLimiter SignInLimiter
-	// Now is the clock of audit events recorded by the HTTP layer; nil uses time.Now.
+	// Now is the clock of the deduplication intervals of refusals recorded by the HTTP layer; nil
+	// uses time.Now. (Audit event times are assigned by the database.)
 	Now func() time.Time
 }
 
@@ -189,16 +193,23 @@ func (a *portalAPI) require(w http.ResponseWriter, r *http.Request, permission p
 }
 
 // requireAudited is require for the protected operations whose refusals are security events (API key
-// management and the audit log): a refusal is recorded as a denied action. The request is refused
-// whether or not the event could be written; a failure to write it is logged as an error.
+// management and the audit log): a refusal is recorded as a denied action, at most once per user,
+// action and audit.DeniedInterval (five minutes), so repeating a refused request cannot multiply
+// audit writes. The request is refused whether or not the event could be written; a failure to write
+// it is logged as an error.
 func (a *portalAPI) requireAudited(w http.ResponseWriter, r *http.Request, permission portal.Permission, action audit.Action) (portal.Principal, bool) {
 	p := portalPrincipalFrom(r.Context())
 	if p.Has(permission) {
 		return p, true
 	}
+	actor := audit.PortalUser(p.UserID)
 	err := a.audit.Record(r.Context(), p.TenantID, audit.Event{
-		OccurredAt: a.now(), Action: action, Outcome: audit.OutcomeDenied, Actor: audit.PortalUser(p.UserID),
-		Details: audit.Details{Reason: audit.ReasonInsufficientRole, Role: string(p.Role), RequiredPermission: string(permission)},
+		Action: action, Outcome: audit.OutcomeDenied, Actor: actor,
+		Details: audit.Details{
+			Reason: audit.ReasonInsufficientRole, Role: string(p.Role), RequiredPermission: string(permission),
+			DedupIntervalSeconds: int(audit.DeniedInterval / time.Second),
+		},
+		DedupKey: audit.DeniedKey(actor, action, a.now()),
 	})
 	if err != nil {
 		a.logger.ErrorContext(r.Context(), "audit event of a refused request not recorded",
@@ -216,39 +227,53 @@ func forbidden(w http.ResponseWriter, r *http.Request, permission portal.Permiss
 
 // SignIn implements POST /portal/v1/session.
 func (a *portalAPI) SignIn(w http.ResponseWriter, r *http.Request, _ portalapi.SignInParams) {
+	// The per-source limits apply to every request, before the body is read and before any
+	// credential is checked, so a refusal reveals nothing about the account and never touches its
+	// lockout state.
+	admission, ok := a.admitSignIn(w, r)
+	if !ok {
+		return
+	}
 	raw, ok := readJSONBody(w, r, maxSignInRequestBytes)
 	if !ok {
+		a.refundSignIn(r, admission.Reservation) // no password was checked
 		return
 	}
 	fields, errs, malformed := parseStringObject(raw, []string{"email", "password"}, []string{"email", "password"})
 	if malformed {
+		a.refundSignIn(r, admission.Reservation)
 		malformedJSON(w, r)
 		return
 	}
 	if len(errs) > 0 {
+		a.refundSignIn(r, admission.Reservation)
 		writePortalProblem(w, r, http.StatusBadRequest, problemValidationError, "The request is invalid", "One or more fields are invalid.", errs)
-		return
-	}
-	// The per-source limit is checked before any credential, so a refusal reveals nothing about the
-	// account and never touches its lockout state.
-	if !a.allowSignIn(w, r) {
 		return
 	}
 	session, err := a.auth.Login(r.Context(), fields["email"], fields["password"])
 	switch {
 	case errors.Is(err, portal.ErrInvalidCredentials):
+		// The failure keeps its reserved slots.
 		a.logger.InfoContext(r.Context(), "portal sign-in failed",
 			slog.String("request_id", middleware.RequestIDFromContext(r.Context())))
 		writePortalProblem(w, r, http.StatusUnauthorized, "invalid-credentials", "Sign-in failed",
 			"The email address or password is incorrect, or the account is temporarily locked.", nil)
 		return
 	case errors.Is(err, portal.ErrTenantNotActive):
+		// A correct password, but no session: counted like a failure (no refund).
 		accountNotActive(w, r)
+		return
+	case errors.Is(err, portal.ErrBusy):
+		// The password was never checked: the attempt returns its slots.
+		a.refundSignIn(r, admission.Reservation)
+		serviceBusy(w, r)
 		return
 	case err != nil:
 		a.serverError(w, r, "portal sign-in", err)
 		return
 	}
+	// A successful sign-in returns exactly its own slots; earlier failures stay counted.
+	a.refundSignIn(r, admission.Reservation)
 	p := session.Principal
 	a.logger.InfoContext(r.Context(), "portal sign-in",
 		slog.String("request_id", middleware.RequestIDFromContext(r.Context())),
@@ -265,25 +290,46 @@ func (a *portalAPI) SignIn(w http.ResponseWriter, r *http.Request, _ portalapi.S
 	writeJSON(w, http.StatusOK, toPortalSession(p))
 }
 
-// allowSignIn counts the sign-in attempt of the request's source and, when the source is over its
-// limit, writes 429 with Retry-After and returns false. The first refusal of a window is recorded as a
-// platform audit event (no organization is identified); later refusals in the same window are counted
-// but not recorded one by one, so a flood cannot multiply audit writes.
-func (a *portalAPI) allowSignIn(w http.ResponseWriter, r *http.Request) bool {
+// refundTimeout bounds a refund, which runs even if the client has gone away.
+const refundTimeout = 5 * time.Second
+
+// refundSignIn returns an attempt's failed-attempt slots. A refund that fails leaves the slots
+// counted (the safe direction) and is logged.
+func (a *portalAPI) refundSignIn(r *http.Request, res signinlimit.Reservation) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), refundTimeout)
+	defer cancel()
+	if err := a.limiter.Refund(ctx, res); err != nil {
+		a.logger.ErrorContext(r.Context(), "sign-in failure slot not refunded",
+			slog.String("request_id", middleware.RequestIDFromContext(r.Context())), slog.String("error", err.Error()))
+	}
+}
+
+// admitSignIn applies the per-source sign-in limits to the request's source. When a limit refuses
+// the attempt it writes 429 with Retry-After and returns false. The first refusal of a failure
+// budget's window, or of a token bucket's report interval, is recorded as a platform audit event (no
+// organization is identified); later refusals are not recorded one by one, so a flood cannot multiply
+// audit writes.
+func (a *portalAPI) admitSignIn(w http.ResponseWriter, r *http.Request) (signinlimit.Admission, bool) {
 	ip := middleware.ClientIPFromContext(r.Context())
-	decision, err := a.limiter.Attempt(r.Context(), ip)
+	admission, err := a.limiter.Admit(r.Context(), ip)
 	if err != nil {
 		a.serverError(w, r, "portal sign-in rate limit", err)
-		return false
+		return admission, false
 	}
-	if decision.Allowed {
-		return true
+	if admission.Allowed {
+		return admission, true
 	}
-	if decision.FirstRefusal {
+	refusal := admission.Refusal
+	if refusal.Report {
 		cfg := a.limiter.Config()
+		details := audit.Details{Limit: refusal.Limit, SourcePrefixLength: refusal.Source.Bits()}
+		if refusal.Layer == signinlimit.LayerRequestRate {
+			details.Reason, details.RatePerSecond = audit.ReasonTooManyRequests, cfg.RequestsPerSecond
+		} else {
+			details.Reason, details.WindowSeconds = audit.ReasonTooManyFailures, int(cfg.FailureWindow/time.Second)
+		}
 		err := a.audit.RecordPlatform(r.Context(), audit.PlatformEvent{
-			OccurredAt: a.now(), Action: audit.ActionSignInRateLimited, Outcome: audit.OutcomeDenied,
-			Details: audit.Details{Reason: audit.ReasonTooManyAttempts, MaxAttempts: cfg.MaxAttempts, WindowSeconds: int(cfg.Window.Seconds())},
+			Action: audit.ActionSignInRateLimited, Outcome: audit.OutcomeDenied, Details: details,
 		})
 		if err != nil {
 			a.logger.ErrorContext(r.Context(), "audit event of a rate-limited sign-in not recorded",
@@ -291,11 +337,24 @@ func (a *portalAPI) allowSignIn(w http.ResponseWriter, r *http.Request) bool {
 		}
 	}
 	a.logger.InfoContext(r.Context(), "portal sign-in rate limited",
-		slog.String("request_id", middleware.RequestIDFromContext(r.Context())))
-	w.Header().Set("Retry-After", strconv.FormatInt(int64(decision.RetryAfter/time.Second), 10))
-	writePortalProblem(w, r, http.StatusTooManyRequests, "too-many-sign-in-attempts", "Too many sign-in attempts",
-		"Too many sign-in attempts from your network. Wait before trying again.", nil)
-	return false
+		slog.String("request_id", middleware.RequestIDFromContext(r.Context())), slog.String("limit", string(refusal.Layer)))
+	w.Header().Set("Retry-After", strconv.FormatInt(int64(refusal.RetryAfter/time.Second), 10))
+	detail := "Too many failed sign-in attempts from your network. Wait before trying again."
+	if refusal.Layer == signinlimit.LayerRequestRate {
+		detail = "Too many sign-in requests from your network. Wait before trying again."
+	}
+	writePortalProblem(w, r, http.StatusTooManyRequests, "too-many-sign-in-attempts", "Too many sign-in attempts", detail, nil)
+	return admission, false
+}
+
+// serviceBusyRetryAfter is the Retry-After of a 503 caused by exhausted password-hashing capacity.
+const serviceBusyRetryAfter = "2"
+
+// serviceBusy writes 503 (service-busy): the password-hashing capacity is exhausted; nothing was checked.
+func serviceBusy(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Retry-After", serviceBusyRetryAfter)
+	writePortalProblem(w, r, http.StatusServiceUnavailable, "service-busy", "Service busy",
+		"The service is busy. Try again in a moment.", nil)
 }
 
 // GetSession implements GET /portal/v1/session.

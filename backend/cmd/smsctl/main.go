@@ -115,7 +115,8 @@ func run(ctx context.Context, args []string, lookup config.LookupFunc, stdin io.
 		return exitError
 	}
 	defer db.Close()
-	accounts, err := portal.NewService(db)
+	// Portal user administration is recorded in the audit log as system actions via smsctl.
+	accounts, err := portal.NewService(db, portal.WithAdministrationTool("smsctl"))
 	if err != nil {
 		sayln(stderr, "smsctl:", err)
 		return exitError

@@ -225,14 +225,30 @@ Security (Phase 4 Group 6; `api` only):
 
 | Variable | Default | Rules |
 | -------- | ------- | ----- |
-| `TRUSTED_PROXIES` | empty (none) | Comma-separated IP addresses or CIDR prefixes of the reverse proxies or load balancers in front of the API, at most 64. Only a request whose direct peer is listed has its `X-Forwarded-For` read (see "Client IP addresses"). `0.0.0.0/0`, `::/0`, host names, zones and IPv4-mapped forms are refused. |
-| `SIGNIN_RATE_LIMIT_MAX_ATTEMPTS` | `50` | 1–100000 portal sign-in attempts per source and window |
-| `SIGNIN_RATE_LIMIT_WINDOW` | `15m` | 1m–24h |
+| `TRUSTED_PROXIES` | **required in production**; elsewhere empty (none) | The actual IP addresses or CIDR prefixes of the reverse proxies or load balancers in front of the API (comma-separated, at most 64), or `none` when clients connect directly. Only a request whose direct peer is listed has its `X-Forwarded-For` read (see "Client IP addresses"). In production the API **refuses to start** when it is unset or blank. Refused: malformed entries, empty entries, host names, zones, IPv4-mapped forms, `/0`, entries broader than an IPv4 `/8` or an IPv6 `/32` (unless allowed below), and entries that together cover every address of a family (for example `0.0.0.0/1,128.0.0.0/1`), even when broad ranges are allowed. |
+| `TRUSTED_PROXIES_ALLOW_BROAD_RANGES` | `false` | `true` accepts entries broader than an IPv4 `/8` or an IPv6 `/32`; the API then logs a `SECURITY WARNING` naming them at every start. |
+| `SIGNIN_FAILURE_LIMIT_IPV4` | `100` | 1–1000000 failed sign-ins per IPv4 address and window |
+| `SIGNIN_FAILURE_LIMIT_IPV6_64` | `100` | 1–1000000 failed sign-ins per IPv6 `/64` and window |
+| `SIGNIN_FAILURE_LIMIT_IPV6_48` | `500` | 1–1000000 failed sign-ins per IPv6 `/48` and window; at least the `/64` limit |
+| `SIGNIN_FAILURE_WINDOW` | `15m` | 1m–24h |
+| `SIGNIN_REQUEST_RATE` | `10` | sign-in requests per second per IPv4 address or IPv6 `/64` (token bucket refill), > 0 and ≤ 10000 |
+| `SIGNIN_REQUEST_BURST` | `100` | 1–1000000 (token bucket capacity) |
+| `PASSWORD_HASH_CONCURRENCY` | `4` | 1–256 Argon2id computations at once (memory: 19 MiB each) |
+| `PASSWORD_HASH_QUEUE` | `32` | 0–100000 callers that may wait for a slot; more are refused at once (`503`) |
+| `PASSWORD_HASH_MAX_WAIT` | `1s` | longest wait for a slot (at most 1m), then `503` |
 
-**Sign-in rate-limit defaults (rationale).** 50 attempts per source in 15 minutes lets the users of one office
-behind a shared address mistype passwords several times without being blocked, while limiting password guessing
-from one source to about 200 attempts an hour across all accounts. The window equals the account lock duration
-(G3-3). These are engineering defaults, not measured values; review them once real traffic is observed.
+**Sign-in limit defaults (owner decision, decision log §23).** They are initial, configurable values, not
+measurements of real traffic; review them once real traffic is observed. 100 **failed** attempts per IPv4 address
+or IPv6 `/64` in 15 minutes (500 per IPv6 `/48`) bound password guessing from one source to about 400 guesses an
+hour across all accounts, while successful sign-ins use none of the budget, so the users of one office or carrier
+NAT are not blocked by each other's sign-ins. The all-attempt token bucket (10 per second, burst 100) bounds the
+request rate, and so the password-hashing work, one source can cause.
+
+**Password-hashing defaults (measured here, not in production).** On the 4-vCPU development container used for
+this group, Argon2id with the stored parameters (19 MiB, 2 iterations) ran at about 31 hashes per second with one
+at a time, 58 per second with 4 at once and 69 per second with 8 (no further gain at 16). The default (4 at once,
+32 waiting, at most 1 s) keeps the hashing memory at 76 MiB and the worst queue wait near half a second. **These
+limits MUST be measured again on the production hardware before launch** (a production gate).
 
 The `/readyz` ping timeout is fixed at 2 seconds (`httpserver.DefaultReadinessTimeout`).
 
@@ -320,10 +336,11 @@ logs remain operational logging only.
 | ---------------- | ----------------- | ---------- |
 | `portal.sign_in` | success (a session started), failure (wrong password, locked account), denied (organization not active) | `portal.Service.Login` |
 | `portal.sign_out` | success | `portal.Service.Logout` |
-| `portal.account_locked` | success (actor `system`; details: `locked_until`) | the failed sign-in or re-authentication that starts the lock |
+| `portal.account_locked` | **enforced** (the platform applied a security control; actor `system`; details: `locked_until`). `enforced` is the outcome of this action only (a database check). | the failed sign-in or re-authentication that starts the lock |
 | `api_key.create` | success (key name and scopes), failure (password confirmation failed), denied (role) | `apikey.Service.Create`, `portal.Service.Reauthenticate`, the portal handler |
 | `api_key.revoke` | success, denied | `apikey.Service.Revoke`, the portal handler |
 | `api_key.list`, `audit_log.list` | denied only | the portal handler |
+| `portal_user.create`, `portal_user.unlock`, `portal_user.sessions_revoke` | success (actor `system`, details `via: smsctl`; creation also `role`) | `portal.Service.CreateUser`, `Unlock`, `RevokeUserSessions` (used by `smsctl`), in the same transaction as the change |
 
 - **Tables.** `security_audit_events` is tenant-owned (forced RLS, the approved policy). Events that belong to no
   organization — a sign-in for an address that is not registered (the address is **not** stored), malformed
@@ -334,43 +351,78 @@ logs remain operational logging only.
   count are committed together with their event. If the event cannot be written, the change is rolled back and the
   request fails with `500` instead of succeeding unaudited. Refusals (`denied`) are refused whether or not their
   event could be written; a write failure is logged as an error.
-- **Contents.** UTC time, tenant, actor type and ID, action, target type and ID, outcome, request ID, client IP
+- **Deduplication (B2 fix).** A refused request (`denied`) is recorded once per user, action and five-minute
+  interval, and an attempt on a locked account once per account, action and lock (sign-in and password
+  confirmation separately). These events carry a `dedup_key` built from server-side values only; a unique index on
+  `(tenant_id, dedup_key)` makes a repeat an `INSERT … ON CONFLICT DO NOTHING` that writes nothing. No existing event
+  is modified and no auxiliary table exists, so the mechanism itself cannot be used to create records: one user can
+  cause at most one refusal event per audited action and five minutes, and the number of users is set by
+  administrators. Failed sign-ins of an existing account remain one event each, bounded by the account lockout
+  (five per lock); unknown-account sign-ins are bounded by the failed-attempt budgets (below).
+- **Contents.** UTC time (assigned by PostgreSQL), tenant, actor type and ID, action, target type and ID, outcome, request ID, client IP
   address, user agent (control characters removed, at most 256 characters) and fixed, non-secret details
   (`audit.Details`). Never passwords, session tokens, CSRF tokens, API keys or their hashes, authorization headers
   or message text.
+- **Identity and time.** PostgreSQL assigns each event's `id` (`uuidv7()`) and `occurred_at` (`clock_timestamp()`,
+  stored in UTC): `sms_app` has no `INSERT` privilege on either column, so the application cannot back-date an event
+  or choose an existing event's ID, and an upsert onto an existing event is refused (no `UPDATE`). The tenant is
+  checked by row-level security (`WITH CHECK`); the actor comes from the authenticated session.
 - **Append-only.** `sms_app` has `INSERT` (and `SELECT` on its tenant's events) only: no `UPDATE`, `DELETE` or
   `TRUNCATE`. Triggers also reject `UPDATE`, `DELETE` and `TRUNCATE` by any role, including the table owner
-  `sms_migrator`. This is append-only **under the application's permissions**, not tamper-proof: a superuser, or
-  the table owner after disabling the triggers, can still change rows. Tamper evidence (hash chaining, export to
-  write-once storage) remains open (security baseline S-8).
+  `sms_migrator`. These controls stop ordinary application modification. They are **not tamper-proof** and do not
+  protect against a database superuser, or the table owner after disabling the triggers, who can still change or
+  remove rows; no evidence kept inside this database (including a hash chain) could prove otherwise. Evidence that
+  holds against a superuser needs an **external immutable export** or **externally anchored integrity evidence** —
+  a production requirement (security baseline S-8), not implemented here.
 - **Reading.** `GET /portal/v1/audit-events` (owners only, `audit_log:read`; filters `action`, `outcome`,
   `occurred_from`, `occurred_before`; cursor pages). Sender and Viewer receive `403`, and the refusal is recorded.
 - **Retention.** No audit row is deleted automatically: the retention period is an open decision (S-4, §10.8).
 
-### Sign-in rate limit (Phase 4 Group 6)
+### Sign-in limits (Phase 4 Group 6, decision log §23)
 
-`internal/signinlimit` limits portal sign-in attempts per **source**: an IPv4 address, or an IPv6 `/64`. Each
-source has a window that starts with its first attempt; every attempt in the window counts (refused ones too).
-Beyond `SIGNIN_RATE_LIMIT_MAX_ATTEMPTS` the API answers `429 too-many-sign-in-attempts` with `Retry-After` (seconds
-until the window ends, rounded up), **before** any credential is looked at: nothing reveals whether the account
-exists, and the attempt never counts toward, starts or extends an account lock. The account lockout (five failures,
-15 minutes, G3-3) is unchanged and independent.
+`internal/signinlimit` applies two layers to every portal sign-in request, per **source**, **before** any
+credential is looked at; a refusal is `429 too-many-sign-in-attempts` with `Retry-After` (seconds, rounded up),
+reveals nothing about any account, and never counts toward, starts or extends an account lock. The account lockout
+(five failures, 15 minutes, G3-3) is unchanged and independent.
 
-- **Shared and durable.** Counters live in PostgreSQL (`portal_sign_in_rate_limits`, platform-owned, no tenant
-  data), so every API instance shares them and a restart resets nothing. Each attempt is one atomic
-  `INSERT … ON CONFLICT DO UPDATE … RETURNING`, so concurrent attempts cannot exceed the limit.
-- **Storage.** One row per source with an open window. Every API process deletes ended windows every 5 minutes, so
-  the table holds at most the sources seen during one window plus five minutes.
-- **Audit.** Only the first refusal of each source and window is recorded (a platform event), so a flood cannot
-  multiply audit writes.
+1. **All-attempt token bucket** per IPv4 address or IPv6 `/64` (`SIGNIN_REQUEST_RATE`, `SIGNIN_REQUEST_BURST`):
+   every request takes a token, including malformed ones; an empty bucket refuses (`Retry-After` until the next
+   token).
+2. **Failed-attempt budgets** within `SIGNIN_FAILURE_WINDOW` (a fixed window from the first reservation): per IPv4
+   address, per IPv6 `/64` and per IPv6 `/48` aggregate. Before the password is checked the attempt **reserves**
+   one slot in each budget of its source (the `/32`, or the `/48` and the `/64`), all or none. A successful sign-in,
+   and an attempt whose password was never checked (malformed request, `503`), **refunds exactly its own slots**;
+   every earlier failure stays counted, so a valid account of the attacker's own resets nothing. Failures include
+   wrong passwords, unknown addresses, locked accounts and organizations that are not active. Rotating IPv6
+   addresses or `/64`s inside one `/48` is stopped by the `/48` aggregate.
+3. **Bounded password hashing** (`PASSWORD_HASH_*`): at most `CONCURRENCY` Argon2id computations at once and at most
+   `QUEUE` callers waiting, each for at most `MAX_WAIT`; beyond that the API answers `503 service-busy` with
+   `Retry-After: 2` without checking the password (sign-in and API key creation). A distributed attack can still
+   make the service busy; it cannot exhaust memory or CPU, and a `503` uses no failure budget.
+
+- **Shared, atomic, durable.** `portal_sign_in_request_buckets` and `portal_sign_in_failure_budgets` (platform-owned,
+  no tenant data) live in PostgreSQL, so every API instance shares them and a restart resets nothing. A token is
+  taken by one atomic upsert; the budgets of an attempt are reserved in one transaction, always in the same order
+  (`/48` before `/64`), each by an atomic upsert that serializes concurrent attempts on its row, and the transaction
+  is rolled back when any budget would exceed its limit. Clock differences between instances cannot add tokens.
+- **Storage.** One bucket row per source seen within a refill time (10 s by default) and one budget row per source
+  with reserved slots in an open window; every API process deletes the rest every minute. Rows are bounded by the
+  request rate times the window.
+- **Audit.** One platform event per refused budget and window, and per refusing bucket and five minutes; a flood
+  cannot multiply audit writes.
+- **Known limits.** An attacker holding many `/48`s (or many IPv4 addresses) gets a budget for each; shared-address
+  griefing (failures from one NAT address exhausting its budget for everyone behind it) is bounded by the budget
+  size but not prevented. Edge rate limiting or a WAF in front of the API is a production gate.
 
 ### Client IP addresses
 
 `middleware.ClientIP` determines the address used by the rate limit and the audit log. By default it is the
 **direct peer** of the connection; `X-Forwarded-For` and similar headers are ignored. When the peer is listed in
 `TRUSTED_PROXIES`, `X-Forwarded-For` is read from right to left, skipping trusted proxies, and the first other
-address is the client (an address a client prepends itself is never reached). Behind a load balancer the proxies
-**must** be configured, or every client appears to come from the proxy and shares one sign-in limit. `Forwarded`
+address is the client (an address a client prepends itself is never reached). A forwarded header from a peer that
+is not a configured proxy is never read. Behind a load balancer the proxies **must** be configured, or every client
+appears to come from the proxy and shares one sign-in limit; in production the API therefore refuses to start
+until `TRUSTED_PROXIES` is set explicitly (`none` when there is no proxy). `Forwarded`
 and `X-Real-IP` are not used. The access log still records no IP address.
 
 ### API key last use (owner decision G4-6)

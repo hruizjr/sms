@@ -3,7 +3,14 @@ import { CopyButton } from '../../components/actions/CopyButton';
 import { DescriptionItem, DescriptionList } from '../../components/data/DescriptionList';
 import type { AuditEvent } from '../../lib/api/client';
 import { formatDateTime } from '../messages/status';
-import { actorText, eventTitle, outcomeBadge, reasonText, targetText } from './events';
+import {
+  actorText,
+  dedupIntervalText,
+  eventTitle,
+  outcomeBadge,
+  reasonText,
+  targetText,
+} from './events';
 
 /** Every recorded field of one audit event, read-only. */
 export function AuditEventDialog({
@@ -75,6 +82,15 @@ function EventDetails({ event }: { event: AuditEvent }) {
           {details.role !== undefined && (
             <span className="text-text-muted"> · role {details.role}</span>
           )}
+        </DescriptionItem>
+      )}
+      {details.role !== undefined && details.required_permission === undefined && (
+        <DescriptionItem term="Role">{details.role}</DescriptionItem>
+      )}
+      {details.dedup_interval_seconds !== undefined && (
+        <DescriptionItem term="Repeats">
+          Repeated refusals of this user and action within{' '}
+          {dedupIntervalText(details.dedup_interval_seconds)} are recorded once.
         </DescriptionItem>
       )}
       {details.locked_until !== undefined && (

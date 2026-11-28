@@ -70,6 +70,9 @@ func (a *portalAPI) CreateApiKey(w http.ResponseWriter, r *http.Request, _ porta
 		writePortalProblem(w, r, http.StatusForbidden, "reauthentication-failed", "Password confirmation failed",
 			"The current password is incorrect, or the account is temporarily locked after too many attempts.", nil)
 		return
+	case errors.Is(err, portal.ErrBusy):
+		serviceBusy(w, r)
+		return
 	case err != nil:
 		a.serverError(w, r, "api key re-authentication", err)
 		return

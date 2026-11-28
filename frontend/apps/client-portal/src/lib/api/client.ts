@@ -47,7 +47,7 @@ export const browserTransport: Transport = (url, init) =>
 export class ApiError extends Error {
   readonly status: number;
   readonly problem: Problem | undefined;
-  /** Seconds to wait before retrying, from a valid Retry-After header (429, 409). */
+  /** Seconds to wait before retrying, from a valid Retry-After header (429, 409, 503). */
   readonly retryAfterSeconds: number | undefined;
 
   constructor(status: number, problem: Problem | undefined, retryAfterSeconds?: number) {

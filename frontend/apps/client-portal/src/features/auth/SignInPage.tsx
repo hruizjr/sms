@@ -30,6 +30,8 @@ function failureMessage(error: unknown): string {
         return 'Your organization’s account is not active. Contact support.';
       case 'too-many-sign-in-attempts':
         return `There have been too many sign-in attempts from your network. Wait ${waitText(error.retryAfterSeconds)} and try again.`;
+      case 'service-busy':
+        return `The service is busy. Wait ${waitText(error.retryAfterSeconds)} and try again.`;
     }
     return 'Sign-in failed. Try again.';
   }

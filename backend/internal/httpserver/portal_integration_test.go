@@ -412,11 +412,17 @@ func mustParseMessageID(t *testing.T, s string) messaging.MessageID {
 	return id
 }
 
+// highSignInLimits are sign-in limits that tests not about them never reach.
+var highSignInLimits = signinlimit.Config{
+	FailuresPerIPv4: 100_000, FailuresPerIPv6Subnet: 100_000, FailuresPerIPv6Aggregate: 100_000,
+	FailureWindow: time.Minute, RequestsPerSecond: 10_000, RequestBurst: 100_000,
+}
+
 // testSignInLimiter is a per-source sign-in limiter for tests that do not exercise the limit (high
 // enough never to be reached).
 func testSignInLimiter(t *testing.T, db *database.DB) *signinlimit.Limiter {
 	t.Helper()
-	l, err := signinlimit.New(db, signinlimit.Config{MaxAttempts: 10000, Window: time.Minute})
+	l, err := signinlimit.New(db, highSignInLimits)
 	if err != nil {
 		t.Fatal(err)
 	}

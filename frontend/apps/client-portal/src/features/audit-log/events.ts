@@ -15,6 +15,9 @@ export const ACTION_LABELS: Record<AuditAction, string> = {
   'api_key.revoke': 'API key revocation',
   'api_key.list': 'API key list access',
   'audit_log.list': 'Audit log access',
+  'portal_user.create': 'User creation',
+  'portal_user.unlock': 'Account unlock',
+  'portal_user.sessions_revoke': 'Session revocation',
 };
 
 export const ACTIONS = Object.keys(ACTION_LABELS) as AuditAction[];
@@ -26,21 +29,18 @@ export const OUTCOME_INFO: Record<
   success: { label: 'Success', tone: 'success', icon: 'check' },
   failure: { label: 'Failure', tone: 'danger', icon: 'alert' },
   denied: { label: 'Denied', tone: 'warning', icon: 'x' },
+  // A security control was applied (an account lock): the stored outcome, shown as it is.
+  enforced: { label: 'Enforced', tone: 'warning', icon: 'lock' },
 };
 
 export const OUTCOMES = Object.keys(OUTCOME_INFO) as AuditOutcome[];
 
-/**
- * The badge of an event: its outcome, except for an account lock, whose recorded outcome (success:
- * the lock was applied) is shown as "Locked" so that it does not read as good news.
- */
+/** The badge of an event: exactly its stored outcome (an account lock is stored as "enforced"). */
 export function outcomeBadge(event: AuditEvent): {
   label: string;
   tone: BadgeTone;
   icon: IconName;
 } {
-  if (event.action === 'portal.account_locked')
-    return { label: 'Locked', tone: 'warning', icon: 'lock' };
   return OUTCOME_INFO[event.outcome];
 }
 
@@ -70,6 +70,12 @@ export function eventTitle(event: AuditEvent): string {
       return 'API key list refused';
     case 'audit_log.list':
       return 'Audit log access refused';
+    case 'portal_user.create':
+      return 'User created';
+    case 'portal_user.unlock':
+      return 'Account unlocked';
+    case 'portal_user.sessions_revoke':
+      return 'Sessions ended';
   }
 }
 
@@ -88,12 +94,20 @@ export function reasonText(event: AuditEvent): string {
   return REASONS[reason] ?? reason;
 }
 
-/** A short secondary line: the key concerned, or the reason. */
+/** A short secondary line: the key concerned, the user administered, or the reason. */
 export function eventSummary(event: AuditEvent): string {
+  if (event.action.startsWith('portal_user.') && event.target?.email) return event.target.email;
   const name = event.details.api_key_name;
   const reason = reasonText(event);
   if (name !== undefined) return reason === '' ? `“${name}”` : `“${name}” · ${reason}`;
   return reason;
+}
+
+/** "5 minutes" (or seconds) for a deduplication interval. */
+export function dedupIntervalText(seconds: number): string {
+  if (seconds % 60 !== 0) return seconds === 1 ? '1 second' : `${String(seconds)} seconds`;
+  const minutes = seconds / 60;
+  return minutes === 1 ? '1 minute' : `${String(minutes)} minutes`;
 }
 
 /** Who acted: the user's email address, "Not signed in", or "System". */

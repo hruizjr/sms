@@ -11,52 +11,172 @@ import (
 	"time"
 )
 
-const countSignInAttempt = `-- name: CountSignInAttempt :one
-
-INSERT INTO portal_sign_in_rate_limits AS l (source, window_start_at, attempt_count)
-VALUES ($1, $2::timestamptz, 1)
-ON CONFLICT (source) DO UPDATE
-SET window_start_at = CASE WHEN l.window_start_at <= $3::timestamptz THEN $2::timestamptz
-                           ELSE l.window_start_at END,
-    attempt_count = CASE WHEN l.window_start_at <= $3::timestamptz THEN 1
-                         ELSE LEAST(l.attempt_count, 2147483646) + 1 END
-RETURNING attempt_count, window_start_at
+const deleteEndedSignInFailureBudgets = `-- name: DeleteEndedSignInFailureBudgets :execrows
+DELETE FROM portal_sign_in_failure_budgets
+WHERE window_start_at <= $1::timestamptz OR failure_count = 0
 `
 
-type CountSignInAttemptParams struct {
+// Removes budgets whose window has ended or that hold no reserved slot (an absent row is the same as
+// an empty budget).
+func (q *Queries) DeleteEndedSignInFailureBudgets(ctx context.Context, windowEndedBefore time.Time) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteEndedSignInFailureBudgets, windowEndedBefore)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteFullSignInRequestBuckets = `-- name: DeleteFullSignInRequestBuckets :execrows
+DELETE FROM portal_sign_in_request_buckets
+WHERE refilled_at <= $1::timestamptz
+  AND (refusal_reported_at IS NULL OR refusal_reported_at <= $2::timestamptz)
+`
+
+type DeleteFullSignInRequestBucketsParams struct {
+	FullBefore           time.Time
+	ReportIntervalBefore time.Time
+}
+
+// Removes buckets that have refilled completely (an absent row is the same as a full bucket) and
+// whose last refusal report is older than the report interval.
+func (q *Queries) DeleteFullSignInRequestBuckets(ctx context.Context, arg DeleteFullSignInRequestBucketsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteFullSignInRequestBuckets, arg.FullBefore, arg.ReportIntervalBefore)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const markSignInFailureRefusalReported = `-- name: MarkSignInFailureRefusalReported :execrows
+UPDATE portal_sign_in_failure_budgets
+SET refusal_reported_for = window_start_at
+WHERE source = $1 AND window_start_at = $2::timestamptz
+  AND refusal_reported_for IS DISTINCT FROM window_start_at
+`
+
+type MarkSignInFailureRefusalReportedParams struct {
+	Source        netip.Prefix
+	WindowStartAt time.Time
+}
+
+// Claims the one platform event of a refused budget's window: 1 row for the first caller of the
+// window, 0 for every later one.
+func (q *Queries) MarkSignInFailureRefusalReported(ctx context.Context, arg MarkSignInFailureRefusalReportedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markSignInFailureRefusalReported, arg.Source, arg.WindowStartAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const refundSignInFailure = `-- name: RefundSignInFailure :execrows
+UPDATE portal_sign_in_failure_budgets
+SET failure_count = failure_count - 1
+WHERE source = $1 AND window_start_at = $2::timestamptz AND failure_count > 0
+`
+
+type RefundSignInFailureParams struct {
+	Source        netip.Prefix
+	WindowStartAt time.Time
+}
+
+// Returns the slot an attempt reserved in the window starting at window_start_at (a successful
+// sign-in, or an attempt whose password was never checked). Nothing changes when that window has
+// ended and a new one started, so a refund never reduces a later window's count.
+func (q *Queries) RefundSignInFailure(ctx context.Context, arg RefundSignInFailureParams) (int64, error) {
+	result, err := q.db.Exec(ctx, refundSignInFailure, arg.Source, arg.WindowStartAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const reserveSignInFailure = `-- name: ReserveSignInFailure :one
+
+INSERT INTO portal_sign_in_failure_budgets AS b (source, window_start_at, failure_count)
+VALUES ($1, $2::timestamptz, 1)
+ON CONFLICT (source) DO UPDATE
+SET window_start_at = CASE WHEN b.window_start_at <= $3::timestamptz THEN $2::timestamptz
+                           ELSE b.window_start_at END,
+    failure_count = CASE WHEN b.window_start_at <= $3::timestamptz THEN 1
+                         ELSE LEAST(b.failure_count, 2147483646) + 1 END
+RETURNING failure_count, window_start_at
+`
+
+type ReserveSignInFailureParams struct {
 	Source            netip.Prefix
 	Now               time.Time
 	WindowEndedBefore time.Time
 }
 
-type CountSignInAttemptRow struct {
-	AttemptCount  int32
+type ReserveSignInFailureRow struct {
+	FailureCount  int32
 	WindowStartAt time.Time
 }
 
-// Per-source sign-in rate limit of the client portal (internal/signinlimit, Phase 4 Group 6).
-// portal_sign_in_rate_limits is platform-owned (no tenant data) and shared by every API instance.
-// Counts one sign-in attempt from @source atomically and returns the window's count and start. A
-// window that has ended (window_start_at <= @window_ended_before) starts again with this attempt.
-// Concurrent attempts from the same source are serialized on the row (INSERT ... ON CONFLICT DO
-// UPDATE), so no attempt is lost or counted twice. The count stops growing at the integer maximum.
-func (q *Queries) CountSignInAttempt(ctx context.Context, arg CountSignInAttemptParams) (CountSignInAttemptRow, error) {
-	row := q.db.QueryRow(ctx, countSignInAttempt, arg.Source, arg.Now, arg.WindowEndedBefore)
-	var i CountSignInAttemptRow
-	err := row.Scan(&i.AttemptCount, &i.WindowStartAt)
+// Layered sign-in limits of the client portal (internal/signinlimit, Phase 4 Group 6). Both tables are
+// platform-owned (no tenant data) and shared by every API instance. Every statement is atomic on its
+// row (INSERT ... ON CONFLICT DO UPDATE, or a conditional UPDATE), so concurrent attempts, on one
+// instance or several, are serialized on the row and never lost or counted twice.
+// Reserves one failed-attempt slot of source and returns the window's count (including this slot)
+// and start. A window that has ended (window_start_at <= window_ended_before) starts again with this
+// attempt. The caller runs it in a transaction for every budget of the attempt and rolls the
+// transaction back when any budget is over its limit, so a refused attempt reserves nothing.
+func (q *Queries) ReserveSignInFailure(ctx context.Context, arg ReserveSignInFailureParams) (ReserveSignInFailureRow, error) {
+	row := q.db.QueryRow(ctx, reserveSignInFailure, arg.Source, arg.Now, arg.WindowEndedBefore)
+	var i ReserveSignInFailureRow
+	err := row.Scan(&i.FailureCount, &i.WindowStartAt)
 	return i, err
 }
 
-const deleteEndedSignInWindows = `-- name: DeleteEndedSignInWindows :execrows
-DELETE FROM portal_sign_in_rate_limits
-WHERE window_start_at <= $1::timestamptz
+const takeSignInRequestToken = `-- name: TakeSignInRequestToken :one
+INSERT INTO portal_sign_in_request_buckets AS b (source, tokens, refilled_at, last_allowed)
+VALUES ($1, CAST($2 AS float8) - 1, $3::timestamptz, true)
+ON CONFLICT (source) DO UPDATE
+SET tokens = CASE WHEN LEAST($2::float8, b.tokens + GREATEST(0, date_part('epoch', CAST($3 AS timestamptz) - b.refilled_at)) * $4::float8) >= 1 THEN LEAST($2::float8, b.tokens + GREATEST(0, date_part('epoch', CAST($3 AS timestamptz) - b.refilled_at)) * $4::float8) - 1 ELSE LEAST($2::float8, b.tokens + GREATEST(0, date_part('epoch', CAST($3 AS timestamptz) - b.refilled_at)) * $4::float8) END,
+    refilled_at = GREATEST(b.refilled_at, $3::timestamptz),
+    last_allowed = LEAST($2::float8, b.tokens + GREATEST(0, date_part('epoch', CAST($3 AS timestamptz) - b.refilled_at)) * $4::float8) >= 1,
+    last_reported = LEAST($2::float8, b.tokens + GREATEST(0, date_part('epoch', CAST($3 AS timestamptz) - b.refilled_at)) * $4::float8) < 1
+        AND (b.refusal_reported_at IS NULL OR b.refusal_reported_at <= $5::timestamptz),
+    refusal_reported_at = CASE
+        WHEN LEAST($2::float8, b.tokens + GREATEST(0, date_part('epoch', CAST($3 AS timestamptz) - b.refilled_at)) * $4::float8) < 1 AND (b.refusal_reported_at IS NULL OR b.refusal_reported_at <= $5::timestamptz)
+        THEN $3::timestamptz
+        ELSE b.refusal_reported_at
+    END
+RETURNING tokens, last_allowed, last_reported
 `
 
-// Removes the counters of windows that have ended (their sources start a new window anyway).
-func (q *Queries) DeleteEndedSignInWindows(ctx context.Context, windowEndedBefore time.Time) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteEndedSignInWindows, windowEndedBefore)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+type TakeSignInRequestTokenParams struct {
+	Source               netip.Prefix
+	Burst                float64
+	Now                  time.Time
+	Rate                 float64
+	ReportIntervalBefore time.Time
+}
+
+type TakeSignInRequestTokenRow struct {
+	Tokens       float64
+	LastAllowed  bool
+	LastReported bool
+}
+
+// The all-attempt token bucket of a source: it refills at rate tokens per second up to burst, and the
+// request takes one token if one is available. In the update, AVAILABLE stands for
+//
+//	LEAST(burst::float8, b.tokens + GREATEST(0, date_part('epoch', CAST(now AS timestamptz) - b.refilled_at)) * rate::float8)
+//
+// (the tokens after refilling; an instance whose clock is behind the row's adds none, and refilled_at
+// never moves backwards). last_allowed is whether this request took a token; last_reported is whether
+// this refusal is the first since report_interval_before (the caller then records one platform event).
+func (q *Queries) TakeSignInRequestToken(ctx context.Context, arg TakeSignInRequestTokenParams) (TakeSignInRequestTokenRow, error) {
+	row := q.db.QueryRow(ctx, takeSignInRequestToken,
+		arg.Source,
+		arg.Burst,
+		arg.Now,
+		arg.Rate,
+		arg.ReportIntervalBefore,
+	)
+	var i TakeSignInRequestTokenRow
+	err := row.Scan(&i.Tokens, &i.LastAllowed, &i.LastReported)
+	return i, err
 }

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
@@ -48,25 +49,71 @@ var ErrWeakPassword = fmt.Errorf("the password must be %d to %d characters", Min
 
 var errMalformedHash = errors.New("malformed password hash")
 
-// hasher computes and verifies Argon2id hashes, with a bound on how many run at once: each one
-// holds argonMemoryKiB of memory (AGENTS.md §7.4 bounded concurrency).
-type hasher struct {
-	slots chan struct{}
+// ErrBusy: the password-hashing capacity is exhausted (every slot is busy and the wait queue is full,
+// or the wait took too long). The password was not checked, so nothing was learned about it and no
+// failure was counted. HTTP 503 with Retry-After.
+var ErrBusy = errors.New("password hashing capacity exhausted")
+
+// HashLimits bounds password hashing (AGENTS.md §7.4 bounded concurrency): each Argon2id computation
+// holds argonMemoryKiB of memory and a CPU for tens of milliseconds, so an unbounded number at once
+// would exhaust the server.
+type HashLimits struct {
+	// Concurrency is how many hashes are computed at once (memory: Concurrency × 19 MiB).
+	Concurrency int
+	// Queue is how many callers may wait for a slot; a caller arriving at a full queue is refused at
+	// once with ErrBusy.
+	Queue int
+	// MaxWait is the longest a queued caller waits for a slot before it is refused with ErrBusy.
+	MaxWait time.Duration
 }
 
-func newHasher(concurrency int) *hasher {
-	if concurrency <= 0 {
-		concurrency = 4
+// DefaultHashLimits are initial defaults, measured on a 4-vCPU development container (Argon2id with
+// these parameters: about 31 hashes/s at concurrency 1, 58/s at 4, 69/s at 8; see backend/README.md).
+// They MUST be measured again on the production hardware before launch.
+var DefaultHashLimits = HashLimits{Concurrency: 4, Queue: 32, MaxWait: time.Second}
+
+// Validate reports unusable limits.
+func (l HashLimits) Validate() error {
+	if l.Concurrency < 1 || l.Concurrency > 256 || l.Queue < 0 || l.Queue > 100000 || l.MaxWait <= 0 {
+		return fmt.Errorf("portal: invalid password hashing limits %+v", l)
 	}
-	return &hasher{slots: make(chan struct{}, concurrency)}
+	return nil
 }
 
+// hasher computes and verifies Argon2id hashes within HashLimits.
+type hasher struct {
+	slots   chan struct{} // one token per running hash
+	queue   chan struct{} // one token per waiting caller
+	maxWait time.Duration
+}
+
+func newHasher(l HashLimits) *hasher {
+	return &hasher{slots: make(chan struct{}, l.Concurrency), queue: make(chan struct{}, l.Queue), maxWait: l.MaxWait}
+}
+
+// acquire takes a hashing slot: at once if one is free, otherwise after waiting in the bounded queue
+// for at most maxWait. It returns ErrBusy (wrapping ctx's error if ctx ended) when no slot was taken.
 func (h *hasher) acquire(ctx context.Context) error {
 	select {
 	case h.slots <- struct{}{}:
 		return nil
+	default:
+	}
+	select {
+	case h.queue <- struct{}{}:
+	default:
+		return ErrBusy // the queue is full: refuse at once, do not pile up waiting callers
+	}
+	defer func() { <-h.queue }()
+	timer := time.NewTimer(h.maxWait)
+	defer timer.Stop()
+	select {
+	case h.slots <- struct{}{}:
+		return nil
+	case <-timer.C:
+		return ErrBusy
 	case <-ctx.Done():
-		return ctx.Err()
+		return fmt.Errorf("%w: %w", ErrBusy, ctx.Err())
 	}
 }
 

@@ -4,6 +4,7 @@ package signinlimit
 
 import (
 	"context"
+	"fmt"
 	"net/netip"
 	"sync"
 	"sync/atomic"
@@ -37,6 +38,17 @@ func open(t *testing.T, ctx context.Context, cfg config.DatabaseConfig) *databas
 	return db
 }
 
+// openAdmin opens the bootstrap superuser's pool (test assertions only; never the limiter's).
+func openAdmin(t *testing.T, ctx context.Context, cfg config.DatabaseConfig) *database.DB {
+	t.Helper()
+	db, err := database.Open(ctx, cfg, "sms-signinlimit-test-admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(db.Close)
+	return db
+}
+
 func newLimiter(t *testing.T, db *database.DB, c *clock, cfg Config) *Limiter {
 	t.Helper()
 	l, err := New(db, cfg, WithClock(c.Now))
@@ -46,127 +58,382 @@ func newLimiter(t *testing.T, db *database.DB, c *clock, cfg Config) *Limiter {
 	return l
 }
 
-func attempt(t *testing.T, ctx context.Context, l *Limiter, ip string) Decision {
+func admit(t *testing.T, ctx context.Context, l *Limiter, ip string) Admission {
 	t.Helper()
-	d, err := l.Attempt(ctx, netip.MustParseAddr(ip))
+	a, err := l.Admit(ctx, netip.MustParseAddr(ip))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return d
+	return a
 }
 
-// The limit per source, the window, Retry-After, the first refusal, independent sources, IPv6 /64
-// grouping, separate instances sharing the database, a restart, and cleanup — as sms_app.
-func TestIntegrationLimiter(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+func refund(t *testing.T, ctx context.Context, l *Limiter, a Admission) {
+	t.Helper()
+	if err := l.Refund(ctx, a.Reservation); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A configuration whose token bucket never interferes (for the failure-budget tests).
+func budgetsOnly(ipv4, ipv6Subnet, ipv6Aggregate int) Config {
+	return Config{
+		FailuresPerIPv4: ipv4, FailuresPerIPv6Subnet: ipv6Subnet, FailuresPerIPv6Aggregate: ipv6Aggregate,
+		FailureWindow: 15 * time.Minute, RequestsPerSecond: 1000, RequestBurst: 1_000_000,
+	}
+}
+
+func setup(t *testing.T) (context.Context, *database.DB, *database.DB) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	t.Cleanup(cancel)
 	roles := dbtest.NewMigratedDatabase(t)
+	return ctx, open(t, ctx, roles.App), openAdmin(t, ctx, roles.Admin)
+}
+
+func count(t *testing.T, ctx context.Context, admin *database.DB, sql string, args ...any) int {
+	t.Helper()
+	var n int
+	if err := admin.Pool().QueryRow(ctx, sql, args...).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// Failures are counted per source; a success refunds only its own slot, so earlier failures stay
+// counted; the window, Retry-After, the one reported refusal per window, and a restart — as sms_app.
+func TestIntegrationFailureBudgetReserveAndRefund(t *testing.T) {
+	t.Parallel()
+	ctx, db, admin := setup(t)
 	c := &clock{now: time.Date(2026, 11, 28, 9, 0, 0, 0, time.UTC)}
-	cfg := Config{MaxAttempts: 3, Window: 10 * time.Minute}
+	l := newLimiter(t, db, c, budgetsOnly(5, 5, 20))
+	const ip = "203.0.113.10"
 
-	// Two API instances: separate limiters on separate connection pools, one database.
-	instance1 := newLimiter(t, open(t, ctx, roles.App), c, cfg)
-	instance2 := newLimiter(t, open(t, ctx, roles.App), c, cfg)
-
-	// 1. The same source, alternating between instances: three attempts allowed, then refused.
-	for i, l := range []*Limiter{instance1, instance2, instance1} {
-		if d := attempt(t, ctx, l, "203.0.113.7"); !d.Allowed {
-			t.Fatalf("attempt %d refused: %+v", i+1, d)
+	// Three failures, then a success: the success's slot is returned, the failures stay.
+	for range 3 {
+		if a := admit(t, ctx, l, ip); !a.Allowed {
+			t.Fatal("failure refused under the limit")
 		}
 	}
-	c.Advance(90 * time.Second)
-	d := attempt(t, ctx, instance2, "203.0.113.7")
-	if d.Allowed || !d.FirstRefusal || d.RetryAfter != 510*time.Second {
-		t.Errorf("4th attempt = %+v, want refused, first refusal, retry after 510s (window ends at 09:10)", d)
+	ok := admit(t, ctx, l, ip)
+	if !ok.Allowed || len(ok.Reservation.Slots) != 1 {
+		t.Fatalf("admission = %+v", ok)
 	}
-	c.Advance(500*time.Millisecond + 9*time.Second)
-	d = attempt(t, ctx, instance1, "203.0.113.7")
-	if d.Allowed || d.FirstRefusal || d.RetryAfter != 501*time.Second {
-		t.Errorf("5th attempt = %+v, want refused, not the first refusal, retry after 501s (rounded up)", d)
+	refund(t, ctx, l, ok)
+	if n := count(t, ctx, admin, `SELECT failure_count FROM portal_sign_in_failure_budgets WHERE source = '203.0.113.10/32'`); n != 3 {
+		t.Fatalf("failure_count after 3 failures and 1 success = %d, want 3", n)
+	}
+	// Many successes from the same address (a NAT of legitimate users) never use the budget.
+	for range 50 {
+		a := admit(t, ctx, l, ip)
+		if !a.Allowed {
+			t.Fatal("a successful sign-in was refused")
+		}
+		refund(t, ctx, l, a)
+	}
+	// Two more failures reach the limit; the next attempt is refused and reported once.
+	admit(t, ctx, l, ip)
+	admit(t, ctx, l, ip)
+	c.Advance(time.Minute)
+	refused := admit(t, ctx, l, ip)
+	if refused.Allowed || refused.Refusal.Layer != LayerFailureBudget || !refused.Refusal.Report ||
+		refused.Refusal.Limit != 5 || refused.Refusal.Source != netip.MustParsePrefix("203.0.113.10/32") ||
+		refused.Refusal.RetryAfter != 14*time.Minute {
+		t.Fatalf("over the limit: %+v", refused)
+	}
+	if again := admit(t, ctx, l, ip); again.Allowed || again.Refusal.Report {
+		t.Errorf("second refusal: %+v, want refused and not reported", again)
+	}
+	// A refused attempt reserved nothing; a refund of a refused admission is a no-op.
+	refund(t, ctx, l, refused)
+	if n := count(t, ctx, admin, `SELECT failure_count FROM portal_sign_in_failure_budgets WHERE source = '203.0.113.10/32'`); n != 5 {
+		t.Errorf("failure_count = %d, want 5", n)
+	}
+	// Another address is independent.
+	if a := admit(t, ctx, l, "203.0.113.11"); !a.Allowed {
+		t.Error("another address was refused")
+	}
+	// A restart (a new limiter on the same database) keeps the count.
+	if a := admit(t, ctx, newLimiter(t, db, c, budgetsOnly(5, 5, 20)), ip); a.Allowed {
+		t.Error("a new limiter forgot the count")
+	}
+	// After the window: admitted again, and a refund of an old window's slot does not reduce the new one.
+	c.Advance(14 * time.Minute)
+	fresh := admit(t, ctx, l, ip)
+	if !fresh.Allowed {
+		t.Fatal("refused after the window ended")
+	}
+	if err := l.Refund(ctx, Reservation{Slots: []Slot{{Source: netip.MustParsePrefix("203.0.113.10/32"), WindowStart: c.Now().Add(-15 * time.Minute)}}}); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(t, ctx, admin, `SELECT failure_count FROM portal_sign_in_failure_budgets WHERE source = '203.0.113.10/32'`); n != 1 {
+		t.Errorf("failure_count in the new window = %d, want 1", n)
+	}
+	// A new window may report its own refusal again.
+	for range 4 {
+		admit(t, ctx, l, ip)
+	}
+	if r := admit(t, ctx, l, ip); r.Allowed || !r.Refusal.Report {
+		t.Errorf("first refusal of the new window: %+v, want reported", r)
 	}
 
-	// 2. Other sources are independent; addresses of one IPv6 /64 are one source.
-	if d := attempt(t, ctx, instance1, "198.51.100.20"); !d.Allowed {
-		t.Errorf("another IPv4 source refused: %+v", d)
+	// Cleanup removes ended windows and empty budgets only.
+	c.Advance(16 * time.Minute)
+	admit(t, ctx, l, "203.0.113.12") // a pending slot in an open window
+	empty := admit(t, ctx, l, "203.0.113.13")
+	refund(t, ctx, l, empty)
+	if _, err := l.Cleanup(ctx); err != nil {
+		t.Fatal(err)
 	}
+	if n := count(t, ctx, admin, `SELECT count(*) FROM portal_sign_in_failure_budgets`); n != 1 {
+		t.Errorf("%d budgets after cleanup, want 1 (the open one)", n)
+	}
+}
+
+// IPv6: the /64 and the /48 aggregate are both reserved; rotating /64s inside one /48 is stopped
+// by the aggregate; a refusal by the /48 reserves nothing in the /64.
+func TestIntegrationIPv6AggregateStopsRotation(t *testing.T) {
+	t.Parallel()
+	ctx, db, admin := setup(t)
+	c := &clock{now: time.Date(2026, 11, 28, 9, 0, 0, 0, time.UTC)}
+	l := newLimiter(t, db, c, budgetsOnly(100, 3, 10))
+
+	// One /64: three failures, then refused by the /64 (other addresses in it are the same source).
 	for i := range 3 {
-		if d := attempt(t, ctx, instance1, []string{"2001:db8:1:2::1", "2001:db8:1:2::2", "2001:db8:1:2:ffff::9"}[i]); !d.Allowed {
-			t.Errorf("IPv6 attempt %d refused: %+v", i+1, d)
+		if a := admit(t, ctx, l, fmt.Sprintf("2001:db8:aa:1::%x", i+1)); !a.Allowed || len(a.Reservation.Slots) != 2 {
+			t.Fatalf("attempt %d: %+v", i, a)
 		}
 	}
-	if d := attempt(t, ctx, instance2, "2001:db8:1:2::77"); d.Allowed {
-		t.Errorf("4th attempt from the same /64 allowed")
+	if r := admit(t, ctx, l, "2001:db8:aa:1:ffff::1"); r.Allowed || r.Refusal.Source != netip.MustParsePrefix("2001:db8:aa:1::/64") {
+		t.Fatalf("fourth attempt in the /64: %+v, want refused by the /64", r)
 	}
-	if d := attempt(t, ctx, instance2, "2001:db8:1:3::1"); !d.Allowed {
-		t.Errorf("another /64 refused: %+v", d)
+	// Rotating to new /64s in the same /48: admitted until the /48 has 10 failures.
+	admitted := 3
+	var refusal Refusal
+	for i := 2; i < 100; i++ {
+		a := admit(t, ctx, l, fmt.Sprintf("2001:db8:aa:%x::1", i))
+		if !a.Allowed {
+			refusal = a.Refusal
+			break
+		}
+		admitted++
 	}
-
-	// 3. A restart (a new limiter on a new pool) does not reset the count.
-	restarted := newLimiter(t, open(t, ctx, roles.App), c, cfg)
-	if d := attempt(t, ctx, restarted, "203.0.113.7"); d.Allowed {
-		t.Errorf("attempt after restart allowed: the count was reset")
+	if admitted != 10 || refusal.Source != netip.MustParsePrefix("2001:db8:aa::/48") || refusal.Limit != 10 || !refusal.Report {
+		t.Fatalf("rotation: %d failures admitted, refusal %+v; want 10 and a reported /48 refusal", admitted, refusal)
 	}
-
-	// 4. When the window has ended, the source starts again with a new window.
-	c.Advance(10 * time.Minute)
-	if d := attempt(t, ctx, restarted, "203.0.113.7"); !d.Allowed {
-		t.Errorf("attempt after the window refused: %+v", d)
+	// The /48 refusal rolled back: the new /64 holds no slot.
+	if n := count(t, ctx, admin, `SELECT COALESCE(sum(failure_count), 0) FROM portal_sign_in_failure_budgets WHERE masklen(source) = 64`); n != 10 {
+		t.Errorf("sum over the /64 budgets = %d, want 10", n)
 	}
-	for range 2 {
-		attempt(t, ctx, restarted, "203.0.113.7")
+	if n := count(t, ctx, admin, `SELECT failure_count FROM portal_sign_in_failure_budgets WHERE source = '2001:db8:aa::/48'`); n != 10 {
+		t.Errorf("/48 count = %d, want 10", n)
 	}
-	if d := attempt(t, ctx, restarted, "203.0.113.7"); d.Allowed || !d.FirstRefusal || d.RetryAfter != 10*time.Minute {
-		t.Errorf("new window: 4th attempt = %+v, want the first refusal of the new window, retry after 10m", d)
+	// Another /48 is independent.
+	if a := admit(t, ctx, l, "2001:db8:bb:1::1"); !a.Allowed {
+		t.Error("another /48 was refused")
 	}
-
-	// 5. Cleanup deletes only the windows that have ended (here: every source except 203.0.113.7).
-	n, err := restarted.Cleanup(ctx)
-	if err != nil || n != 3 {
-		t.Errorf("Cleanup() = %d, %v; want 3 ended windows", n, err)
-	}
-	if d := attempt(t, ctx, restarted, "203.0.113.7"); d.Allowed {
-		t.Errorf("cleanup removed an active window")
+	// A success inside the full /48 is refused too (its slot cannot be reserved), until a refund or
+	// the end of the window; a refund of an earlier success restores one slot.
+	c.Advance(15 * time.Minute)
+	ok := admit(t, ctx, l, "2001:db8:aa:50::1")
+	refund(t, ctx, l, ok)
+	if n := count(t, ctx, admin, `SELECT failure_count FROM portal_sign_in_failure_budgets WHERE source = '2001:db8:aa::/48'`); n != 0 {
+		t.Errorf("/48 count after a refunded success in a new window = %d, want 0", n)
 	}
 }
 
-// Concurrent attempts from one source, spread over several instances, cannot exceed the limit: the
-// count is one atomic statement per attempt.
-func TestIntegrationLimiterConcurrent(t *testing.T) {
+// Concurrent attempts from one source on several API instances never reserve more slots than the
+// limit, and concurrent successes refund exactly their own slots.
+func TestIntegrationFailureBudgetConcurrent(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	t.Cleanup(cancel)
 	roles := dbtest.NewMigratedDatabase(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	t.Cleanup(cancel)
+	admin := openAdmin(t, ctx, roles.Admin)
 	c := &clock{now: time.Date(2026, 11, 28, 9, 0, 0, 0, time.UTC)}
-	cfg := Config{MaxAttempts: 10, Window: time.Hour}
-	instances := []*Limiter{
-		newLimiter(t, open(t, ctx, roles.App), c, cfg),
-		newLimiter(t, open(t, ctx, roles.App), c, cfg),
-		newLimiter(t, open(t, ctx, roles.App), c, cfg),
+	cfg := budgetsOnly(25, 25, 40)
+	instances := make([]*Limiter, 3)
+	for i := range instances {
+		instances[i] = newLimiter(t, open(t, ctx, roles.App), c, cfg) // separate pools, like separate instances
 	}
-	var allowed, firstRefusals atomic.Int32
+
+	var allowed, refused, reports atomic.Int64
 	var wg sync.WaitGroup
-	for i := range 60 {
-		wg.Go(func() {
-			d, err := instances[i%len(instances)].Attempt(ctx, netip.MustParseAddr("192.0.2.44"))
+	for i := range 120 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			l := instances[i%len(instances)]
+			ip := netip.MustParseAddr(fmt.Sprintf("2001:db8:cc:%x::1", i%6)) // 6 /64s of one /48
+			a, err := l.Admit(ctx, ip)
 			if err != nil {
 				t.Error(err)
 				return
 			}
-			if d.Allowed {
-				allowed.Add(1)
+			if !a.Allowed {
+				refused.Add(1)
+				if a.Refusal.Report {
+					reports.Add(1)
+				}
+				return
 			}
-			if d.FirstRefusal {
-				firstRefusals.Add(1)
+			allowed.Add(1)
+			if i%2 == 0 { // half of the admitted attempts succeed and refund
+				if err := l.Refund(ctx, a.Reservation); err != nil {
+					t.Error(err)
+				}
 			}
-		})
+		}()
 	}
 	wg.Wait()
-	if allowed.Load() != 10 || firstRefusals.Load() != 1 {
-		t.Errorf("60 concurrent attempts: %d allowed, %d first refusals; want 10 and 1", allowed.Load(), firstRefusals.Load())
+	// The /48 holds at most 40 slots at any time; refunds free some during the run, so more than 40
+	// may be admitted overall, but the committed count never exceeds the limit.
+	got := count(t, ctx, admin, `SELECT failure_count FROM portal_sign_in_failure_budgets WHERE source = '2001:db8:cc::/48'`)
+	if got > 40 || got < 1 {
+		t.Errorf("/48 count = %d, want 1..40", got)
 	}
-	var count int
-	if err := instances[0].db.Pool().QueryRow(ctx, `SELECT attempt_count FROM portal_sign_in_rate_limits WHERE source = '192.0.2.44/32'`).Scan(&count); err != nil || count != 60 {
-		t.Errorf("stored count = %d, %v; want 60", count, err)
+	sum64 := count(t, ctx, admin, `SELECT COALESCE(sum(failure_count), 0) FROM portal_sign_in_failure_budgets WHERE masklen(source) = 64`)
+	if sum64 != got {
+		t.Errorf("sum of the /64 counts = %d, /48 count = %d; every slot is reserved in both", sum64, got)
+	}
+	if allowed.Load()+refused.Load() != 120 {
+		t.Errorf("allowed %d + refused %d != 120", allowed.Load(), refused.Load())
+	}
+	if refused.Load() > 0 && (reports.Load() < 1 || reports.Load() > 7) { // at most one per budget and window
+		t.Errorf("%d refusals reported, want 1 to 7", reports.Load())
+	}
+	t.Logf("concurrent: %d admitted, %d refused, %d reports, final /48 count %d", allowed.Load(), refused.Load(), reports.Load(), got)
+}
+
+// The all-attempt token bucket: the burst, the refill rate, Retry-After, one report per interval,
+// independent sources, shared by instances, safe with clocks that disagree, and cleanup.
+func TestIntegrationRequestTokenBucket(t *testing.T) {
+	t.Parallel()
+	roles := dbtest.NewMigratedDatabase(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	t.Cleanup(cancel)
+	db, admin := open(t, ctx, roles.App), openAdmin(t, ctx, roles.Admin)
+	c := &clock{now: time.Date(2026, 11, 28, 9, 0, 0, 0, time.UTC)}
+	cfg := Config{FailuresPerIPv4: 1_000_000, FailuresPerIPv6Subnet: 1_000_000, FailuresPerIPv6Aggregate: 1_000_000,
+		FailureWindow: 15 * time.Minute, RequestsPerSecond: 10, RequestBurst: 100}
+	l := newLimiter(t, db, c, cfg)
+	other := newLimiter(t, open(t, ctx, roles.App), c, cfg) // a second instance with its own pool
+	const ip = "198.51.100.20"
+
+	for i := range 100 {
+		inst := l
+		if i%2 == 1 {
+			inst = other // two instances share the bucket
+		}
+		if a := admit(t, ctx, inst, ip); !a.Allowed {
+			t.Fatalf("request %d of the burst refused", i+1)
+		}
+	}
+	r := admit(t, ctx, l, ip)
+	if r.Allowed || r.Refusal.Layer != LayerRequestRate || !r.Refusal.Report || r.Refusal.RetryAfter != time.Second ||
+		r.Refusal.Source != netip.MustParsePrefix("198.51.100.20/32") {
+		t.Fatalf("request 101: %+v, want refused by the token bucket, reported, Retry-After 1s", r)
+	}
+	if again := admit(t, ctx, other, ip); again.Allowed || again.Refusal.Report {
+		t.Errorf("request 102: %+v, want refused and not reported", again)
+	}
+	// Refused requests take no token and reserve no failure slot.
+	if n := count(t, ctx, admin, `SELECT failure_count FROM portal_sign_in_failure_budgets WHERE source = '198.51.100.20/32'`); n != 100 {
+		t.Errorf("failure slots = %d, want 100 (only admitted attempts)", n)
+	}
+	// 10 tokens per second: after 0.5 s five requests pass, the sixth is refused.
+	c.Advance(500 * time.Millisecond)
+	for i := range 5 {
+		if a := admit(t, ctx, l, ip); !a.Allowed {
+			t.Fatalf("refill request %d refused", i+1)
+		}
+	}
+	if a := admit(t, ctx, l, ip); a.Allowed {
+		t.Error("more requests than the refill rate allows")
+	}
+	// An instance whose clock is behind adds no tokens (time never runs backwards for a bucket).
+	behind := newLimiter(t, db, &clock{now: c.Now().Add(-time.Hour)}, cfg)
+	if a := admit(t, ctx, behind, ip); a.Allowed {
+		t.Error("an instance with a slow clock got a token")
+	}
+	// Other sources are independent; an IPv6 /64 is one source.
+	if a := admit(t, ctx, l, "198.51.100.21"); !a.Allowed {
+		t.Error("another address was refused")
+	}
+	for i := range 100 {
+		admit(t, ctx, l, fmt.Sprintf("2001:db8:dd:1::%x", i+1))
+	}
+	if a := admit(t, ctx, l, "2001:db8:dd:1:ffff::1"); a.Allowed || a.Refusal.Layer != LayerRequestRate {
+		t.Errorf("101st request of one /64: %+v, want refused", a)
+	}
+	// A new report after the report interval, while still refused.
+	c.Advance(ReportInterval)
+	for range 100 {
+		admit(t, ctx, l, ip) // the bucket refilled completely; empty it again
+	}
+	if a := admit(t, ctx, l, ip); a.Allowed || !a.Refusal.Report {
+		t.Errorf("refusal after the report interval: %+v, want reported", a)
+	}
+	// Cleanup removes buckets that are full again and whose report is old.
+	c.Advance(ReportInterval + 11*time.Second)
+	if _, err := l.Cleanup(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(t, ctx, admin, `SELECT count(*) FROM portal_sign_in_request_buckets`); n != 0 {
+		t.Errorf("%d buckets after cleanup, want 0", n)
+	}
+}
+
+// The token bucket is exact under concurrency across instances: of N simultaneous requests from
+// one source, exactly the burst is admitted.
+func TestIntegrationRequestTokenBucketConcurrent(t *testing.T) {
+	t.Parallel()
+	roles := dbtest.NewMigratedDatabase(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	t.Cleanup(cancel)
+	frozen := &clock{now: time.Date(2026, 11, 28, 9, 0, 0, 0, time.UTC)} // no refill during the run
+	cfg := Config{FailuresPerIPv4: 1_000_000, FailuresPerIPv6Subnet: 1_000_000, FailuresPerIPv6Aggregate: 1_000_000,
+		FailureWindow: 15 * time.Minute, RequestsPerSecond: 10, RequestBurst: 30}
+	instances := make([]*Limiter, 3)
+	for i := range instances {
+		instances[i] = newLimiter(t, open(t, ctx, roles.App), frozen, cfg)
+	}
+	var allowed, reports atomic.Int64
+	var wg sync.WaitGroup
+	for i := range 150 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			a, err := instances[i%3].Admit(ctx, netip.MustParseAddr("192.0.2.77"))
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			if a.Allowed {
+				allowed.Add(1)
+			} else if a.Refusal.Report {
+				reports.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if allowed.Load() != 30 || reports.Load() != 1 {
+		t.Errorf("%d admitted and %d reports, want exactly 30 and 1", allowed.Load(), reports.Load())
+	}
+}
+
+// sms_app has exactly the privileges the limiter needs on its tables, and no TRUNCATE.
+func TestIntegrationLimiterPrivileges(t *testing.T) {
+	t.Parallel()
+	ctx, db, _ := setup(t)
+	for _, sql := range []string{
+		`TRUNCATE portal_sign_in_failure_budgets`,
+		`TRUNCATE portal_sign_in_request_buckets`,
+		`UPDATE portal_sign_in_failure_budgets SET source = '192.0.2.1/32'`,
+		`UPDATE portal_sign_in_request_buckets SET source = '192.0.2.1/32'`,
+		`INSERT INTO portal_sign_in_failure_budgets (source, window_start_at, failure_count, refusal_reported_for) VALUES ('192.0.2.1/32', now(), 1, now())`,
+	} {
+		if _, err := db.Pool().Exec(ctx, sql); err == nil {
+			t.Errorf("as sms_app, %q succeeded", sql)
+		}
 	}
 }

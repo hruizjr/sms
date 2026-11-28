@@ -3,18 +3,24 @@
 -- explicitly; the application can only insert them (no UPDATE or DELETE privilege). Platform events
 -- belong to no organization and can only be inserted: the application cannot read them.
 
--- name: InsertSecurityAuditEvent :exec
+-- name: InsertSecurityAuditEvent :execrows
+-- The database assigns id and occurred_at (the application has no privilege to set them). An event
+-- with a dedup_key that this organization already has is not written (0 rows): the existing event is
+-- left exactly as it is.
 INSERT INTO security_audit_events (
-    tenant_id, occurred_at, action, outcome, actor_type, actor_id, target_type, target_id,
-    request_id, source_ip, user_agent, details
+    tenant_id, action, outcome, actor_type, actor_id, target_type, target_id,
+    request_id, source_ip, user_agent, details, dedup_key
 ) VALUES (
-    @tenant_id, @occurred_at, @action, @outcome, @actor_type, sqlc.narg(actor_id), sqlc.narg(target_type),
-    sqlc.narg(target_id), sqlc.narg(request_id), sqlc.narg(source_ip), sqlc.narg(user_agent), @details
-);
+    @tenant_id, @action, @outcome, @actor_type, sqlc.narg(actor_id), sqlc.narg(target_type),
+    sqlc.narg(target_id), sqlc.narg(request_id), sqlc.narg(source_ip), sqlc.narg(user_agent), @details,
+    sqlc.narg(dedup_key)
+)
+ON CONFLICT (tenant_id, dedup_key) WHERE dedup_key IS NOT NULL DO NOTHING;
 
 -- name: InsertPlatformSecurityEvent :exec
-INSERT INTO platform_security_events (occurred_at, action, outcome, request_id, source_ip, user_agent, details)
-VALUES (@occurred_at, @action, @outcome, sqlc.narg(request_id), sqlc.narg(source_ip), sqlc.narg(user_agent), @details);
+-- The database assigns id and occurred_at.
+INSERT INTO platform_security_events (action, outcome, request_id, source_ip, user_agent, details)
+VALUES (@action, @outcome, sqlc.narg(request_id), sqlc.narg(source_ip), sqlc.narg(user_agent), @details);
 
 -- name: ListSecurityAuditEvents :many
 -- Newest first; keyset pagination on (occurred_at, id). Optional filters are NULL when not given.

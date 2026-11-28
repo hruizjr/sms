@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/netip"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -69,11 +70,29 @@ func openPool(t *testing.T, ctx context.Context, cfg config.DatabaseConfig, opts
 // router builds one API instance: its own connection pool and limiter on the shared database.
 func (e securityEnv) router(t *testing.T, limiter *signinlimit.Limiter, trusted ...netip.Prefix) http.Handler {
 	t.Helper()
+	return e.routerWith(t, limiter, e.accounts, nil, trusted...)
+}
+
+// routerWith is router with another authenticator and an HTTP-layer clock (nil: time.Now).
+func (e securityEnv) routerWith(t *testing.T, limiter *signinlimit.Limiter, auth PortalAuthenticator, now func() time.Time, trusted ...netip.Prefix) http.Handler {
+	t.Helper()
 	deps, _ := testDeps(true)
 	deps.TrustedProxies = trusted
 	deps.PublicAPI = &PublicAPIDeps{Messages: e.msgs, Auth: e.keys}
-	deps.Portal = &PortalDeps{Messages: e.msgs, Auth: e.accounts, APIKeys: e.keys, Audit: audit.NewService(e.db), SignInLimiter: limiter}
+	deps.Portal = &PortalDeps{Messages: e.msgs, Auth: auth, APIKeys: e.keys, Audit: audit.NewService(e.db), SignInLimiter: limiter, Now: now}
 	return NewRouter(deps)
+}
+
+// busyAuthenticator is the real authenticator whose Login and Reauthenticate report exhausted
+// password-hashing capacity (portal.ErrBusy; the hasher itself is tested in package portal).
+type busyAuthenticator struct{ PortalAuthenticator }
+
+func (busyAuthenticator) Login(context.Context, string, string) (portal.Session, error) {
+	return portal.Session{}, portal.ErrBusy
+}
+
+func (busyAuthenticator) Reauthenticate(context.Context, portal.Principal, string, audit.Action) error {
+	return portal.ErrBusy
 }
 
 func (e securityEnv) limiter(t *testing.T, cfg signinlimit.Config, now func() time.Time) *signinlimit.Limiter {
@@ -111,17 +130,20 @@ func signInBody(email, password string) string {
 	return `{"email":"` + email + `","password":"` + password + `"}`
 }
 
-// The per-source sign-in limit end to end: the same and different sources, two API instances and a
+// The layered sign-in limits end to end: the failed-attempt budget per source (two API instances and a
 // restart sharing one count, 429 with Retry-After, spoofed X-Forwarded-For with and without trusted
-// proxies, concurrent requests, the end of the window, and the account lockout (G3-3), which is
-// unchanged and independent.
+// proxies, the end of the window), the account lockout (G3-3), which is unchanged and independent,
+// successful sign-ins from a shared address, IPv6 rotation inside a /48, the all-attempt token
+// bucket, concurrent requests, and exhausted password-hashing capacity.
 func TestIntegrationPortalSignInRateLimit(t *testing.T) {
 	t.Parallel()
 	e := newSecurityEnv(t)
 	var mu sync.Mutex
 	now := time.Date(2026, 11, 28, 9, 0, 0, 0, time.UTC)
 	clock := func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
-	cfg := signinlimit.Config{MaxAttempts: 6, Window: 10 * time.Minute}
+	advance := func(d time.Duration) { mu.Lock(); now = now.Add(d); mu.Unlock() }
+	cfg := signinlimit.Config{FailuresPerIPv4: 6, FailuresPerIPv6Subnet: 6, FailuresPerIPv6Aggregate: 12,
+		FailureWindow: 10 * time.Minute, RequestsPerSecond: 1000, RequestBurst: 100_000}
 	proxies := netip.MustParsePrefix("10.0.0.0/8")
 	instance1 := e.router(t, e.limiter(t, cfg, clock), proxies) // behind a trusted proxy network
 	instance2 := e.router(t, e.limiter(t, cfg, clock))          // no trusted proxy
@@ -136,15 +158,24 @@ func TestIntegrationPortalSignInRateLimit(t *testing.T) {
 		c := &portalClient{t: t, h: h, remote: remote}
 		return c.do(http.MethodPost, "/portal/v1/session", signInBody(email, password), header)
 	}
+	tryAs := func(h http.Handler, remote, address, password string) int {
+		c := &portalClient{t: t, h: h, remote: remote}
+		code, _, _ := c.do(http.MethodPost, "/portal/v1/session", signInBody(address, password), nil)
+		return code
+	}
 	lockState := func() string {
 		var s string
-		if err := e.admin.Pool().QueryRow(e.ctx, `SELECT failed_login_count || ' ' || coalesce(locked_until::text, 'unlocked') FROM portal_users`).Scan(&s); err != nil {
+		if err := e.admin.Pool().QueryRow(e.ctx, `SELECT failed_login_count || ' ' || coalesce(locked_until::text, 'unlocked') FROM portal_users
+			WHERE email = $1`, email).Scan(&s); err != nil {
 			t.Fatal(err)
 		}
 		return s
 	}
+	budget := func(source string) int {
+		return e.count(t, `SELECT COALESCE((SELECT failure_count FROM portal_sign_in_failure_budgets WHERE source = $1::cidr), 0)`, source)
+	}
 
-	// 1. Six attempts from one source, alternating between the instances: the account lockout works
+	// 1. Five failures from one source, alternating between the instances: the account lockout works
 	// exactly as before (five failures lock it; a locked account refuses even the right password).
 	for i := range 5 {
 		h := []http.Handler{instance1, instance2}[i%2]
@@ -159,22 +190,23 @@ func TestIntegrationPortalSignInRateLimit(t *testing.T) {
 	if code, _, b := try(instance2, attacker, portalTestPassword, nil); code != http.StatusUnauthorized {
 		t.Fatalf("6th attempt (locked account, right password): %d %s", code, b)
 	}
+	if n := budget("203.0.113.10/32"); n != 6 {
+		t.Fatalf("failure budget = %d, want 6 (a refused sign-in of a locked account is a failure)", n)
+	}
 
 	// 2. The 7th attempt from that source is refused with 429 and Retry-After, before any credential
 	// check: the account state does not change and nothing reveals whether the account exists.
-	mu.Lock()
-	now = now.Add(4 * time.Minute)
-	mu.Unlock()
+	advance(4 * time.Minute)
 	code, hdr, b := try(instance1, attacker, portalTestPassword, nil)
-	if code != http.StatusTooManyRequests || problemType(t, b) != "too-many-sign-in-attempts" || hdr.Get("Retry-After") != "360" {
-		t.Fatalf("7th attempt: %d Retry-After=%q %s; want 429, Retry-After 360", code, hdr.Get("Retry-After"), b)
+	if code != http.StatusTooManyRequests || problemType(t, b) != "too-many-sign-in-attempts" || hdr.Get("Retry-After") != "360" ||
+		!strings.Contains(string(b), "failed sign-in attempts") {
+		t.Fatalf("7th attempt: %d Retry-After=%q %s; want 429 (failure budget), Retry-After 360", code, hdr.Get("Retry-After"), b)
 	}
 	if hdr.Get("Set-Cookie") != "" || strings.Contains(string(b), email) {
 		t.Errorf("429 response sets a cookie or names the account: %v %s", hdr, b)
 	}
-	if code, _, b := (&portalClient{t: t, h: instance2, remote: attacker}).do(http.MethodPost, "/portal/v1/session",
-		signInBody("nobody@ratelimit.example.invalid", "x"), nil); code != http.StatusTooManyRequests {
-		t.Errorf("unknown account from the limited source: %d %s, want the same 429", code, b)
+	if code := tryAs(instance2, attacker, "nobody@ratelimit.example.invalid", "x"); code != http.StatusTooManyRequests {
+		t.Errorf("unknown account from the limited source: %d, want the same 429", code)
 	}
 	if got := lockState(); got != locked {
 		t.Errorf("a rate-limited attempt changed the account state: %q -> %q", locked, got)
@@ -214,40 +246,119 @@ func TestIntegrationPortalSignInRateLimit(t *testing.T) {
 		}
 	}
 
-	// 6. One platform audit event for the window, however many refusals; none in the tenant's log,
-	// and the tenant's log has no event for the refused attempts.
-	if n := e.count(t, `SELECT count(*) FROM platform_security_events WHERE action = 'portal.sign_in_rate_limited' AND source_ip = '203.0.113.10'`); n != 1 {
+	// 6. One platform audit event for the window, however many refusals; none in the tenant's log.
+	if n := e.count(t, `SELECT count(*) FROM platform_security_events WHERE action = 'portal.sign_in_rate_limited'
+		AND source_ip = '203.0.113.10' AND details->>'reason' = 'too_many_failures' AND (details->>'limit')::int = 6
+		AND (details->>'source_prefix_length')::int = 32`); n != 1 {
 		t.Errorf("%d rate-limit audit events, want 1 for the window", n)
 	}
 	tenantEvents := e.count(t, `SELECT count(*) FROM security_audit_events`)
 
-	// 7. When the window has ended the source may try again (the account lock is a separate matter).
-	mu.Lock()
-	now = now.Add(6 * time.Minute)
-	mu.Unlock()
+	// 7. When the window has ended the source may try again (the account lock is a separate matter;
+	// the refused attempt on the locked account was already recorded for this lock, so nothing new).
+	advance(6 * time.Minute)
 	if code, _, b := try(instance2, attacker, portalTestPassword, nil); code != http.StatusUnauthorized {
 		t.Errorf("after the window: %d %s, want 401 (no longer rate limited; account still locked)", code, b)
 	}
-	if n := e.count(t, `SELECT count(*) FROM security_audit_events`); n != tenantEvents+1 {
-		t.Errorf("tenant events: %d, want %d (one refused sign-in of the locked account)", n, tenantEvents+1)
+	if n := e.count(t, `SELECT count(*) FROM security_audit_events`); n != tenantEvents {
+		t.Errorf("tenant events: %d, want %d (attempts on a locked account are recorded once per lock)", n, tenantEvents)
 	}
 
-	// 8. Concurrent requests from one new source on both instances: exactly MaxAttempts get past the
-	// limit.
+	// 8. A shared address (an office NAT): successful sign-ins return their slots, so 40 users'
+	// sign-ins use none of the budget; failures still count, and the budget still stops guessing.
+	const staff = "staff@ratelimit.example.invalid" // the owner's account is still locked (real-time lockout)
+	if _, err := e.accounts.CreateUser(e.ctx, tenantID, staff, portal.RoleViewer, portalTestPassword); err != nil {
+		t.Fatal(err)
+	}
+	const office = "198.51.100.30:1"
+	for i := range 40 {
+		if code := tryAs([]http.Handler{instance1, instance2}[i%2], office, staff, portalTestPassword); code != http.StatusOK {
+			t.Fatalf("successful sign-in %d from the office: %d", i+1, code)
+		}
+	}
+	if n := budget("198.51.100.30/32"); n != 0 {
+		t.Errorf("office budget after 40 successful sign-ins = %d, want 0", n)
+	}
+	for range 6 {
+		tryAs(instance1, office, "nobody@ratelimit.example.invalid", "wrong password!!")
+	}
+	if code := tryAs(instance2, office, staff, portalTestPassword); code != http.StatusTooManyRequests {
+		t.Errorf("office after 6 failures: %d, want 429 (failures still count)", code)
+	}
+
+	// 9. IPv6 rotation inside one /48: each /64 may fail 6 times, the /48 aggregate 12 times in all.
+	failures := 0
+	for i := range 40 {
+		remote := "[2001:db8:77:" + strconv.Itoa(i+1) + "::1]:443"
+		code := tryAs(instance2, remote, "nobody@ratelimit.example.invalid", "wrong password!!")
+		if code == http.StatusTooManyRequests {
+			break
+		}
+		if code != http.StatusUnauthorized {
+			t.Fatalf("rotated attempt %d: %d", i+1, code)
+		}
+		failures++
+	}
+	if failures != 12 {
+		t.Errorf("IPv6 rotation inside a /48: %d failures before the aggregate refused, want 12", failures)
+	}
+	if n := e.count(t, `SELECT count(*) FROM platform_security_events WHERE action = 'portal.sign_in_rate_limited'
+		AND (details->>'source_prefix_length')::int = 48`); n != 1 {
+		t.Errorf("%d /48 refusal events, want 1", n)
+	}
+	if code := tryAs(instance2, "[2001:db8:78::1]:443", "nobody@ratelimit.example.invalid", "wrong password!!"); code != http.StatusUnauthorized {
+		t.Errorf("another /48: %d, want 401", code)
+	}
+
+	// 10. Concurrent requests from one new source on both instances: exactly 6 get past the budget.
 	var passed atomic.Int32
 	var wg sync.WaitGroup
 	for i := range 14 {
 		wg.Go(func() {
-			c := &portalClient{t: t, h: []http.Handler{instance1, instance2}[i%2], remote: "192.0.2.77:9"}
-			code, _, _ := c.do(http.MethodPost, "/portal/v1/session", signInBody("nobody@ratelimit.example.invalid", "x"), nil)
-			if code != http.StatusTooManyRequests {
+			if code := tryAs([]http.Handler{instance1, instance2}[i%2], "192.0.2.77:9", "nobody@ratelimit.example.invalid", "x"); code != http.StatusTooManyRequests {
 				passed.Add(1)
 			}
 		})
 	}
 	wg.Wait()
-	if int(passed.Load()) != cfg.MaxAttempts {
-		t.Errorf("14 concurrent attempts: %d passed the limit, want %d", passed.Load(), cfg.MaxAttempts)
+	if passed.Load() != 6 {
+		t.Errorf("14 concurrent attempts: %d passed the limit, want 6", passed.Load())
+	}
+
+	// 11. The all-attempt token bucket (burst 5, 1 per second): every request takes a token, even a
+	// malformed one (which returns its failure slot); the 6th is refused with Retry-After 1.
+	bucketCfg := cfg
+	bucketCfg.RequestsPerSecond, bucketCfg.RequestBurst = 1, 5
+	bucketed := e.router(t, e.limiter(t, bucketCfg, clock))
+	flooder := &portalClient{t: t, h: bucketed, remote: "192.0.2.90:1"}
+	if code, _, _ := flooder.do(http.MethodPost, "/portal/v1/session", `{"email":`, nil); code != http.StatusBadRequest {
+		t.Fatalf("malformed body: %d", code)
+	}
+	for range 4 {
+		if code := tryAs(bucketed, "192.0.2.90:1", "nobody@ratelimit.example.invalid", "x"); code != http.StatusUnauthorized {
+			t.Fatalf("request within the burst: %d", code)
+		}
+	}
+	code, hdr, b = flooder.do(http.MethodPost, "/portal/v1/session", signInBody(email, portalTestPassword), nil)
+	if code != http.StatusTooManyRequests || hdr.Get("Retry-After") != "1" || !strings.Contains(string(b), "sign-in requests") {
+		t.Errorf("6th request: %d Retry-After=%q %s; want 429 (request rate), Retry-After 1", code, hdr.Get("Retry-After"), b)
+	}
+	if n := budget("192.0.2.90/32"); n != 4 {
+		t.Errorf("budget = %d, want 4 (the malformed request returned its slot; refused requests reserve none)", n)
+	}
+	advance(2 * time.Second)
+	if code := tryAs(bucketed, "192.0.2.90:1", "nobody@ratelimit.example.invalid", "x"); code != http.StatusUnauthorized {
+		t.Errorf("after refilling: %d, want 401", code)
+	}
+
+	// 12. Exhausted password-hashing capacity: 503 with Retry-After, and the attempt returns its slot.
+	busy := e.routerWith(t, e.limiter(t, cfg, clock), busyAuthenticator{e.accounts}, nil)
+	code, hdr, b = try(busy, "192.0.2.91:1", portalTestPassword, nil)
+	if code != http.StatusServiceUnavailable || problemType(t, b) != "service-busy" || hdr.Get("Retry-After") != "2" {
+		t.Errorf("busy: %d Retry-After=%q %s; want 503 service-busy", code, hdr.Get("Retry-After"), b)
+	}
+	if n := budget("192.0.2.91/32"); n != 0 {
+		t.Errorf("budget after a busy refusal = %d, want 0", n)
 	}
 }
 
@@ -274,7 +385,9 @@ func listAudit(t *testing.T, c *portalClient, query string) (int, auditPage, []b
 func TestIntegrationPortalAuditLog(t *testing.T) {
 	t.Parallel()
 	e := newSecurityEnv(t)
-	h := e.router(t, e.limiter(t, signinlimit.Config{MaxAttempts: 1000, Window: time.Hour}, time.Now))
+	// A fixed HTTP-layer clock keeps the five-minute deduplication interval of refusals stable.
+	fixed := time.Date(2026, 11, 28, 9, 1, 0, 0, time.UTC)
+	h := e.routerWith(t, e.limiter(t, highSignInLimits, time.Now), e.accounts, func() time.Time { return fixed })
 	tenantA, tenantB := e.tenant(t, "Audit Co A"), e.tenant(t, "Audit Co B")
 	if err := e.msgs.ApproveSenderID(e.ctx, tenantA, "AUDITCO"); err != nil {
 		t.Fatal(err)
@@ -392,6 +505,20 @@ func TestIntegrationPortalAuditLog(t *testing.T) {
 			t.Errorf("%s %s: %d %s, want 403 forbidden", c.method, c.target, code, b)
 		}
 	}
+	// Repeating a refused request is refused every time but recorded once per user, action and
+	// five-minute interval (B2: a flood cannot multiply audit writes).
+	before := e.count(t, `SELECT count(*) FROM security_audit_events`)
+	for range 200 {
+		if code, _, _ := sender.send(http.MethodGet, "/portal/v1/api-keys", "", nil); code != http.StatusForbidden {
+			t.Fatalf("repeated refused request: %d", code)
+		}
+		if code, _, _ := viewer.send(http.MethodGet, "/portal/v1/audit-events", "", nil); code != http.StatusForbidden {
+			t.Fatalf("repeated refused request: %d", code)
+		}
+	}
+	if n := e.count(t, `SELECT count(*) FROM security_audit_events`); n != before {
+		t.Errorf("400 repeated refusals wrote %d events, want 0 (already recorded in this interval)", n-before)
+	}
 	// A sender locks their account with five wrong passwords.
 	for range 5 {
 		anonymous.do(http.MethodPost, "/portal/v1/session", signInBody("sender@audit-a.example.invalid", "wrong password!!"), nil)
@@ -431,6 +558,9 @@ func TestIntegrationPortalAuditLog(t *testing.T) {
 	)
 	failedSender := summary{"portal.sign_in", "failure", "anonymous", "portal_user " + s, "invalid_password"}
 	want := []summary{
+		{"portal_user.create", "success", "system", "portal_user " + o, ""},
+		{"portal_user.create", "success", "system", "portal_user " + s, ""},
+		{"portal_user.create", "success", "system", "portal_user " + v, ""},
 		{"portal.sign_in", "failure", "anonymous", "portal_user " + o, "invalid_password"},
 		{"portal.sign_in", "success", "portal_user " + o, "portal_session", ""},
 		{"portal.sign_in", "success", "portal_user " + s, "portal_session", ""},
@@ -445,11 +575,11 @@ func TestIntegrationPortalAuditLog(t *testing.T) {
 		{"audit_log.list", "denied", "portal_user " + s, "", "insufficient_role"},
 		{"audit_log.list", "denied", "portal_user " + v, "", "insufficient_role"},
 		failedSender, failedSender, failedSender, failedSender, failedSender,
-		{"portal.account_locked", "success", "system", "portal_user " + s, "too_many_attempts"},
+		{"portal.account_locked", "enforced", "system", "portal_user " + s, "too_many_attempts"},
 		{"portal.sign_out", "success", "portal_user " + v, "portal_session", ""},
 	}
 	// The lock is recorded in the transaction of the fifth failure, right after its sign-in event
-	// (same time; the later UUIDv7 sorts after it).
+	// (both times are assigned by the database when each row is inserted).
 	if len(got) != len(want) {
 		t.Fatalf("audit log has %d events, want %d:\n%v", len(got), len(want), got)
 	}
@@ -476,8 +606,9 @@ func TestIntegrationPortalAuditLog(t *testing.T) {
 				t.Errorf("lock event: locked until %v", ev.Details.LockedUntil)
 			}
 		case ev.Outcome == "denied":
-			if ev.Details.Role == nil || ev.Details.RequiredPermission == nil {
-				t.Errorf("refusal without role or permission: %+v", ev.Details)
+			if ev.Details.Role == nil || ev.Details.RequiredPermission == nil || ev.Details.DedupIntervalSeconds == nil ||
+				*ev.Details.DedupIntervalSeconds != 300 {
+				t.Errorf("refusal without role, permission or deduplication interval: %+v", ev.Details)
 			}
 		}
 	}
@@ -501,9 +632,10 @@ func TestIntegrationPortalAuditLog(t *testing.T) {
 		t.Error("the unknown address was stored")
 	}
 
-	// Tenant isolation: the other organization's owner sees only their own sign-in.
+	// Tenant isolation: the other organization's owner sees only their own sign-in and creation.
 	code, pageB, rawB := listAudit(t, ownerB, "?limit=100")
-	if code != http.StatusOK || len(pageB.Data) != 1 || pageB.Data[0].Actor.Email == nil || *pageB.Data[0].Actor.Email != "owner@audit-b.example.invalid" {
+	if code != http.StatusOK || len(pageB.Data) != 2 || pageB.Data[0].Actor.Email == nil || *pageB.Data[0].Actor.Email != "owner@audit-b.example.invalid" ||
+		pageB.Data[1].Action != "portal_user.create" {
 		t.Errorf("tenant B's audit log: %d %s", code, rawB)
 	}
 

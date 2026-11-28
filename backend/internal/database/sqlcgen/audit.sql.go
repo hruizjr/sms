@@ -14,23 +14,22 @@ import (
 )
 
 const insertPlatformSecurityEvent = `-- name: InsertPlatformSecurityEvent :exec
-INSERT INTO platform_security_events (occurred_at, action, outcome, request_id, source_ip, user_agent, details)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO platform_security_events (action, outcome, request_id, source_ip, user_agent, details)
+VALUES ($1, $2, $3, $4, $5, $6)
 `
 
 type InsertPlatformSecurityEventParams struct {
-	OccurredAt time.Time
-	Action     string
-	Outcome    string
-	RequestID  *string
-	SourceIp   *netip.Addr
-	UserAgent  *string
-	Details    []byte
+	Action    string
+	Outcome   string
+	RequestID *string
+	SourceIp  *netip.Addr
+	UserAgent *string
+	Details   []byte
 }
 
+// The database assigns id and occurred_at.
 func (q *Queries) InsertPlatformSecurityEvent(ctx context.Context, arg InsertPlatformSecurityEventParams) error {
 	_, err := q.db.Exec(ctx, insertPlatformSecurityEvent,
-		arg.OccurredAt,
 		arg.Action,
 		arg.Outcome,
 		arg.RequestID,
@@ -41,20 +40,21 @@ func (q *Queries) InsertPlatformSecurityEvent(ctx context.Context, arg InsertPla
 	return err
 }
 
-const insertSecurityAuditEvent = `-- name: InsertSecurityAuditEvent :exec
+const insertSecurityAuditEvent = `-- name: InsertSecurityAuditEvent :execrows
 
 INSERT INTO security_audit_events (
-    tenant_id, occurred_at, action, outcome, actor_type, actor_id, target_type, target_id,
-    request_id, source_ip, user_agent, details
+    tenant_id, action, outcome, actor_type, actor_id, target_type, target_id,
+    request_id, source_ip, user_agent, details, dedup_key
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7,
-    $8, $9, $10, $11, $12
+    $1, $2, $3, $4, $5, $6,
+    $7, $8, $9, $10, $11,
+    $12
 )
+ON CONFLICT (tenant_id, dedup_key) WHERE dedup_key IS NOT NULL DO NOTHING
 `
 
 type InsertSecurityAuditEventParams struct {
 	TenantID   pgtype.UUID
-	OccurredAt time.Time
 	Action     string
 	Outcome    string
 	ActorType  string
@@ -65,16 +65,19 @@ type InsertSecurityAuditEventParams struct {
 	SourceIp   *netip.Addr
 	UserAgent  *string
 	Details    []byte
+	DedupKey   *string
 }
 
 // Security audit log (internal/audit, Phase 4 Group 6). Tenant events are written and read inside
 // the tenant's transaction-local context (database.DB.InTenantTx) and filter by tenant_id
 // explicitly; the application can only insert them (no UPDATE or DELETE privilege). Platform events
 // belong to no organization and can only be inserted: the application cannot read them.
-func (q *Queries) InsertSecurityAuditEvent(ctx context.Context, arg InsertSecurityAuditEventParams) error {
-	_, err := q.db.Exec(ctx, insertSecurityAuditEvent,
+// The database assigns id and occurred_at (the application has no privilege to set them). An event
+// with a dedup_key that this organization already has is not written (0 rows): the existing event is
+// left exactly as it is.
+func (q *Queries) InsertSecurityAuditEvent(ctx context.Context, arg InsertSecurityAuditEventParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertSecurityAuditEvent,
 		arg.TenantID,
-		arg.OccurredAt,
 		arg.Action,
 		arg.Outcome,
 		arg.ActorType,
@@ -85,8 +88,12 @@ func (q *Queries) InsertSecurityAuditEvent(ctx context.Context, arg InsertSecuri
 		arg.SourceIp,
 		arg.UserAgent,
 		arg.Details,
+		arg.DedupKey,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const listSecurityAuditEvents = `-- name: ListSecurityAuditEvents :many

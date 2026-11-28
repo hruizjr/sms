@@ -189,9 +189,12 @@ credentials, network connectivity (VPN/IP allowlisting).
 - [ ] Regulatory and privacy prerequisites confirmed by counsel.
 - [x] Durable, append-only security audit log for portal authentication and API key lifecycle (owner decision G4-8;
   Phase 4 Group 6, decision log §23).
-- [ ] Audit log tamper evidence (S-8) and retention periods with automated expiry (S-4, PG-4) decided and implemented.
-- [ ] `TRUSTED_PROXIES` set for the production load balancer or reverse proxy (otherwise all clients share one
-  sign-in rate limit), and the sign-in rate-limit defaults reviewed against observed traffic.
+- [ ] External immutable audit export or externally anchored integrity evidence (S-8, G6-19), and retention periods
+  with automated expiry (S-4, PG-4) decided and implemented.
+- [ ] `TRUSTED_PROXIES` set to the production load balancer's or reverse proxy's actual addresses (the API refuses to
+  start in production without it, G6-15), edge rate limiting or a WAF in front of the API, the password-hashing
+  limits measured on the production hardware, and the sign-in limit defaults reviewed against observed traffic
+  (S-12).
 - [ ] Rate limits of the public API per tenant and API key (security baseline §7).
 
 ### Phase 10 — Controlled pilot

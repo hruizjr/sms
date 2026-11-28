@@ -22,9 +22,10 @@ export interface paths {
          *     grants. The owner must re-enter their current password (`current_password`, owner decision G4-7):
          *     a wrong password, or an account that is temporarily locked, receives `403`
          *     (`reauthentication-failed`) and no key is created. Failed attempts count toward the same account
-         *     lockout as failed sign-ins. The password is never stored or logged. The response contains the
-         *     full key (`key`) **once**: the platform stores only a hash of its secret and can never return it
-         *     again. Requires `api_keys:manage`.
+         *     lockout as failed sign-ins. The password is never stored or logged. `503` (`service-busy`) means
+         *     the password could not be checked now and no key was created. The response contains the full key
+         *     (`key`) **once**: the platform stores only a hash of its secret and can never return it again.
+         *     Requires `api_keys:manage`.
          */
         post: operations["createApiKey"];
         delete?: never;
@@ -66,7 +67,9 @@ export interface paths {
         /**
          * List security audit events
          * @description The organization's security audit events, newest first, optionally filtered by action, outcome
-         *     and time range. Read-only: events cannot be changed or deleted. Requires `audit_log:read`
+         *     and time range. Read-only: this API has no way to change or delete an event, and the application
+         *     cannot change or delete them in the database either (a database superuser still can; see the
+         *     Security audit log section). Requires `audit_log:read`
          *     (owners); other roles receive `403` and the refusal is itself recorded.
          */
         get: operations["listAuditEvents"];
@@ -188,8 +191,10 @@ export interface paths {
          * @description Verifies an email address and password and starts a session (sets the session cookie). Unknown
          *     addresses, wrong passwords and temporarily locked accounts all receive the same `401`
          *     (`invalid-credentials`). A correct password for an organization that is not active receives
-         *     `403` (`account-not-active`) and no session. Too many attempts from the caller's source address
-         *     receive `429` (`too-many-sign-in-attempts`) with `Retry-After`; nothing is checked.
+         *     `403` (`account-not-active`) and no session. Too many requests or failed attempts from the
+         *     caller's source receive `429` (`too-many-sign-in-attempts`) with `Retry-After`; nothing is
+         *     checked. `503` (`service-busy`) means the password could not be checked now; retry after
+         *     `Retry-After`.
          */
         post: operations["signIn"];
         /**
@@ -269,16 +274,23 @@ export interface components {
         /**
          * @description What happened: `portal.sign_in` (a sign-in, successful or not), `portal.sign_out`,
          *     `portal.account_locked` (repeated failed attempts locked the account), `api_key.create`,
-         *     `api_key.revoke`, `api_key.list` (recorded only when refused) and `audit_log.list` (recorded only
-         *     when refused).
+         *     `api_key.revoke`, `api_key.list` (recorded only when refused), `audit_log.list` (recorded only
+         *     when refused), and, performed by the platform's administration tool, `portal_user.create`,
+         *     `portal_user.unlock` (the account lockout was cleared) and `portal_user.sessions_revoke` (the
+         *     user's sessions were ended).
          * @enum {string}
          */
-        AuditAction: "portal.sign_in" | "portal.sign_out" | "portal.account_locked" | "api_key.create" | "api_key.revoke" | "api_key.list" | "audit_log.list";
+        AuditAction: "portal.sign_in" | "portal.sign_out" | "portal.account_locked" | "api_key.create" | "api_key.revoke" | "api_key.list" | "audit_log.list" | "portal_user.create" | "portal_user.unlock" | "portal_user.sessions_revoke";
         /** @description Structured, non-secret details. Only the fields that apply are present. */
         AuditDetails: {
             /** @description The name of the API key that was created or revoked. */
             api_key_name?: string;
             api_key_scopes?: components["schemas"]["ApiKeyScope"][];
+            /**
+             * @description Set on a refused request: further refusals of the same user and action within the same
+             *     interval of this many seconds are not recorded again.
+             */
+            dedup_interval_seconds?: number;
             /**
              * Format: date-time
              * @description When the account lock ends.
@@ -290,6 +302,7 @@ export interface components {
              */
             reason?: string;
             required_permission?: components["schemas"]["Permission"];
+            /** @description The role of a refused user, or the role given to a created user. */
             role?: components["schemas"]["Role"];
             /** @description The administration tool that performed a system action (`smsctl`). */
             via?: string;
@@ -326,10 +339,11 @@ export interface components {
         /**
          * @description `success`; `failure` (the credentials or the confirmed password were not accepted); `denied`
          *     (refused by policy, for example a role without the permission or an organization that is not
-         *     active).
+         *     active); `enforced` (the platform applied a security control: the outcome of
+         *     `portal.account_locked`, and of no other action).
          * @enum {string}
          */
-        AuditOutcome: "success" | "failure" | "denied";
+        AuditOutcome: "success" | "failure" | "denied" | "enforced";
         /** @description The actor or target of an event. */
         AuditParty: {
             /** @description The portal user's email address (portal users only), or `null`. */
@@ -663,8 +677,32 @@ export interface components {
             };
         };
         /**
-         * @description Too many sign-in attempts from the caller's source address (`too-many-sign-in-attempts`). No
-         *     credential was checked and no account was affected. Retry after the indicated delay.
+         * @description The server's password-checking capacity is exhausted (`service-busy`). The password was not
+         *     checked, nothing was changed and no failed attempt was counted. Retry after the indicated delay.
+         */
+        ServiceBusy: {
+            headers: {
+                "Retry-After": components["headers"]["RetryAfter"];
+                "X-Request-ID": components["headers"]["XRequestID"];
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "type": "https://api.example.invalid/problems/service-busy",
+                 *       "title": "Service busy",
+                 *       "status": 503,
+                 *       "detail": "The service is busy. Try again in a moment.",
+                 *       "request_id": "9b2f4c1e7d3a5b6b"
+                 *     }
+                 */
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /**
+         * @description Too many sign-in requests, or too many failed sign-in attempts, from the caller's source
+         *     (`too-many-sign-in-attempts`). No credential was checked and no account was affected. Retry
+         *     after the indicated delay.
          */
         TooManySignInAttempts: {
             headers: {
@@ -846,6 +884,7 @@ export interface operations {
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
             500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceBusy"];
         };
     };
     revokeApiKey: {
@@ -1170,6 +1209,7 @@ export interface operations {
             415: components["responses"]["UnsupportedMediaType"];
             429: components["responses"]["TooManySignInAttempts"];
             500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceBusy"];
         };
     };
     signOut: {

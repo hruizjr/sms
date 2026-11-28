@@ -87,8 +87,7 @@ func TestIntegrationAuditTenantIsolation(t *testing.T) {
 	f := newFixture(t)
 	a := f.activeTenant(t, "Audit A")
 	b := f.activeTenant(t, "Audit B")
-	now := time.Now()
-	ev := audit.Event{OccurredAt: now, Action: audit.ActionSignOut, Outcome: audit.OutcomeSuccess, Actor: audit.System}
+	ev := audit.Event{Action: audit.ActionSignOut, Outcome: audit.OutcomeSuccess, Actor: audit.System}
 	if err := f.svc.Record(f.ctx, a, ev); err != nil {
 		t.Fatal(err)
 	}
@@ -130,10 +129,10 @@ func TestIntegrationAuditAppendOnly(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	a := f.activeTenant(t, "Append Only")
-	if err := f.svc.Record(f.ctx, a, audit.Event{OccurredAt: time.Now(), Action: audit.ActionSignOut, Outcome: audit.OutcomeSuccess, Actor: audit.System}); err != nil {
+	if err := f.svc.Record(f.ctx, a, audit.Event{Action: audit.ActionSignOut, Outcome: audit.OutcomeSuccess, Actor: audit.System}); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.svc.RecordPlatform(f.ctx, audit.PlatformEvent{OccurredAt: time.Now(), Action: audit.ActionSignInRateLimited, Outcome: audit.OutcomeDenied}); err != nil {
+	if err := f.svc.RecordPlatform(f.ctx, audit.PlatformEvent{Action: audit.ActionSignInRateLimited, Outcome: audit.OutcomeDenied}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -194,15 +193,14 @@ func TestIntegrationAuditList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	base := time.Date(2026, 11, 28, 1, 0, 0, 0, time.UTC)
 	ctx := audit.WithSource(f.ctx, audit.Source{RequestID: "req-1", IP: netip.MustParseAddr("::ffff:203.0.113.9"), UserAgent: "Agent/1.0\n"})
 	events := []audit.Event{
-		{OccurredAt: base, Action: audit.ActionSignIn, Outcome: audit.OutcomeFailure, Actor: audit.Anonymous,
+		{Action: audit.ActionSignIn, Outcome: audit.OutcomeFailure, Actor: audit.Anonymous,
 			Target: &audit.Target{Type: audit.TargetPortalUser, ID: user.ID}, Details: audit.Details{Reason: audit.ReasonInvalidPassword}},
-		{OccurredAt: base.Add(time.Minute), Action: audit.ActionSignIn, Outcome: audit.OutcomeSuccess, Actor: audit.PortalUser(user.ID),
+		{Action: audit.ActionSignIn, Outcome: audit.OutcomeSuccess, Actor: audit.PortalUser(user.ID),
 			Target: &audit.Target{Type: audit.TargetPortalSession, ID: [16]byte{9}}},
-		{OccurredAt: base.Add(2 * time.Minute), Action: audit.ActionAPIKeyList, Outcome: audit.OutcomeDenied, Actor: audit.PortalUser(user.ID)},
-		{OccurredAt: base.Add(3 * time.Minute), Action: audit.ActionSignOut, Outcome: audit.OutcomeSuccess, Actor: audit.PortalUser(user.ID)},
+		{Action: audit.ActionAPIKeyList, Outcome: audit.OutcomeDenied, Actor: audit.PortalUser(user.ID)},
+		{Action: audit.ActionSignOut, Outcome: audit.OutcomeSuccess, Actor: audit.PortalUser(user.ID)},
 	}
 	for _, ev := range events {
 		if err := f.svc.Record(ctx, a, ev); err != nil {
@@ -217,15 +215,27 @@ func TestIntegrationAuditList(t *testing.T) {
 		}
 		return entries
 	}
+	// Five events: the user's creation (recorded by CreateUser) and the four above, newest first.
 	all := list(audit.Filter{Limit: 100})
-	if len(all) != 4 || all[0].Action != audit.ActionSignOut || all[3].Action != audit.ActionSignIn {
-		t.Fatalf("List() = %+v, want 4 events newest first", all)
+	if len(all) != 5 || all[0].Action != audit.ActionSignOut || all[3].Action != audit.ActionSignIn ||
+		all[4].Action != audit.ActionPortalUserCreate {
+		t.Fatalf("List() = %+v, want 5 events newest first", all)
+	}
+	for i := 1; i < len(all); i++ {
+		if !all[i].OccurredAt.Before(all[i-1].OccurredAt) {
+			t.Errorf("event %d (%s) is not older than event %d (%s)", i, all[i].OccurredAt, i-1, all[i-1].OccurredAt)
+		}
+	}
+	created := all[4]
+	if created.Actor.Type != "system" || created.Target == nil || created.Target.Email != "owner@list.example.invalid" ||
+		created.Details.Role != "owner" || created.RequestID != "" {
+		t.Errorf("user creation event = %+v", created)
 	}
 	first := all[3]
 	if first.RequestID != "req-1" || first.SourceIP != netip.MustParseAddr("203.0.113.9") || first.UserAgent != "Agent/1.0" ||
 		first.Actor.Type != "anonymous" || first.Target == nil || first.Target.Email != "owner@list.example.invalid" ||
-		first.Details.Reason != audit.ReasonInvalidPassword || !first.OccurredAt.Equal(base) {
-		t.Errorf("oldest event = %+v", first)
+		first.Details.Reason != audit.ReasonInvalidPassword || first.OccurredAt.IsZero() {
+		t.Errorf("oldest sign-in event = %+v", first)
 	}
 	if all[2].Actor.Email != "owner@list.example.invalid" || all[2].Target.Type != "portal_session" || all[2].Target.Email != "" {
 		t.Errorf("sign-in event = %+v", all[2])
@@ -238,7 +248,7 @@ func TestIntegrationAuditList(t *testing.T) {
 	if got := list(audit.Filter{Limit: 100, Action: &signIn, Outcome: &success}); len(got) != 1 || got[0].Outcome != success {
 		t.Errorf("action and outcome filter: %+v", got)
 	}
-	from, before := base.Add(time.Minute), base.Add(3*time.Minute)
+	from, before := all[2].OccurredAt, all[0].OccurredAt // the successful sign-in and the denial
 	if got := list(audit.Filter{Limit: 100, OccurredFrom: &from, OccurredBefore: &before}); len(got) != 2 {
 		t.Errorf("time range [from, before): %d events, want 2", len(got))
 	}
@@ -249,8 +259,12 @@ func TestIntegrationAuditList(t *testing.T) {
 		t.Fatalf("page 1 = %d, %q, %v", len(page1), next, err)
 	}
 	page2, next2, err := f.svc.List(f.ctx, a, audit.Filter{Limit: 2, Cursor: next})
-	if err != nil || len(page2) != 2 || next2 != "" || page2[0].ID == page1[1].ID || page2[1].Action != audit.ActionSignIn {
+	if err != nil || len(page2) != 2 || next2 == "" || page2[0].ID == page1[1].ID || page2[1].Action != audit.ActionSignIn {
 		t.Errorf("page 2 = %+v, %q, %v", page2, next2, err)
+	}
+	page3, next3, err := f.svc.List(f.ctx, a, audit.Filter{Limit: 2, Cursor: next2})
+	if err != nil || len(page3) != 1 || next3 != "" || page3[0].Action != audit.ActionPortalUserCreate {
+		t.Errorf("page 3 = %+v, %q, %v", page3, next3, err)
 	}
 	if _, _, err := f.svc.List(f.ctx, a, audit.Filter{Limit: 2, Cursor: next, Action: &signIn}); !errors.Is(err, audit.ErrInvalidCursor) {
 		t.Errorf("cursor with other filters: %v, want ErrInvalidCursor", err)
@@ -311,11 +325,125 @@ func TestIntegrationAuditFailurePreventsUnauditedChanges(t *testing.T) {
 		t.Errorf("failed_login_count = %d, want 0 (rolled back with the event)", n)
 	}
 
-	if _, err := f.admin.Pool().Exec(f.ctx, `GRANT INSERT (tenant_id, occurred_at, action, outcome, actor_type, actor_id, target_type,
-		target_id, request_id, source_ip, user_agent, details) ON security_audit_events TO sms_app`); err != nil {
+	if _, err := f.admin.Pool().Exec(f.ctx, `GRANT INSERT (tenant_id, action, outcome, actor_type, actor_id, target_type,
+		target_id, request_id, source_ip, user_agent, details, dedup_key) ON security_audit_events TO sms_app`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := accounts.Login(f.ctx, "owner@failure.example.invalid", testPassword); err != nil {
 		t.Errorf("Login() after the privilege was restored: %v", err)
+	}
+}
+
+// The application cannot choose an event's ID or time: PostgreSQL assigns both, so an event can be
+// neither back-dated nor made to collide with (and so overwrite or impersonate) an existing one.
+func TestIntegrationAuditIdentityAndTimeAssignedByDatabase(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	a := f.activeTenant(t, "Audit Identity")
+	before := time.Now()
+	if err := f.svc.Record(f.ctx, a, audit.Event{Action: audit.ActionSignOut, Outcome: audit.OutcomeSuccess, Actor: audit.System}); err != nil {
+		t.Fatal(err)
+	}
+	entries, _, err := f.svc.List(f.ctx, a, audit.Filter{Limit: 10})
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("List() = %v, %v", entries, err)
+	}
+	existing := entries[0]
+	// The database clock and the test's clock run on the same host here; allow a little skew.
+	if existing.OccurredAt.Before(before.Add(-5*time.Second)) || existing.OccurredAt.After(time.Now().Add(5*time.Second)) {
+		t.Errorf("occurred_at = %s, want the insertion time (about %s)", existing.OccurredAt, before)
+	}
+
+	tenant, id := uuid(a), uuid(existing.ID)
+	for _, tc := range []struct {
+		name string
+		sql  string
+		args []any
+	}{
+		{"back-dated tenant event", `INSERT INTO security_audit_events (tenant_id, occurred_at, action, outcome, actor_type)
+			VALUES ($1, '2020-01-01T00:00:00Z', 'portal.sign_out', 'success', 'system')`, []any{tenant}},
+		{"tenant event with a chosen ID", `INSERT INTO security_audit_events (id, tenant_id, action, outcome, actor_type)
+			VALUES ($2, $1, 'portal.sign_out', 'success', 'system')`, []any{tenant, id}},
+		{"upsert onto an existing event", `INSERT INTO security_audit_events (id, tenant_id, action, outcome, actor_type)
+			VALUES ($2, $1, 'portal.sign_out', 'failure', 'system') ON CONFLICT (id) DO UPDATE SET outcome = 'failure'`, []any{tenant, id}},
+		{"back-dated platform event", `INSERT INTO platform_security_events (occurred_at, action, outcome)
+			VALUES ('2020-01-01T00:00:00Z', 'portal.sign_in', 'failure')`, nil},
+		{"platform event with a chosen ID", `INSERT INTO platform_security_events (id, action, outcome)
+			VALUES ($1, 'portal.sign_in', 'failure')`, []any{id}},
+	} {
+		err := f.app.InTenantTx(f.ctx, a, func(tx pgx.Tx) error {
+			_, err := tx.Exec(f.ctx, tc.sql, tc.args...)
+			return err
+		})
+		if !isPermissionDenied(err) {
+			t.Errorf("as sms_app, %s: %v, want permission denied", tc.name, err)
+		}
+	}
+	if n := f.count(t, `SELECT count(*) FROM security_audit_events WHERE id = $1 AND outcome = 'success'`, uuid(existing.ID)); n != 1 {
+		t.Error("the existing event was changed")
+	}
+	// The default ignores nothing the application could set: the only way in is the default.
+	if n := f.count(t, `SELECT count(*) FROM security_audit_events WHERE occurred_at < now() - interval '1 hour'`); n != 0 {
+		t.Errorf("%d back-dated events exist", n)
+	}
+}
+
+// A deduplication key records one event; repeating it writes nothing and leaves the first event
+// unchanged. Keys are scoped to the organization. The database enforces "enforced" for account locks only.
+func TestIntegrationAuditDeduplication(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	a := f.activeTenant(t, "Dedup A")
+	b := f.activeTenant(t, "Dedup B")
+	user := audit.PortalUser([16]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x70, 0x08, 0x80, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10})
+	key := audit.DeniedKey(user, audit.ActionAPIKeyList, time.Now())
+	ev := func(role string) audit.Event {
+		return audit.Event{Action: audit.ActionAPIKeyList, Outcome: audit.OutcomeDenied, Actor: user,
+			Details: audit.Details{Reason: audit.ReasonInsufficientRole, Role: role}, DedupKey: key}
+	}
+	for i := range 50 {
+		role := "viewer"
+		if i > 0 {
+			role = "sender" // a later duplicate must not replace the first event's details
+		}
+		if err := f.svc.Record(f.ctx, a, ev(role)); err != nil {
+			t.Fatalf("Record #%d: %v", i, err)
+		}
+	}
+	if err := f.svc.Record(f.ctx, b, ev("viewer")); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.count(t, `SELECT count(*) FROM security_audit_events WHERE tenant_id = $1`, uuid(a)); n != 1 {
+		t.Errorf("tenant A has %d events for one key, want 1", n)
+	}
+	if n := f.count(t, `SELECT count(*) FROM security_audit_events WHERE tenant_id = $1 AND details->>'role' = 'viewer'`, uuid(a)); n != 1 {
+		t.Error("a duplicate changed the first event")
+	}
+	if n := f.count(t, `SELECT count(*) FROM security_audit_events WHERE tenant_id = $1`, uuid(b)); n != 1 {
+		t.Errorf("tenant B has %d events, want 1 (keys are per organization)", n)
+	}
+	// Events without a key are never deduplicated.
+	for range 3 {
+		if err := f.svc.Record(f.ctx, a, audit.Event{Action: audit.ActionSignOut, Outcome: audit.OutcomeSuccess, Actor: audit.System}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := f.count(t, `SELECT count(*) FROM security_audit_events WHERE tenant_id = $1`, uuid(a)); n != 4 {
+		t.Errorf("tenant A has %d events, want 4", n)
+	}
+	// The outcome rule is enforced by the database too, not only by the Go validation.
+	for name, sql := range map[string]string{
+		"lock recorded as success":     `INSERT INTO security_audit_events (tenant_id, action, outcome, actor_type) VALUES ($1, 'portal.account_locked', 'success', 'system')`,
+		"sign-in recorded as enforced": `INSERT INTO security_audit_events (tenant_id, action, outcome, actor_type) VALUES ($1, 'portal.sign_in', 'enforced', 'anonymous')`,
+		"malformed dedup key":          `INSERT INTO security_audit_events (tenant_id, action, outcome, actor_type, dedup_key) VALUES ($1, 'portal.sign_out', 'success', 'system', 'Bad Key')`,
+	} {
+		err := f.app.InTenantTx(f.ctx, a, func(tx pgx.Tx) error {
+			_, err := tx.Exec(f.ctx, sql, uuid(a))
+			return err
+		})
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "23514" { // check_violation
+			t.Errorf("%s: %v, want a check violation", name, err)
+		}
 	}
 }

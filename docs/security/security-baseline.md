@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — pending owner review (MFA, MVP roles and API key scopes in §3 updated for owner decisions of 2026-11-26; portal sessions and passwords in §3 for decision log §20, 2026-11-27; S-3 status for §21; S-3 and S-8 for G4-7 and G4-8, 2026-11-28; §3, §7, §9 and S-8 for Phase 4 Group 6, decision log §23, 2026-11-28) | Project owner | 2026-11-28 |
+| Draft — pending owner review (MFA, MVP roles and API key scopes in §3 updated for owner decisions of 2026-11-26; portal sessions and passwords in §3 for decision log §20, 2026-11-27; S-3 status for §21; S-3 and S-8 for G4-7 and G4-8, 2026-11-28; §3, §7, §9 and S-8 for Phase 4 Group 6, decision log §23, 2026-11-28; §3, §7, §9, S-8 and S-12 for the Group 6 security review remediation, G6-10 to G6-20, 2026-11-28) | Project owner | 2026-11-28 |
 
 This baseline sets the minimum security principles for all work. It is **not** a complete security
 program; §11 lists the security engineering still required. Nothing here is legal advice.
@@ -46,10 +46,15 @@ program; §11 lists the security engineering still required. Nothing here is leg
   every state-changing request. Re-authentication for sensitive actions applies once such actions exist.
 - **Passwords:** hashed with **Argon2id** (owner decision G3-2, 2026-11-27: OWASP parameters, 19 MiB, 2 iterations,
   1 lane); at least 12 characters (G3-3); five consecutive failed sign-ins lock the account for 15 minutes.
-  **Per-source rate limiting of sign-in is implemented** (Phase 4 Group 6, decision log §23): by default 50
-  attempts per IPv4 address or IPv6 /64 in 15 minutes, shared by all API instances through PostgreSQL, answered with
-  `429` and `Retry-After` before any credential check; it never locks an account and is independent of the lockout.
-  The client address is the direct peer unless the peer is a configured trusted proxy (`TRUSTED_PROXIES`).
+  **Layered per-source limits of sign-in are implemented** (Phase 4 Group 6, decision log §23, G6-11 and G6-12),
+  shared by all API instances through PostgreSQL and answered with `429` and `Retry-After` before any credential
+  check; they never lock an account and are independent of the lockout. Initial, configurable defaults: a budget of
+  **failed** attempts of 100 per IPv4 address, 100 per IPv6 /64 and 500 per IPv6 /48 in 15 minutes (each attempt
+  reserves a slot; a successful sign-in returns only its own slot), and an all-attempt token bucket of 10 requests
+  per second with a burst of 100 per IPv4 address or IPv6 /64. Password hashing runs with bounded concurrency and a
+  bounded wait queue; beyond it, `503` without checking the password. The client address is the direct peer unless
+  the peer is a configured trusted proxy (`TRUSTED_PROXIES`, which **must be set explicitly in production**: proxy
+  addresses or `none`; ranges broader than an IPv4 /8 or IPv6 /32 need an explicit opt-in and log a warning).
   Breached-password checks are **not implemented yet**.
 - **MFA:** mandatory for **every human internal admin account** — Super Admin, Operations and Finance (owner
   decision D-021, widened on 2026-11-26, MVP-04); available (possibly mandatory by policy) for clients.
@@ -135,8 +140,11 @@ program; §11 lists the security engineering still required. Nothing here is leg
 - Security headers (CSP, HSTS, `X-Content-Type-Options`, frame protection) on portal responses.
 - Request size limits, timeouts, and pagination limits.
 - Rate limiting per IP, per user, per tenant, per API key; stricter limits on authentication endpoints. *Status:*
-  portal sign-in is limited per source address (Phase 4 Group 6); per-user, per-tenant and per-key limits of the
-  public API are not implemented yet.
+  portal sign-in is limited per source in layers (failed-attempt budgets per IPv4 address, IPv6 /64 and /48; an
+  all-attempt token bucket; bounded password hashing — Phase 4 Group 6, G6-11, G6-12); per-user, per-tenant and
+  per-key limits of the public API are not implemented yet. Edge rate limiting or a WAF in front of the API is a
+  production gate (S-12): the application limits do not stop an attacker controlling many networks, and a
+  distributed flood can still make sign-in busy (`503`).
 - File imports: size and row limits, type checking, processing in background with progress, no execution
   of content; exported CSV/Excel cells sanitized against formula injection.
 - Outbound webhooks: HMAC signatures with timestamps (replay protection), URL validation against private,
@@ -155,8 +163,11 @@ program; §11 lists the security engineering still required. Nothing here is leg
 
 ## 9. Audit logging
 
-- Append-only, tamper-evident storage (approach to be designed — e.g. restricted DB role with insert-only
-  rights, periodic hash chaining or export to write-once storage).
+- Append-only storage under the application's permissions, plus tamper evidence that holds against privileged
+  database access: an **external immutable export** (write-once storage outside the database's administrative
+  domain) or **externally anchored integrity evidence** (for example periodic digests published or stored where the
+  database administrators cannot change them). A hash chain kept inside the same PostgreSQL database does **not**
+  protect against a database superuser, who can rewrite the chain together with the rows.
 - Recorded: authentication events, MFA changes, role/permission changes, API key lifecycle, credit and
   pricing changes, sender ID decisions, campaign approvals, provider/routing configuration changes,
   data exports, admin access to tenant data, tenant suspension.
@@ -167,10 +178,16 @@ program; §11 lists the security engineering still required. Nothing here is leg
   sign-in, account lockout, sign-in rate limiting, API key creation (including failed password confirmation) and
   revocation, and refused API key and audit log requests. Tenant events are stored under forced RLS and readable by
   the organization's owners; events of no identifiable organization are stored in a platform table the application
-  cannot read. Append-only is enforced by privileges (insert only) and by triggers that reject updates, deletes and
-  truncation by any role including the table owner — **not** against a database superuser. Each record holds the
-  fields above except before/after values (no audited action changes a value yet). Hash chaining or write-once export
-  and the retention period remain open.
+  cannot read. Append-only is enforced by privileges (insert only, with the event ID and time assigned by
+  PostgreSQL so the application can neither back-date nor collide with an event) and by triggers that reject
+  updates, deletes and truncation by any role including the table owner. These controls stop ordinary application
+  modification; they are **not** tamper-proof and do **not** protect against a database superuser (or the table
+  owner after disabling the triggers). An account lock is recorded with the outcome `enforced`. Refused requests are
+  recorded once per user, action and five minutes, and attempts on a locked account once per lock, through a unique
+  deduplication key (no event is modified). Portal user creation, unlocking and session revocation by `smsctl` are
+  recorded as system actions. Each record holds the fields above except before/after values (no audited action
+  changes a value yet). The external immutable export (S-8) and the retention period (S-4) remain open; platform-wide
+  events stay readable only by database administrators until an approved internal function exists.
 
 ## 10. Infrastructure and supply chain (when infrastructure exists)
 
@@ -192,7 +209,8 @@ program; §11 lists the security engineering still required. Nothing here is leg
 | S-5 | Privacy impact assessment; DPO and NPC obligations (with counsel) | Before production |
 | S-6 | Secret management and key rotation design | Hosting decision |
 | S-7 | Abuse-prevention policy and tooling (KYC, sender ID vetting, content rules) | Before production sending |
-| S-8 | Audit log tamper-evidence design | Before admin features, and before production in any case: API key creation and revocation must be durable audit events; application logs are not a substitute (owner decision G4-8, 2026-11-28). **Durable, append-only audit log implemented** (Phase 4 Group 6, decision log §23); tamper evidence against privileged database access (hash chaining, write-once export) remains open |
+| S-8 | Audit log tamper-evidence design | Before admin features, and before production in any case: API key creation and revocation must be durable audit events; application logs are not a substitute (owner decision G4-8, 2026-11-28). **Durable, append-only audit log implemented** (Phase 4 Group 6, decision log §23). **Production requirement (G6-19):** an external immutable export of the audit log, or externally anchored integrity evidence, so that alteration by privileged database access is detectable; an internal PostgreSQL hash chain does not satisfy it. Not implemented |
 | S-9 | Incident response and breach notification runbooks | Before production |
 | S-10 | Independent penetration test | Before production launch |
 | S-11 | Telco-specific security requirements (from telco checklist) | When telco specs received |
+| S-12 | Sign-in abuse controls at the edge, and production capacity measurements (G6-11, G6-12, G6-15) | Before production: edge rate limiting or WAF in front of the API; the real `TRUSTED_PROXIES` of the hosting (D-145); password-hashing concurrency, queue and wait measured on the production hardware; the sign-in limit defaults reviewed against measured traffic (carrier-grade NAT) |

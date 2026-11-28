@@ -6,13 +6,16 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io/fs"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/lock"
@@ -113,12 +116,13 @@ func TestIntegrationEmbeddedMigrations(t *testing.T) {
 		"public.idempotency_keys sms_migrator", "public.message_bodies sms_migrator", "public.message_receipts sms_migrator",
 		"public.message_status_history sms_migrator", "public.messages sms_migrator",
 		"public.platform_security_events sms_migrator", "public.portal_login_directory sms_migrator",
-		"public.portal_sessions sms_migrator", "public.portal_sign_in_rate_limits sms_migrator", "public.portal_users sms_migrator",
+		"public.portal_sessions sms_migrator", "public.portal_sign_in_failure_budgets sms_migrator",
+		"public.portal_sign_in_request_buckets sms_migrator", "public.portal_users sms_migrator",
 		"public.provider_receipts sms_migrator", "public.security_audit_events sms_migrator", "public.sender_ids sms_migrator",
 		"public.submission_attempts sms_migrator", "public.tenants sms_migrator",
 	}
-	group6 := []string{"public.platform_security_events sms_migrator", "public.portal_sign_in_rate_limits sms_migrator",
-		"public.security_audit_events sms_migrator"}
+	group6 := []string{"public.platform_security_events sms_migrator", "public.portal_sign_in_failure_budgets sms_migrator",
+		"public.portal_sign_in_request_buckets sms_migrator", "public.security_audit_events sms_migrator"}
 	afterPortal := slices.DeleteFunc(slices.Clone(want), func(s string) bool { return slices.Contains(group6, s) })
 	afterMessaging := slices.DeleteFunc(slices.Clone(afterPortal), func(s string) bool { return strings.HasPrefix(s, "public.portal_") })
 	afterTenants := []string{"public.goose_db_version sms_migrator", "public.tenants sms_migrator"}
@@ -307,6 +311,79 @@ func TestIntegrationUpWaitsForMigrationLock(t *testing.T) {
 		}
 	case <-time.After(20 * time.Second):
 		t.Fatal("Up() did not proceed after the lock was released")
+	}
+	assertVersion(t, ctx, runner, latestVersion)
+}
+
+// The security audit migration sets lock_timeout (AGENTS.md §10.1): while another transaction holds a
+// lock on api_keys (read by every public API request), it fails within seconds and rolls back,
+// instead of queueing behind that transaction and blocking every later query on the table.
+func TestIntegrationSecurityMigrationLockTimeout(t *testing.T) {
+	t.Parallel()
+	ctx := testContext(t)
+	adminCfg := dbtest.NewDatabase(t)
+	db, sdb := sqlDB(t, dbtest.RoleConfig(t, adminCfg, dbroles.Migrator))
+
+	// Every migration before the security audit migration.
+	earlier := fstest.MapFS{}
+	entries, err := fs.ReadDir(migrations.FS, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".sql") || strings.HasPrefix(e.Name(), strconv.Itoa(latestVersion)) {
+			continue
+		}
+		b, err := fs.ReadFile(migrations.FS, e.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		earlier[e.Name()] = &fstest.MapFile{Data: b}
+	}
+	if _, err := newRunner(t, sdb, earlier).Up(ctx); err != nil {
+		t.Fatalf("Up() to the portal migration: %v", err)
+	}
+	runner := newRunner(t, sdb, nil)
+	assertVersion(t, ctx, runner, portalVersion)
+
+	// A long transaction holds an ACCESS SHARE lock on api_keys (an ordinary read).
+	admin, err := database.Open(ctx, adminCfg, "sms-migration-lock-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(admin.Close)
+	tx, err := admin.Pool().Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `SELECT count(*) FROM api_keys`); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	_, err = runner.Up(ctx)
+	elapsed := time.Since(start)
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "55P03" { // lock_not_available
+		t.Fatalf("Up() while api_keys is locked = %v, want a lock timeout (55P03)", err)
+	}
+	if elapsed > 20*time.Second {
+		t.Errorf("Up() waited %v for the lock, want about 5s", elapsed)
+	}
+	assertVersion(t, ctx, runner, portalVersion)
+	var exists bool
+	if err := db.Pool().QueryRow(ctx, `SELECT to_regclass('security_audit_events') IS NOT NULL
+		OR EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'api_keys' AND column_name = 'last_used_at')`).Scan(&exists); err != nil || exists {
+		t.Errorf("the timed-out migration left changes behind (%v)", err)
+	}
+
+	// Once the lock is released, the migration applies.
+	if err := tx.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runner.Up(ctx); err != nil {
+		t.Fatalf("Up() after the lock was released: %v", err)
 	}
 	assertVersion(t, ctx, runner, latestVersion)
 }

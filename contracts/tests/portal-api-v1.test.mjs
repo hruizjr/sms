@@ -191,6 +191,36 @@ test('sign-in declares the per-source rate limit with Retry-After', () => {
   assert.match(tooMany.content['application/problem+json'].example.type, /too-many-sign-in-attempts$/);
 });
 
+test('an account lock is recorded with the outcome enforced, not success', () => {
+  const outcome = spec.components.schemas.AuditOutcome;
+  assert.deepEqual(outcome.enum, ['success', 'failure', 'denied', 'enforced']);
+  assert.match(outcome.description, /`enforced`[^]*`portal\.account_locked`/);
+});
+
+test('the audit log does not claim tamper-proof storage', () => {
+  const text = JSON.stringify(spec);
+  assert.doesNotMatch(text, /cannot be changed or deleted/i);
+  assert.doesNotMatch(text, /(?<!not )tamper-proof/i);
+  assert.match(spec.info.description, /not tamper-proof storage: a database\s+superuser can still change or remove\s+records/);
+});
+
+test('password checks declare 503 service-busy with Retry-After', () => {
+  for (const [path, method] of [['/portal/v1/session', 'post'], ['/portal/v1/api-keys', 'post']]) {
+    const busy = resolve(spec.paths[path][method].responses['503']);
+    assert.ok(busy, `${method.toUpperCase()} ${path} must declare 503`);
+    assert.ok(resolve(busy.headers['Retry-After']), '503 must declare Retry-After');
+    assert.match(busy.content['application/problem+json'].example.type, /service-busy$/);
+  }
+});
+
+test('refused requests carry their deduplication interval; administration actions are listed', () => {
+  const details = spec.components.schemas.AuditDetails.properties;
+  assert.equal(details.dedup_interval_seconds.type, 'integer');
+  for (const action of ['portal_user.create', 'portal_user.unlock', 'portal_user.sessions_revoke']) {
+    assert.ok(spec.components.schemas.AuditAction.enum.includes(action), action);
+  }
+});
+
 test('API keys report when they were last used, nullable', () => {
   const key = spec.components.schemas.ApiKey;
   assert.ok(key.required.includes('last_used_at'));

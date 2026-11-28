@@ -258,6 +258,26 @@ describe('API keys page', () => {
     expect(within(dialog).getByRole('alert')).toHaveTextContent('Check the highlighted fields.');
   });
 
+  it('explains a busy service (503) without creating a key', async () => {
+    renderApp(
+      '/api-keys',
+      signedIn('owner', {
+        [LIST]: () => keys(),
+        [CREATE]: () => problem(503, 'service-busy', {}, { 'Retry-After': '2' }),
+      }),
+    );
+    const dialog = await openCreateDialog();
+    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Billing' } });
+    typePassword(dialog);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create key' }));
+    expect(
+      await within(dialog).findByText(
+        'The service is busy and could not check your password. Nothing was created. Try again in a moment.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText('Your new API key')).not.toBeInTheDocument();
+  });
+
   /* eslint-disable no-restricted-properties -- this test reads browser storage to prove the password is never written to it */
   it('shows no key when the password confirmation fails, and clears the password', async () => {
     const { transport } = renderApp(

@@ -84,7 +84,8 @@ func TestLoadDefaults(t *testing.T) {
 		ShutdownTimeout: DefaultShutdownTimeout,
 		Provider:        defaultProvider(ProviderSimulator),
 		Dispatch:        defaultDispatch(),
-		SignInLimit:     SignInLimitConfig{MaxAttempts: DefaultSignInMaxAttempts, Window: DefaultSignInWindow},
+		SignInLimit:     defaultSignInLimit(),
+		PasswordHash:    defaultPasswordHash(),
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("Load() defaults:\n got %+v\nwant %+v", cfg, want)
@@ -136,9 +137,10 @@ func TestLoadValidCustomValues(t *testing.T) {
 		Database:        defaultDatabase(SSLModeVerifyFull),
 		ShutdownTimeout: 45 * time.Second,
 		// Production has no default provider (no production provider exists yet).
-		Provider:    defaultProvider(""),
-		Dispatch:    defaultDispatch(),
-		SignInLimit: SignInLimitConfig{MaxAttempts: DefaultSignInMaxAttempts, Window: DefaultSignInWindow},
+		Provider:     defaultProvider(""),
+		Dispatch:     defaultDispatch(),
+		SignInLimit:  defaultSignInLimit(),
+		PasswordHash: defaultPasswordHash(),
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("Load() custom values:\n got %+v\nwant %+v", cfg, want)
