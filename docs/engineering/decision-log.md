@@ -1702,4 +1702,34 @@ the approved scope, listed so they can be reviewed.
 
 **Not implemented (out of scope, unchanged):** new features or endpoints, billing or cost display, analytics, user
 management, admin portal, dark mode, new dependencies. G4-6 (last-used tracking) and G4-8 (durable audit log) remain
-open.
+open (implemented in Phase 4 Group 6, §23).
+
+---
+
+## 23. Phase 4 Group 6 — security auditability and operational controls (2026-11-28)
+
+On 2026-11-28, after Phase 4 Group 5 was merged, the owner approved **Phase 4 Group 6**: the outstanding security and
+production-readiness requirements — a durable security audit log (G4-8), API key last-used tracking (G4-6) and per-IP
+rate limiting of portal sign-in (G3-9) — with the database changes, tests and portal UI they need, as one Draft pull
+request. Earlier decisions are not reopened: the account lockout (G3-3), password re-authentication (G4-7), the RLS
+policy (RLS-2), role separation (RLS-4) and the one RLS guard exception (G3-1) are unchanged, and no RLS exception is
+added. No dependency is added and Redis is not introduced. **No ADR status changed.** G6-1 to G6-9 are the
+engineering decisions made within the approved scope, listed so they can be reviewed.
+
+| # | Decision |
+| - | -------- |
+| G6-1 | **Two audit tables.** Events of an organization go to the tenant-owned `security_audit_events` (RLS enabled and forced, the approved policy). Events that identify no organization — a sign-in for an address that is not registered, malformed sign-in input, a rate-limited sign-in — go to the platform-owned `platform_security_events`, which has **no tenant column** (so the RLS guard needs no exception) and which the application role may insert into but **not read**. No platform-wide record is shown to any portal user and no internal operator role is introduced; database administrators read platform events until an approved admin function exists |
+| G6-2 | **Append-only under the application's permissions.** `sms_app` has `INSERT` (and `SELECT` on its tenant's events) only — no `UPDATE`, `DELETE` or `TRUNCATE`; triggers also reject those statements by any role, including the table owner. Superusers, or the owner after disabling the triggers, can still alter rows: the log is **not** described as tamper-proof. Tamper evidence remains open (S-8) |
+| G6-3 | **Same transaction.** API key creation and revocation, session creation (sign-in), sign-out, and each failed sign-in or re-authentication (with its failure count and any lock) are committed together with their audit event; when the event cannot be written the operation fails (`500`) instead of succeeding unaudited. Refusals by role are refused regardless, and a failure to record them is logged |
+| G6-4 | **Events and contents.** Recorded: sign-in (success, failure, denied for an inactive organization), sign-out, account lock, API key creation (success, failed password confirmation, denied), revocation (success, denied), and refused API key list and audit log requests. Each event has a UUIDv7 ID, UTC time, tenant, actor type and ID, action, target, outcome, request ID, client IP, sanitized user agent and fixed non-secret details. Never passwords, tokens, API keys or hashes, authorization headers or message text; the address tried in a sign-in for an unregistered account is not stored. Ordinary message operations are not audited |
+| G6-5 | **Owners read the audit log** (`audit_log:read`, Owner role only, as for API keys under MVP-03): `GET /portal/v1/audit-events` with action, outcome and time filters and cursor pages, and a read-only portal page. No export and no bulk operations. No automatic deletion: the **retention period remains an open decision** (S-4, §10.8) |
+| G6-6 | **API key last use** (G4-6): after a key is authenticated **and authorized** for a public API request, `last_used_at` is written at most once per key per minute (a conditional update, safe across instances); the shown time can be up to a minute older than the latest request. Invalid, revoked or wrongly scoped requests never update it. A failure to record it does not fail the request |
+| G6-7 | **Per-source sign-in limit in PostgreSQL.** Default **50 attempts per source per 15 minutes** (`SIGNIN_RATE_LIMIT_MAX_ATTEMPTS`, `SIGNIN_RATE_LIMIT_WINDOW`); a source is an IPv4 address or an IPv6 `/64`. One atomic upsert per attempt, shared by all instances and surviving restarts; `429 too-many-sign-in-attempts` with `Retry-After`, before any credential check, so it never touches an account's lockout and reveals nothing about accounts. Ended windows are deleted every 5 minutes. Only the first refusal per source and window is audited |
+| G6-8 | **Client IP.** The direct peer address, unless the peer is a configured trusted proxy (`TRUSTED_PROXIES`, none by default); then `X-Forwarded-For` is read right to left, skipping trusted proxies. Other forwarding headers are ignored. **A production deployment behind a load balancer must configure it** (hosting is undecided, D-145) |
+| G6-9 | **Contract changes (portal API only, additive).** New `GET /portal/v1/audit-events` and schemas, permission `audit_log:read`, `ApiKey.last_used_at` (nullable, required), and `429` on sign-in. The public API is unchanged |
+
+**Open (owner decisions or later groups):** audit retention period and expiry (S-4); tamper evidence for the audit
+log (S-8); an internal, MFA-protected view of platform security events (admin portal, D-021); rate limits of the
+public API per tenant and key (security baseline §7); trusted-proxy configuration of the production hosting
+(D-145). **Out of scope (unchanged):** real SMPP or telco adapters, billing, pricing, user management, admin portal,
+Kafka, RabbitMQ and Redis.

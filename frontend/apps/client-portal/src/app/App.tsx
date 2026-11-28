@@ -5,6 +5,7 @@ import { Skeleton } from '../components/feedback/Skeleton';
 import { AppShell } from '../components/layout/AppShell';
 import { PageHeader } from '../components/layout/PageHeader';
 import { ApiKeysPage } from '../features/api-keys/ApiKeysPage';
+import { AuditLogPage } from '../features/audit-log/AuditLogPage';
 import { SignInPage } from '../features/auth/SignInPage';
 import { SessionProvider, useSession } from '../features/auth/session';
 import { ComposePage } from '../features/messages/ComposePage';
@@ -22,14 +23,16 @@ export type AppProps = {
 };
 
 /**
- * The client portal (Phase 4 Groups 3 and 4): sign-in, the organization's messages, message details,
- * single-SMS composition and API key management, against the session-authenticated portal API.
+ * The client portal (Phase 4 Groups 3 to 6): sign-in, the organization's messages, message details,
+ * single-SMS composition, API key management and the security audit log, against the
+ * session-authenticated portal API.
  * Routes:
  *
  *   /messages        message list (also the start page, "/")
  *   /messages/new    compose and send one SMS
  *   /messages/{id}   message details and status history
  *   /api-keys        API keys of the public API (owners)
+ *   /audit-log       the organization's security audit log (owners)
  *
  * Without a valid session every route shows the sign-in page. All access control is enforced by the
  * server; hiding a link here is a convenience only.
@@ -98,6 +101,9 @@ function Portal({ newIdempotencyKey }: { newIdempotencyKey: (() => string) | und
   } else if (path === '/api-keys') {
     page = <ApiKeysPage />;
     routeKey = 'api-keys';
+  } else if (path === '/audit-log') {
+    page = <AuditLogPage />;
+    routeKey = 'audit-log';
   } else if (detail?.[1] !== undefined) {
     const justSent = new URLSearchParams(window.location.search).has('sent');
     page = <MessageDetailPage id={detail[1]} justSent={justSent} />;

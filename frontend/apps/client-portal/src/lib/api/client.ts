@@ -28,6 +28,11 @@ export type ApiKey = Schemas['ApiKey'];
 export type ApiKeyScope = Schemas['ApiKeyScope'];
 export type ApiKeyCreateRequest = Schemas['ApiKeyCreateRequest'];
 export type ApiKeyCreated = Schemas['ApiKeyCreated'];
+export type AuditEvent = Schemas['AuditEvent'];
+export type AuditEventList = Schemas['AuditEventList'];
+export type AuditAction = Schemas['AuditAction'];
+export type AuditOutcome = Schemas['AuditOutcome'];
+export type AuditParty = Schemas['AuditParty'];
 export type Problem = Schemas['Problem'];
 export type FieldError = Schemas['FieldError'];
 
@@ -42,12 +47,15 @@ export const browserTransport: Transport = (url, init) =>
 export class ApiError extends Error {
   readonly status: number;
   readonly problem: Problem | undefined;
+  /** Seconds to wait before retrying, from a valid Retry-After header (429, 409). */
+  readonly retryAfterSeconds: number | undefined;
 
-  constructor(status: number, problem: Problem | undefined) {
+  constructor(status: number, problem: Problem | undefined, retryAfterSeconds?: number) {
     super(problem?.detail ?? problem?.title ?? `Request failed with status ${String(status)}`);
     this.name = 'ApiError';
     this.status = status;
     this.problem = problem;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 
   /** The problem type's name, for example "invalid-credentials" ("" if unknown). */
@@ -85,6 +93,17 @@ export type ApiClient = {
   /** The response holds the full key once; callers keep it in memory only. */
   createApiKey(request: ApiKeyCreateRequest): Promise<ApiKeyCreated>;
   revokeApiKey(id: string): Promise<ApiKey>;
+  listAuditEvents(params?: AuditEventQuery): Promise<AuditEventList>;
+};
+
+/** Filters and paging of the audit log; times are RFC 3339 (UTC). */
+export type AuditEventQuery = {
+  cursor?: string;
+  limit?: number;
+  action?: AuditAction;
+  outcome?: AuditOutcome;
+  occurredFrom?: string;
+  occurredBefore?: string;
 };
 
 export type ApiClientOptions = {
@@ -138,7 +157,11 @@ export function createApiClient({
       if (response.status === 401 && !options.signIn) {
         onUnauthenticated?.();
       }
-      throw new ApiError(response.status, isProblem(data) ? data : undefined);
+      throw new ApiError(
+        response.status,
+        isProblem(data) ? data : undefined,
+        retryAfter(response.headers.get('Retry-After')),
+      );
     }
     return { data, response };
   }
@@ -194,7 +217,24 @@ export function createApiClient({
     async revokeApiKey(id) {
       return (await request('DELETE', `/api-keys/${encodeURIComponent(id)}`)).data as ApiKey;
     },
+    async listAuditEvents(params = {}) {
+      const query = new URLSearchParams();
+      if (params.limit !== undefined) query.set('limit', String(params.limit));
+      if (params.cursor !== undefined) query.set('cursor', params.cursor);
+      if (params.action !== undefined) query.set('action', params.action);
+      if (params.outcome !== undefined) query.set('outcome', params.outcome);
+      if (params.occurredFrom !== undefined) query.set('occurred_from', params.occurredFrom);
+      if (params.occurredBefore !== undefined) query.set('occurred_before', params.occurredBefore);
+      const suffix = query.size > 0 ? `?${query.toString()}` : '';
+      return (await request('GET', `/audit-events${suffix}`)).data as AuditEventList;
+    },
   };
+}
+
+/** Retry-After as whole seconds (the API sends delay-seconds only); undefined if absent or invalid. */
+function retryAfter(value: string | null): number | undefined {
+  if (value === null || !/^\d{1,9}$/.test(value.trim())) return undefined;
+  return Number(value.trim());
 }
 
 function isProblem(value: unknown): value is Problem {

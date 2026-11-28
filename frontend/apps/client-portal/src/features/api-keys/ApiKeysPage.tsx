@@ -177,7 +177,7 @@ function ApiKeys() {
           description={`${String(state.keys.filter((k) => k.status === 'active').length)} active · ${String(state.keys.filter((k) => k.status === 'revoked').length)} revoked`}
           actions={openCreate}
           padding="none"
-          footer="The platform does not record when a key was last used. Revoke keys you no longer need."
+          footer="Last use is recorded at most once a minute, so it can be up to a minute behind. Revoke keys you no longer need."
         >
           <KeyTable
             keys={state.keys}
@@ -242,6 +242,9 @@ function KeyTable({ keys, onRevoke }: { keys: ApiKey[]; onRevoke: (key: ApiKey) 
             Created
           </th>
           <th scope="col" className="px-4 py-2.5 font-medium">
+            Last used
+          </th>
+          <th scope="col" className="px-4 py-2.5 font-medium">
             Status
           </th>
           <th scope="col" className="py-2.5 pr-5 pl-4 text-right font-medium">
@@ -290,6 +293,16 @@ function KeyTable({ keys, onRevoke }: { keys: ApiKey[]; onRevoke: (key: ApiKey) 
                   </span>
                 )}
               </td>
+              <td className="order-5 col-span-2 text-xs text-text-muted tabular-nums xl:px-4 xl:py-3 xl:text-sm xl:whitespace-nowrap">
+                {key.last_used_at === null ? (
+                  'Never used'
+                ) : (
+                  <>
+                    <span className="xl:hidden">Last used </span>
+                    {formatDateTime(key.last_used_at, 'short')}
+                  </>
+                )}
+              </td>
               <td className="order-2 self-start justify-self-end xl:px-4 xl:py-3">
                 {revoked ? (
                   <span className="flex flex-col items-start gap-0.5">
@@ -309,7 +322,7 @@ function KeyTable({ keys, onRevoke }: { keys: ApiKey[]; onRevoke: (key: ApiKey) 
                 )}
               </td>
               <td
-                className={`order-5 col-span-2 xl:py-3 xl:pr-5 xl:pl-4 xl:text-right ${revoked ? 'hidden xl:table-cell' : ''}`}
+                className={`order-6 col-span-2 xl:py-3 xl:pr-5 xl:pl-4 xl:text-right ${revoked ? 'hidden xl:table-cell' : ''}`}
               >
                 {!revoked && (
                   <Button

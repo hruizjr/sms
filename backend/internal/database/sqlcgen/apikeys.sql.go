@@ -16,7 +16,7 @@ const createAPIKey = `-- name: CreateAPIKey :one
 
 INSERT INTO api_keys (tenant_id, label, secret_hash, scopes)
 VALUES ($1, $2, $3, $4)
-RETURNING id, tenant_id, label, scopes, created_at, revoked_at
+RETURNING id, tenant_id, label, scopes, created_at, revoked_at, last_used_at
 `
 
 type CreateAPIKeyParams struct {
@@ -27,12 +27,13 @@ type CreateAPIKeyParams struct {
 }
 
 type CreateAPIKeyRow struct {
-	ID        pgtype.UUID
-	TenantID  pgtype.UUID
-	Label     string
-	Scopes    []string
-	CreatedAt time.Time
-	RevokedAt *time.Time
+	ID         pgtype.UUID
+	TenantID   pgtype.UUID
+	Label      string
+	Scopes     []string
+	CreatedAt  time.Time
+	RevokedAt  *time.Time
+	LastUsedAt *time.Time
 }
 
 // API keys (internal/apikey, Phase 4 Group 2). Every query runs inside the tenant's
@@ -52,12 +53,13 @@ func (q *Queries) CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (Cre
 		&i.Scopes,
 		&i.CreatedAt,
 		&i.RevokedAt,
+		&i.LastUsedAt,
 	)
 	return i, err
 }
 
 const getAPIKeyCredential = `-- name: GetAPIKeyCredential :one
-SELECT id, tenant_id, secret_hash, scopes, revoked_at
+SELECT id, tenant_id, secret_hash, scopes, revoked_at, last_used_at
 FROM api_keys
 WHERE tenant_id = $1 AND id = $2
 `
@@ -73,6 +75,7 @@ type GetAPIKeyCredentialRow struct {
 	SecretHash []byte
 	Scopes     []string
 	RevokedAt  *time.Time
+	LastUsedAt *time.Time
 }
 
 func (q *Queries) GetAPIKeyCredential(ctx context.Context, arg GetAPIKeyCredentialParams) (GetAPIKeyCredentialRow, error) {
@@ -84,24 +87,26 @@ func (q *Queries) GetAPIKeyCredential(ctx context.Context, arg GetAPIKeyCredenti
 		&i.SecretHash,
 		&i.Scopes,
 		&i.RevokedAt,
+		&i.LastUsedAt,
 	)
 	return i, err
 }
 
 const listAPIKeys = `-- name: ListAPIKeys :many
-SELECT id, tenant_id, label, scopes, created_at, revoked_at
+SELECT id, tenant_id, label, scopes, created_at, revoked_at, last_used_at
 FROM api_keys
 WHERE tenant_id = $1
 ORDER BY created_at, id
 `
 
 type ListAPIKeysRow struct {
-	ID        pgtype.UUID
-	TenantID  pgtype.UUID
-	Label     string
-	Scopes    []string
-	CreatedAt time.Time
-	RevokedAt *time.Time
+	ID         pgtype.UUID
+	TenantID   pgtype.UUID
+	Label      string
+	Scopes     []string
+	CreatedAt  time.Time
+	RevokedAt  *time.Time
+	LastUsedAt *time.Time
 }
 
 func (q *Queries) ListAPIKeys(ctx context.Context, tenantID pgtype.UUID) ([]ListAPIKeysRow, error) {
@@ -120,6 +125,7 @@ func (q *Queries) ListAPIKeys(ctx context.Context, tenantID pgtype.UUID) ([]List
 			&i.Scopes,
 			&i.CreatedAt,
 			&i.RevokedAt,
+			&i.LastUsedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -131,11 +137,43 @@ func (q *Queries) ListAPIKeys(ctx context.Context, tenantID pgtype.UUID) ([]List
 	return items, nil
 }
 
+const recordAPIKeyUse = `-- name: RecordAPIKeyUse :execrows
+UPDATE api_keys
+SET last_used_at = GREATEST($1::timestamptz, created_at)
+WHERE tenant_id = $2 AND id = $3 AND revoked_at IS NULL
+  AND (last_used_at IS NULL OR last_used_at <= $4::timestamptz)
+`
+
+type RecordAPIKeyUseParams struct {
+	Now         time.Time
+	TenantID    pgtype.UUID
+	ID          pgtype.UUID
+	StaleBefore time.Time
+}
+
+// Records that an active key authenticated a request, at most once per interval: the update is
+// skipped when the stored time is newer than @stale_before, so concurrent requests on any number of
+// API instances write at most once per key and interval (the condition is re-checked on the locked
+// row). Revoked keys are never updated. GREATEST keeps the time at or after created_at, which the
+// database set with its own clock.
+func (q *Queries) RecordAPIKeyUse(ctx context.Context, arg RecordAPIKeyUseParams) (int64, error) {
+	result, err := q.db.Exec(ctx, recordAPIKeyUse,
+		arg.Now,
+		arg.TenantID,
+		arg.ID,
+		arg.StaleBefore,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const revokeAPIKey = `-- name: RevokeAPIKey :one
 UPDATE api_keys
 SET revoked_at = now()
 WHERE tenant_id = $1 AND id = $2 AND revoked_at IS NULL
-RETURNING id, tenant_id, label, scopes, created_at, revoked_at
+RETURNING id, tenant_id, label, scopes, created_at, revoked_at, last_used_at
 `
 
 type RevokeAPIKeyParams struct {
@@ -144,12 +182,13 @@ type RevokeAPIKeyParams struct {
 }
 
 type RevokeAPIKeyRow struct {
-	ID        pgtype.UUID
-	TenantID  pgtype.UUID
-	Label     string
-	Scopes    []string
-	CreatedAt time.Time
-	RevokedAt *time.Time
+	ID         pgtype.UUID
+	TenantID   pgtype.UUID
+	Label      string
+	Scopes     []string
+	CreatedAt  time.Time
+	RevokedAt  *time.Time
+	LastUsedAt *time.Time
 }
 
 func (q *Queries) RevokeAPIKey(ctx context.Context, arg RevokeAPIKeyParams) (RevokeAPIKeyRow, error) {
@@ -162,6 +201,7 @@ func (q *Queries) RevokeAPIKey(ctx context.Context, arg RevokeAPIKeyParams) (Rev
 		&i.Scopes,
 		&i.CreatedAt,
 		&i.RevokedAt,
+		&i.LastUsedAt,
 	)
 	return i, err
 }

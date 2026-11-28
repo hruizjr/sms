@@ -221,6 +221,19 @@ Messaging (Phase 4 Group 2; `api` reads `SMS_PROVIDER` for the provider's capabi
 
 The dispatch values are engineering defaults for local development, not telco terms.
 
+Security (Phase 4 Group 6; `api` only):
+
+| Variable | Default | Rules |
+| -------- | ------- | ----- |
+| `TRUSTED_PROXIES` | empty (none) | Comma-separated IP addresses or CIDR prefixes of the reverse proxies or load balancers in front of the API, at most 64. Only a request whose direct peer is listed has its `X-Forwarded-For` read (see "Client IP addresses"). `0.0.0.0/0`, `::/0`, host names, zones and IPv4-mapped forms are refused. |
+| `SIGNIN_RATE_LIMIT_MAX_ATTEMPTS` | `50` | 1–100000 portal sign-in attempts per source and window |
+| `SIGNIN_RATE_LIMIT_WINDOW` | `15m` | 1m–24h |
+
+**Sign-in rate-limit defaults (rationale).** 50 attempts per source in 15 minutes lets the users of one office
+behind a shared address mistype passwords several times without being blocked, while limiting password guessing
+from one source to about 200 attempts an hour across all accounts. The window equals the account lock duration
+(G3-3). These are engineering defaults, not measured values; review them once real traffic is observed.
+
 The `/readyz` ping timeout is fixed at 2 seconds (`httpserver.DefaultReadinessTimeout`).
 
 The processes log only an explicit, non-sensitive startup summary (environment, log settings, listener
@@ -288,15 +301,86 @@ portal session never opens `/v1`, and an API key never opens `/portal/v1`.
   `GET /portal/v1/session` response and is derived from the cookie's secret, so it is never stored). Sign-in
   accepts only `application/json`.
 - **Permissions:** Owner and Sender may read and send; Viewer may only read; only the Owner manages API keys
-  (`api_keys:manage`, MVP-03). Checked by every handler; the tenant always comes from the session.
+  (`api_keys:manage`, MVP-03) and reads the audit log (`audit_log:read`, Group 6). Checked by every handler; the tenant always comes from the session.
 - **API keys** (Phase 4 Group 4, decision log §21): the portal calls the same `apikey.Service` as `smsctl` and the
   public API. Creating a key requires the owner's current password (`current_password`; `portal.Service.Reauthenticate`,
   owner decision G4-7): failures count toward the sign-in lockout and receive `403 reauthentication-failed`, and no
   key is created. Only the hash of a key's secret is stored; the full key is returned once (`Cache-Control: no-store`)
-  and never logged, nor is the password. Revocation applies from the next public API request. Last use is not
-  recorded yet (G4-6); a durable audit log of key events is required before production (G4-8).
+  and never logged, nor is the password. Revocation applies from the next public API request. Creation, failed
+  confirmations and revocation are audited (below); the last use of each key is shown (below).
 - **Messages:** submission calls the same `messaging.Service.Accept` as `POST /v1/messages` (same idempotency
   records, dispatcher, simulator and history). The detail view returns the customer-visible status history only.
+
+### Security audit log (Phase 4 Group 6, decision log §23)
+
+`internal/audit` records security events in a durable, append-only audit trail (owner decision G4-8). Ordinary
+logs remain operational logging only.
+
+| Event (`action`) | Outcomes recorded | Written by |
+| ---------------- | ----------------- | ---------- |
+| `portal.sign_in` | success (a session started), failure (wrong password, locked account), denied (organization not active) | `portal.Service.Login` |
+| `portal.sign_out` | success | `portal.Service.Logout` |
+| `portal.account_locked` | success (actor `system`; details: `locked_until`) | the failed sign-in or re-authentication that starts the lock |
+| `api_key.create` | success (key name and scopes), failure (password confirmation failed), denied (role) | `apikey.Service.Create`, `portal.Service.Reauthenticate`, the portal handler |
+| `api_key.revoke` | success, denied | `apikey.Service.Revoke`, the portal handler |
+| `api_key.list`, `audit_log.list` | denied only | the portal handler |
+
+- **Tables.** `security_audit_events` is tenant-owned (forced RLS, the approved policy). Events that belong to no
+  organization — a sign-in for an address that is not registered (the address is **not** stored), malformed
+  sign-in input, and the first rate-limited sign-in of each source and window — go to `platform_security_events`,
+  which has no tenant column and which the application can insert into but **not read**: no portal user sees them;
+  database administrators do, until an approved internal administration function exists.
+- **Same transaction.** A key's creation or revocation, a session's creation, a sign-out, and a failed attempt's
+  count are committed together with their event. If the event cannot be written, the change is rolled back and the
+  request fails with `500` instead of succeeding unaudited. Refusals (`denied`) are refused whether or not their
+  event could be written; a write failure is logged as an error.
+- **Contents.** UTC time, tenant, actor type and ID, action, target type and ID, outcome, request ID, client IP
+  address, user agent (control characters removed, at most 256 characters) and fixed, non-secret details
+  (`audit.Details`). Never passwords, session tokens, CSRF tokens, API keys or their hashes, authorization headers
+  or message text.
+- **Append-only.** `sms_app` has `INSERT` (and `SELECT` on its tenant's events) only: no `UPDATE`, `DELETE` or
+  `TRUNCATE`. Triggers also reject `UPDATE`, `DELETE` and `TRUNCATE` by any role, including the table owner
+  `sms_migrator`. This is append-only **under the application's permissions**, not tamper-proof: a superuser, or
+  the table owner after disabling the triggers, can still change rows. Tamper evidence (hash chaining, export to
+  write-once storage) remains open (security baseline S-8).
+- **Reading.** `GET /portal/v1/audit-events` (owners only, `audit_log:read`; filters `action`, `outcome`,
+  `occurred_from`, `occurred_before`; cursor pages). Sender and Viewer receive `403`, and the refusal is recorded.
+- **Retention.** No audit row is deleted automatically: the retention period is an open decision (S-4, §10.8).
+
+### Sign-in rate limit (Phase 4 Group 6)
+
+`internal/signinlimit` limits portal sign-in attempts per **source**: an IPv4 address, or an IPv6 `/64`. Each
+source has a window that starts with its first attempt; every attempt in the window counts (refused ones too).
+Beyond `SIGNIN_RATE_LIMIT_MAX_ATTEMPTS` the API answers `429 too-many-sign-in-attempts` with `Retry-After` (seconds
+until the window ends, rounded up), **before** any credential is looked at: nothing reveals whether the account
+exists, and the attempt never counts toward, starts or extends an account lock. The account lockout (five failures,
+15 minutes, G3-3) is unchanged and independent.
+
+- **Shared and durable.** Counters live in PostgreSQL (`portal_sign_in_rate_limits`, platform-owned, no tenant
+  data), so every API instance shares them and a restart resets nothing. Each attempt is one atomic
+  `INSERT … ON CONFLICT DO UPDATE … RETURNING`, so concurrent attempts cannot exceed the limit.
+- **Storage.** One row per source with an open window. Every API process deletes ended windows every 5 minutes, so
+  the table holds at most the sources seen during one window plus five minutes.
+- **Audit.** Only the first refusal of each source and window is recorded (a platform event), so a flood cannot
+  multiply audit writes.
+
+### Client IP addresses
+
+`middleware.ClientIP` determines the address used by the rate limit and the audit log. By default it is the
+**direct peer** of the connection; `X-Forwarded-For` and similar headers are ignored. When the peer is listed in
+`TRUSTED_PROXIES`, `X-Forwarded-For` is read from right to left, skipping trusted proxies, and the first other
+address is the client (an address a client prepends itself is never reached). Behind a load balancer the proxies
+**must** be configured, or every client appears to come from the proxy and shares one sign-in limit. `Forwarded`
+and `X-Real-IP` are not used. The access log still records no IP address.
+
+### API key last use (owner decision G4-6)
+
+After a key has authenticated **and** been authorized for a public API request, `apikey.Service.RecordUse` stores
+the time in `api_keys.last_used_at` (UTC) — at most once per key per minute: a conditional update skips the write
+while the stored time is less than a minute old, also across API instances. The portal therefore shows a time that
+can be up to a minute older than the key's latest request, and "Never used" for `null`. Invalid, revoked and
+wrongly scoped requests, and keys of an inactive organization, never update it. A failure to record it is logged
+and does not fail the request (the time is informational).
 
 Portal users are created locally with `smsctl` (there is no registration endpoint):
 
@@ -684,6 +768,9 @@ govulncheck reports type errors in the standard library rather than results.
     validated; still open for the owner.
 - **Readiness logging:** review the access-log severity of `/readyz` 503 responses (currently `ERROR`,
   per the Group 1 rule for status ≥ 500).
+- **Security, later groups:** audit tamper evidence (S-8), an audit retention period and expiry (S-4), an internal
+  view of platform security events (needs the admin portal with MFA, D-021), and per-tenant or per-key public API
+  rate limits are not implemented.
 - **Messaging, later groups:** rate limits, credit reservation and billing, suppression lists, sender ID and API
   key management endpoints, webhooks, real provider adapters (after official specifications and approval), and
   retention expiry of message bodies are not implemented.

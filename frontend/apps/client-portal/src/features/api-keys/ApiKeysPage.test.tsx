@@ -100,7 +100,11 @@ describe('API keys page', () => {
               status: 'revoked',
               revoked_at: '2026-11-27T10:00:00Z',
             }),
-            apiKeyFixture({ name: 'Order notifications', scopes: ['messages:read'] }),
+            apiKeyFixture({
+              name: 'Order notifications',
+              scopes: ['messages:read'],
+              last_used_at: '2026-11-28T02:15:00Z',
+            }),
           ),
       }),
     );
@@ -121,7 +125,11 @@ describe('API keys page', () => {
       }),
     ).toBeInTheDocument();
     expect(within(revoked).queryByRole('button')).not.toBeInTheDocument();
-    expect(screen.getByText(/does not record when a key was last used/)).toBeInTheDocument();
+    // Last use: the recorded time (Manila time), or a clear "Never used" for a key never used.
+    expect(within(table).getByRole('columnheader', { name: 'Last used' })).toBeInTheDocument();
+    expect(active).toHaveTextContent('Last used Nov 28, 2026, 10:15 AM PHT');
+    expect(revoked).toHaveTextContent('Never used');
+    expect(screen.getByText(/recorded at most once a minute/)).toBeInTheDocument();
   });
 
   it('validates the name, permissions and current password before creating', async () => {

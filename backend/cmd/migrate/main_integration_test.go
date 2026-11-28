@@ -59,18 +59,21 @@ func TestIntegrationMigrateCommands(t *testing.T) {
 	}{
 		{"version", exitOK, []string{"0"}},
 		{"status", exitOK, []string{"VERSION", "20261125041208", "pending", "20261125041208_baseline.sql",
-			"20261126175603_create_tenants.sql", "20261127150000_create_messaging.sql", "20261127200000_create_portal_accounts.sql"}},
+			"20261126175603_create_tenants.sql", "20261127150000_create_messaging.sql", "20261127200000_create_portal_accounts.sql",
+			"20261128120000_create_security_audit_and_sign_in_limits.sql"}},
 		{"up", exitOK, []string{"20261125041208_baseline.sql", "20261126175603_create_tenants.sql",
-			"20261127150000_create_messaging.sql", "20261127200000_create_portal_accounts.sql", "database version: 20261127200000"}},
-		{"up", exitOK, []string{"no pending migrations", "database version: 20261127200000"}},
+			"20261127150000_create_messaging.sql", "20261127200000_create_portal_accounts.sql",
+			"20261128120000_create_security_audit_and_sign_in_limits.sql", "database version: 20261128120000"}},
+		{"up", exitOK, []string{"no pending migrations", "database version: 20261128120000"}},
 		{"status", exitOK, []string{"applied"}},
-		{"version", exitOK, []string{"20261127200000"}},
+		{"version", exitOK, []string{"20261128120000"}},
+		{"down", exitOK, []string{"20261128120000_create_security_audit_and_sign_in_limits.sql", "database version: 20261127200000"}},
 		{"down", exitOK, []string{"20261127200000_create_portal_accounts.sql", "database version: 20261127150000"}},
 		{"down", exitOK, []string{"20261127150000_create_messaging.sql", "database version: 20261126175603"}},
 		{"down", exitOK, []string{"20261126175603_create_tenants.sql", "database version: 20261125041208"}},
 		{"down", exitOK, []string{"20261125041208_baseline.sql", "database version: 0"}},
 		{"down", exitError, nil},
-		{"up", exitOK, []string{"database version: 20261127200000"}},
+		{"up", exitOK, []string{"database version: 20261128120000"}},
 	}
 	for i, s := range steps {
 		code, out := runCmd(s.command)

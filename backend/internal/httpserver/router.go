@@ -3,10 +3,12 @@ package httpserver
 import (
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/hruizjr/sms/backend/internal/audit"
 	"github.com/hruizjr/sms/backend/internal/middleware"
 )
 
@@ -26,6 +28,9 @@ type RouterDeps struct {
 	ReadinessTimeout time.Duration
 	// NewRequestID generates request IDs; nil uses middleware.NewRandomID.
 	NewRequestID middleware.IDGenerator
+	// TrustedProxies are the proxies whose X-Forwarded-For header names the client address; empty
+	// means the direct peer address is always used (middleware.ClientIP).
+	TrustedProxies []netip.Prefix
 	// PublicAPI, when set, mounts the public API v1 (POST /v1/messages, GET /v1/messages and
 	// GET /v1/messages/{message_id}) behind API key authentication. Without it, /v1 answers 404.
 	PublicAPI *PublicAPIDeps
@@ -36,9 +41,10 @@ type RouterDeps struct {
 
 // NewRouter returns the application HTTP handler with its middleware chain and routes.
 //
-// Middleware order (outermost first): request ID → security headers → access log → metrics →
-// panic recovery → request body limit → route handler. Recovery sits inside logging and metrics
-// so that a recovered panic is logged and counted as a 500.
+// Middleware order (outermost first): request ID → client IP → audit source → security headers →
+// access log → metrics → panic recovery → request body limit → route handler. Recovery sits inside
+// logging and metrics so that a recovered panic is logged and counted as a 500. The client IP and
+// the audit source are stored in the request context only (the access log never records them).
 func NewRouter(deps RouterDeps) http.Handler {
 	return newRouter(deps, nil)
 }
@@ -56,6 +62,8 @@ func newRouter(deps RouterDeps, extra func(chi.Router)) http.Handler {
 	r := chi.NewRouter()
 	r.Use(
 		middleware.RequestID(deps.NewRequestID),
+		middleware.ClientIP(deps.TrustedProxies),
+		auditSource,
 		middleware.SecurityHeaders,
 		middleware.AccessLog(deps.Logger),
 		middleware.Metrics(deps.Metrics),
@@ -83,4 +91,17 @@ func newRouter(deps RouterDeps, extra func(chi.Router)) http.Handler {
 		extra(r)
 	}
 	return r
+}
+
+// auditSource stores the request source of security audit events (request ID, client IP address,
+// sanitized user agent) in the request context (audit.WithSource).
+func auditSource(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := audit.WithSource(r.Context(), audit.Source{
+			RequestID: middleware.RequestIDFromContext(r.Context()),
+			IP:        middleware.ClientIPFromContext(r.Context()),
+			UserAgent: r.UserAgent(),
+		})
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }

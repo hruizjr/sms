@@ -45,6 +45,7 @@ import (
 	"time"
 
 	"github.com/hruizjr/sms/backend/internal/apikey"
+	"github.com/hruizjr/sms/backend/internal/audit"
 	"github.com/hruizjr/sms/backend/internal/config"
 	"github.com/hruizjr/sms/backend/internal/database"
 	"github.com/hruizjr/sms/backend/internal/messaging"
@@ -260,7 +261,7 @@ func (c *cli) dispatch(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		k, err := c.keys.Revoke(ctx, id, kid)
+		k, err := c.keys.Revoke(ctx, id, kid, audit.System, smsctlName)
 		if err == nil {
 			say(c.out, "api key %s revoked at %s\n", k.IDString(), k.RevokedAt.UTC().Format(time.RFC3339))
 		}
@@ -376,6 +377,10 @@ func (c *cli) createActiveTenant(ctx context.Context, name string) (tenancy.Tena
 	return t, nil
 }
 
+// smsctlName names this tool in the audit events of the API keys it creates and revokes (actor
+// "system", details.via).
+const smsctlName = "smsctl"
+
 func (c *cli) createKey(ctx context.Context, tenantID tenancy.ID, label, scopes string) error {
 	var list []apikey.Scope
 	for _, s := range strings.Split(scopes, ",") {
@@ -383,7 +388,7 @@ func (c *cli) createKey(ctx context.Context, tenantID tenancy.ID, label, scopes 
 			list = append(list, apikey.Scope(s))
 		}
 	}
-	k, token, err := c.keys.Create(ctx, tenantID, label, list)
+	k, token, err := c.keys.Create(ctx, tenantID, label, list, audit.System, smsctlName)
 	if err != nil {
 		return err
 	}

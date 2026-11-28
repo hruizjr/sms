@@ -12,6 +12,14 @@
 // creation. Because the key names its tenant, authentication sets the tenant's transaction-local
 // context first and looks the key up under row-level security: a key whose tenant part was
 // altered simply does not exist.
+//
+// # Audit and last use
+//
+// Creating and revoking a key writes a security audit event in the same transaction (owner decision
+// G4-8): the change and its event commit together or not at all. After a key has authenticated and
+// been authorized for a public API request, RecordUse stores the time, at most once per key every
+// LastUsedInterval (owner decision G4-6), so the stored time can be up to that interval older than the
+// key's most recent request.
 package apikey
 
 import (
@@ -31,6 +39,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/hruizjr/sms/backend/internal/audit"
 	"github.com/hruizjr/sms/backend/internal/database"
 	"github.com/hruizjr/sms/backend/internal/database/sqlcgen"
 	"github.com/hruizjr/sms/backend/internal/tenancy"
@@ -84,11 +93,16 @@ func NormalizeLabel(label string) (string, error) {
 	return label, nil
 }
 
+// LastUsedInterval is the most often a key's last-used time is written (owner decision G4-6).
+const LastUsedInterval = time.Minute
+
 // Principal is an authenticated API key.
 type Principal struct {
 	TenantID tenancy.ID
 	KeyID    [16]byte
 	Scopes   []Scope
+	// LastUsedAt is the key's stored last-used time when it was authenticated (nil: never used).
+	LastUsedAt *time.Time
 }
 
 // Has reports whether the key has scope.
@@ -102,6 +116,9 @@ type Key struct {
 	Scopes    []Scope
 	CreatedAt time.Time
 	RevokedAt *time.Time
+	// LastUsedAt is when the key last authenticated an authorized request, recorded at most once per
+	// LastUsedInterval (nil: never used).
+	LastUsedAt *time.Time
 }
 
 // Prefix returns the key's visible, non-secret identifier.
@@ -112,15 +129,30 @@ func (k Key) IDString() string { return encoding.EncodeToString(k.ID[:]) }
 
 // Service manages API keys. It is safe for concurrent use.
 type Service struct {
-	db *database.DB
+	db  *database.DB
+	now func() time.Time
 }
 
-// NewService returns a Service using db (connected as the application role).
-func NewService(db *database.DB) *Service { return &Service{db: db} }
+// Option configures a Service.
+type Option func(*Service)
 
-// Create issues a key for tenant with the given label and scopes. It returns the stored key and
-// the full key token, which is shown once and never stored.
-func (s *Service) Create(ctx context.Context, tenantID tenancy.ID, label string, scopes []Scope) (Key, string, error) {
+// WithClock sets the clock (tests).
+func WithClock(now func() time.Time) Option { return func(s *Service) { s.now = now } }
+
+// NewService returns a Service using db (connected as the application role).
+func NewService(db *database.DB, opts ...Option) *Service {
+	s := &Service{db: db, now: time.Now}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
+}
+
+// Create issues a key for tenant with the given label and scopes, on behalf of actor (a portal user,
+// or audit.System for the local administration tool, with details naming it). It returns the stored
+// key and the full key token, which is shown once and never stored. The key and its audit event are
+// written in one transaction.
+func (s *Service) Create(ctx context.Context, tenantID tenancy.ID, label string, scopes []Scope, actor audit.Actor, via string) (Key, string, error) {
 	label, err := NormalizeLabel(label)
 	if err != nil {
 		return Key{}, "", err
@@ -143,23 +175,31 @@ func (s *Service) Create(ctx context.Context, tenantID tenancy.ID, label string,
 	}
 	hash := sha256.Sum256(secret)
 
-	var row sqlcgen.CreateAPIKeyRow
+	var key Key
 	err = s.db.InTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
-		var err error
-		row, err = sqlcgen.New(tx).CreateAPIKey(ctx, sqlcgen.CreateAPIKeyParams{
+		row, err := sqlcgen.New(tx).CreateAPIKey(ctx, sqlcgen.CreateAPIKeyParams{
 			TenantID: pgUUID(tenantID), Label: label, SecretHash: hash[:], Scopes: names,
 		})
-		return err
+		if err != nil {
+			return err
+		}
+		key = keyFromRow(row.ID, row.TenantID, row.Label, row.Scopes, row.CreatedAt, row.RevokedAt, row.LastUsedAt)
+		return audit.Insert(ctx, tx, tenantID, audit.Event{
+			OccurredAt: s.now(), Action: audit.ActionAPIKeyCreate, Outcome: audit.OutcomeSuccess, Actor: actor,
+			Target:  &audit.Target{Type: audit.TargetAPIKey, ID: key.ID},
+			Details: audit.Details{APIKeyName: key.Label, APIKeyScopes: names, Via: via},
+		})
 	})
 	if err != nil {
 		return Key{}, "", fmt.Errorf("create api key: %w", err)
 	}
-	key := keyFromRow(row.ID, row.TenantID, row.Label, row.Scopes, row.CreatedAt, row.RevokedAt)
 	return key, publicPart(tenantID, key.ID) + "_" + encoding.EncodeToString(secret), nil
 }
 
-// Revoke revokes a key of tenant. Revoking takes effect for the next request.
-func (s *Service) Revoke(ctx context.Context, tenantID tenancy.ID, keyID [16]byte) (Key, error) {
+// Revoke revokes a key of tenant on behalf of actor (see Create). Revoking takes effect for the next
+// request. The revocation and its audit event are written in one transaction; revoking a key that is
+// already revoked (ErrNotFound) changes nothing and records nothing.
+func (s *Service) Revoke(ctx context.Context, tenantID tenancy.ID, keyID [16]byte, actor audit.Actor, via string) (Key, error) {
 	var key Key
 	err := s.db.InTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
 		row, err := sqlcgen.New(tx).RevokeAPIKey(ctx, sqlcgen.RevokeAPIKeyParams{TenantID: pgUUID(tenantID), ID: pgUUID(keyID)})
@@ -169,8 +209,12 @@ func (s *Service) Revoke(ctx context.Context, tenantID tenancy.ID, keyID [16]byt
 		if err != nil {
 			return err
 		}
-		key = keyFromRow(row.ID, row.TenantID, row.Label, row.Scopes, row.CreatedAt, row.RevokedAt)
-		return nil
+		key = keyFromRow(row.ID, row.TenantID, row.Label, row.Scopes, row.CreatedAt, row.RevokedAt, row.LastUsedAt)
+		return audit.Insert(ctx, tx, tenantID, audit.Event{
+			OccurredAt: s.now(), Action: audit.ActionAPIKeyRevoke, Outcome: audit.OutcomeSuccess, Actor: actor,
+			Target:  &audit.Target{Type: audit.TargetAPIKey, ID: key.ID},
+			Details: audit.Details{APIKeyName: key.Label, Via: via},
+		})
 	})
 	if err != nil {
 		return Key{}, fmt.Errorf("revoke api key: %w", err)
@@ -184,7 +228,7 @@ func (s *Service) List(ctx context.Context, tenantID tenancy.ID) ([]Key, error) 
 	err := s.db.InTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
 		rows, err := sqlcgen.New(tx).ListAPIKeys(ctx, pgUUID(tenantID))
 		for _, r := range rows {
-			keys = append(keys, keyFromRow(r.ID, r.TenantID, r.Label, r.Scopes, r.CreatedAt, r.RevokedAt))
+			keys = append(keys, keyFromRow(r.ID, r.TenantID, r.Label, r.Scopes, r.CreatedAt, r.RevokedAt, r.LastUsedAt))
 		}
 		return err
 	})
@@ -222,7 +266,7 @@ func (s *Service) Authenticate(ctx context.Context, token string) (Principal, er
 			return err
 		}
 		active = tenant.Status == tenancy.StatusActive
-		p = Principal{TenantID: tenantID, KeyID: keyID}
+		p = Principal{TenantID: tenantID, KeyID: keyID, LastUsedAt: row.LastUsedAt}
 		for _, sc := range row.Scopes {
 			p.Scopes = append(p.Scopes, Scope(sc))
 		}
@@ -237,6 +281,28 @@ func (s *Service) Authenticate(ctx context.Context, token string) (Principal, er
 		return Principal{}, ErrTenantNotActive
 	}
 	return p, nil
+}
+
+// RecordUse records that the key of p was used for a request it was authenticated and authorized
+// for. It writes at most once per key every LastUsedInterval: nothing when p's stored time is recent,
+// and the conditional update skips the write when another request (on any API instance) has just
+// recorded it. A revoked key is never updated. The update runs under the key's tenant context, so it
+// can only change a key of p's tenant.
+func (s *Service) RecordUse(ctx context.Context, p Principal) error {
+	now := s.now()
+	if p.LastUsedAt != nil && now.Sub(*p.LastUsedAt) < LastUsedInterval {
+		return nil
+	}
+	err := s.db.InTenantTx(ctx, p.TenantID, func(tx pgx.Tx) error {
+		_, err := sqlcgen.New(tx).RecordAPIKeyUse(ctx, sqlcgen.RecordAPIKeyUseParams{
+			Now: now, StaleBefore: now.Add(-LastUsedInterval), TenantID: pgUUID(p.TenantID), ID: pgUUID(p.KeyID),
+		})
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("record api key use: %w", err)
+	}
+	return nil
 }
 
 // ParseKeyID parses a key ID as printed by Key.IDString.
@@ -287,8 +353,8 @@ func parse(token string) (tenantID tenancy.ID, keyID [16]byte, secret []byte, ok
 	return tenantID, keyID, sec, true
 }
 
-func keyFromRow(id, tenantID pgtype.UUID, label string, scopes []string, createdAt time.Time, revokedAt *time.Time) Key {
-	k := Key{ID: id.Bytes, TenantID: tenancy.ID(tenantID.Bytes), Label: label, CreatedAt: createdAt, RevokedAt: revokedAt}
+func keyFromRow(id, tenantID pgtype.UUID, label string, scopes []string, createdAt time.Time, revokedAt, lastUsedAt *time.Time) Key {
+	k := Key{ID: id.Bytes, TenantID: tenancy.ID(tenantID.Bytes), Label: label, CreatedAt: createdAt, RevokedAt: revokedAt, LastUsedAt: lastUsedAt}
 	for _, sc := range scopes {
 		k.Scopes = append(k.Scopes, Scope(sc))
 	}

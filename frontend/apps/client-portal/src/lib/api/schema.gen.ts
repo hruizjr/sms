@@ -56,6 +56,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/portal/v1/audit-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List security audit events
+         * @description The organization's security audit events, newest first, optionally filtered by action, outcome
+         *     and time range. Read-only: events cannot be changed or deleted. Requires `audit_log:read`
+         *     (owners); other roles receive `403` and the refusal is itself recorded.
+         */
+        get: operations["listAuditEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/portal/v1/message-estimates": {
         parameters: {
             query?: never;
@@ -166,7 +188,8 @@ export interface paths {
          * @description Verifies an email address and password and starts a session (sets the session cookie). Unknown
          *     addresses, wrong passwords and temporarily locked accounts all receive the same `401`
          *     (`invalid-credentials`). A correct password for an organization that is not active receives
-         *     `403` (`account-not-active`) and no session.
+         *     `403` (`account-not-active`) and no session. Too many attempts from the caller's source address
+         *     receive `429` (`too-many-sign-in-attempts`) with `Retry-After`; nothing is checked.
          */
         post: operations["signIn"];
         /**
@@ -183,14 +206,16 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /**
-         * @description An API key's metadata. Never contains the key's secret or its stored hash. When a key was last
-         *     used is not recorded by the platform.
-         */
+        /** @description An API key's metadata. Never contains the key's secret or its stored hash. */
         ApiKey: {
             /** Format: date-time */
             created_at: string;
             id: components["schemas"]["ApiKeyId"];
+            /**
+             * @description When the key last authenticated a public API request it was authorized for, recorded at most
+             *     once a minute (so up to a minute older than its most recent request); `null` if never used.
+             */
+            last_used_at: string | null;
             /**
              * @description The name given at creation, to recognize the key.
              * @example Order notifications
@@ -241,6 +266,83 @@ export interface components {
          * @enum {string}
          */
         ApiKeyScope: "messages:send" | "messages:read";
+        /**
+         * @description What happened: `portal.sign_in` (a sign-in, successful or not), `portal.sign_out`,
+         *     `portal.account_locked` (repeated failed attempts locked the account), `api_key.create`,
+         *     `api_key.revoke`, `api_key.list` (recorded only when refused) and `audit_log.list` (recorded only
+         *     when refused).
+         * @enum {string}
+         */
+        AuditAction: "portal.sign_in" | "portal.sign_out" | "portal.account_locked" | "api_key.create" | "api_key.revoke" | "api_key.list" | "audit_log.list";
+        /** @description Structured, non-secret details. Only the fields that apply are present. */
+        AuditDetails: {
+            /** @description The name of the API key that was created or revoked. */
+            api_key_name?: string;
+            api_key_scopes?: components["schemas"]["ApiKeyScope"][];
+            /**
+             * Format: date-time
+             * @description When the account lock ends.
+             */
+            locked_until?: string;
+            /**
+             * @description Why the action failed, was refused or locked the account: `invalid_password`,
+             *     `account_locked`, `organization_not_active`, `insufficient_role` or `too_many_attempts`.
+             */
+            reason?: string;
+            required_permission?: components["schemas"]["Permission"];
+            role?: components["schemas"]["Role"];
+            /** @description The administration tool that performed a system action (`smsctl`). */
+            via?: string;
+        };
+        /**
+         * @description One security event of the organization. Never contains passwords, session tokens, API keys or
+         *     their hashes, authorization headers or message text.
+         */
+        AuditEvent: {
+            action: components["schemas"]["AuditAction"];
+            actor: components["schemas"]["AuditParty"];
+            details: components["schemas"]["AuditDetails"];
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            occurred_at: string;
+            outcome: components["schemas"]["AuditOutcome"];
+            /** @description The request identifier (`X-Request-ID`), or `null` for actions outside a request. */
+            request_id: string | null;
+            /**
+             * @description The client IP address: the direct peer, or the address reported by a configured trusted
+             *     proxy. `null` for actions outside a request.
+             */
+            source_ip: string | null;
+            target: components["schemas"]["AuditParty"] | null;
+            /** @description The client's `User-Agent` (control characters removed, at most 256 characters), or `null`. */
+            user_agent: string | null;
+        };
+        AuditEventList: {
+            data: components["schemas"]["AuditEvent"][];
+            /** @description Cursor for the next page, or `null` when there are no more items. */
+            next_cursor: string | null;
+        };
+        /**
+         * @description `success`; `failure` (the credentials or the confirmed password were not accepted); `denied`
+         *     (refused by policy, for example a role without the permission or an organization that is not
+         *     active).
+         * @enum {string}
+         */
+        AuditOutcome: "success" | "failure" | "denied";
+        /** @description The actor or target of an event. */
+        AuditParty: {
+            /** @description The portal user's email address (portal users only), or `null`. */
+            email: string | null;
+            /** @description The resource identifier (an API key's `id`; a UUID otherwise), or `null`. */
+            id: string | null;
+            /**
+             * @description Actor: `portal_user`, `anonymous` (not signed in) or `system` (the platform, or its local
+             *     administration tool). Target: `portal_user`, `portal_session` or `api_key`.
+             * @enum {string}
+             */
+            type: "portal_user" | "anonymous" | "system" | "portal_session" | "api_key";
+        };
         /**
          * @description Encoding chosen by the platform from the message text.
          * @enum {string}
@@ -316,7 +418,7 @@ export interface components {
          * @description A permission of the signed-in user. Operations state the one they require (`x-required-permission`).
          * @enum {string}
          */
-        Permission: "messages:read" | "messages:send" | "api_keys:manage";
+        Permission: "messages:read" | "messages:send" | "api_keys:manage" | "audit_log:read";
         /**
          * @description E.164 phone number. Only Philippine mobile numbers (`+639…`) are served.
          * @example +639000000001
@@ -342,8 +444,8 @@ export interface components {
         };
         /**
          * @description Client portal role (MVP-03). `owner` and `sender` may read and send messages; `viewer` may only
-         *     read (G3-3). Only `owner` manages API keys (MVP-03). User management is not part of this
-         *     version.
+         *     read (G3-3). Only `owner` manages API keys (MVP-03) and reads the security audit log. User
+         *     management is not part of this version.
          * @enum {string}
          */
         Role: "owner" | "sender" | "viewer";
@@ -560,6 +662,29 @@ export interface components {
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
+        /**
+         * @description Too many sign-in attempts from the caller's source address (`too-many-sign-in-attempts`). No
+         *     credential was checked and no account was affected. Retry after the indicated delay.
+         */
+        TooManySignInAttempts: {
+            headers: {
+                "Retry-After": components["headers"]["RetryAfter"];
+                "X-Request-ID": components["headers"]["XRequestID"];
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "type": "https://api.example.invalid/problems/too-many-sign-in-attempts",
+                 *       "title": "Too many sign-in attempts",
+                 *       "status": 429,
+                 *       "detail": "Too many sign-in attempts from your network. Wait before trying again.",
+                 *       "request_id": "9b2f4c1e7d3a5b6a"
+                 *     }
+                 */
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
         /** @description No valid session (`unauthenticated`): never signed in, expired, signed out or revoked. */
         Unauthenticated: {
             headers: {
@@ -756,6 +881,47 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    listAuditEvents: {
+        parameters: {
+            query?: {
+                /** @description Only events with this action. */
+                action?: components["schemas"]["AuditAction"];
+                /** @description Opaque cursor from a previous page's `next_cursor`, used with the same filters. */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description Maximum number of items to return. */
+                limit?: components["parameters"]["Limit"];
+                /** @description Only events before this time (RFC 3339); must be later than `occurred_from`. */
+                occurred_before?: string;
+                /** @description Only events at or after this time (RFC 3339). */
+                occurred_from?: string;
+                /** @description Only events with this outcome. */
+                outcome?: components["schemas"]["AuditOutcome"];
+            };
+            header?: {
+                /** @description Optional correlation identifier, handled exactly as in the public API. */
+                "X-Request-ID"?: components["parameters"]["RequestId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of audit events. */
+            200: {
+                headers: {
+                    "X-Request-ID": components["headers"]["XRequestID"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEventList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
             500: components["responses"]["InternalError"];
         };
     };
@@ -1002,6 +1168,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["TooManySignInAttempts"];
             500: components["responses"]["InternalError"];
         };
     };

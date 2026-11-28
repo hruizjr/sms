@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 // Defines values for ApiKeyStatus.
@@ -43,6 +44,87 @@ func (e ApiKeyScope) Valid() bool {
 	case ApiKeyScopeMessagesRead:
 		return true
 	case ApiKeyScopeMessagesSend:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AuditAction.
+const (
+	AuditActionApiKeyCreate        AuditAction = "api_key.create"
+	AuditActionApiKeyList          AuditAction = "api_key.list"
+	AuditActionApiKeyRevoke        AuditAction = "api_key.revoke"
+	AuditActionAuditLogList        AuditAction = "audit_log.list"
+	AuditActionPortalAccountLocked AuditAction = "portal.account_locked"
+	AuditActionPortalSignIn        AuditAction = "portal.sign_in"
+	AuditActionPortalSignOut       AuditAction = "portal.sign_out"
+)
+
+// Valid indicates whether the value is a known member of the AuditAction enum.
+func (e AuditAction) Valid() bool {
+	switch e {
+	case AuditActionApiKeyCreate:
+		return true
+	case AuditActionApiKeyList:
+		return true
+	case AuditActionApiKeyRevoke:
+		return true
+	case AuditActionAuditLogList:
+		return true
+	case AuditActionPortalAccountLocked:
+		return true
+	case AuditActionPortalSignIn:
+		return true
+	case AuditActionPortalSignOut:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AuditOutcome.
+const (
+	Denied  AuditOutcome = "denied"
+	Failure AuditOutcome = "failure"
+	Success AuditOutcome = "success"
+)
+
+// Valid indicates whether the value is a known member of the AuditOutcome enum.
+func (e AuditOutcome) Valid() bool {
+	switch e {
+	case Denied:
+		return true
+	case Failure:
+		return true
+	case Success:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AuditPartyType.
+const (
+	AuditPartyTypeAnonymous     AuditPartyType = "anonymous"
+	AuditPartyTypeApiKey        AuditPartyType = "api_key"
+	AuditPartyTypePortalSession AuditPartyType = "portal_session"
+	AuditPartyTypePortalUser    AuditPartyType = "portal_user"
+	AuditPartyTypeSystem        AuditPartyType = "system"
+)
+
+// Valid indicates whether the value is a known member of the AuditPartyType enum.
+func (e AuditPartyType) Valid() bool {
+	switch e {
+	case AuditPartyTypeAnonymous:
+		return true
+	case AuditPartyTypeApiKey:
+		return true
+	case AuditPartyTypePortalSession:
+		return true
+	case AuditPartyTypePortalUser:
+		return true
+	case AuditPartyTypeSystem:
 		return true
 	default:
 		return false
@@ -106,6 +188,7 @@ func (e MessageStatus) Valid() bool {
 // Defines values for Permission.
 const (
 	PermissionApiKeysManage Permission = "api_keys:manage"
+	PermissionAuditLogRead  Permission = "audit_log:read"
 	PermissionMessagesRead  Permission = "messages:read"
 	PermissionMessagesSend  Permission = "messages:send"
 )
@@ -114,6 +197,8 @@ const (
 func (e Permission) Valid() bool {
 	switch e {
 	case PermissionApiKeysManage:
+		return true
+	case PermissionAuditLogRead:
 		return true
 	case PermissionMessagesRead:
 		return true
@@ -166,8 +251,7 @@ func (e StatusCategory) Valid() bool {
 	}
 }
 
-// ApiKey An API key's metadata. Never contains the key's secret or its stored hash. When a key was last
-// used is not recorded by the platform.
+// ApiKey An API key's metadata. Never contains the key's secret or its stored hash.
 type ApiKey struct {
 	CreatedAt time.Time `json:"created_at"`
 
@@ -175,6 +259,10 @@ type ApiKey struct {
 	//
 	// Examples: 06h1wh346hsf13tppjr44p43pw
 	Id ApiKeyId `json:"id"`
+
+	// LastUsedAt When the key last authenticated a public API request it was authorized for, recorded at most
+	// once a minute (so up to a minute older than its most recent request); `null` if never used.
+	LastUsedAt *time.Time `json:"last_used_at"`
 
 	// Name The name given at creation, to recognize the key.
 	//
@@ -207,8 +295,7 @@ type ApiKeyCreateRequest struct {
 
 // ApiKeyCreated defines model for ApiKeyCreated.
 type ApiKeyCreated struct {
-	// ApiKey An API key's metadata. Never contains the key's secret or its stored hash. When a key was last
-	// used is not recorded by the platform.
+	// ApiKey An API key's metadata. Never contains the key's secret or its stored hash.
 	ApiKey ApiKey `json:"api_key"`
 
 	// Key The full API key, for the `Authorization: Bearer` header of the public API. Returned only
@@ -228,6 +315,101 @@ type ApiKeyList struct {
 
 // ApiKeyScope A public API permission granted by the key (D-143).
 type ApiKeyScope string
+
+// AuditAction What happened: `portal.sign_in` (a sign-in, successful or not), `portal.sign_out`,
+// `portal.account_locked` (repeated failed attempts locked the account), `api_key.create`,
+// `api_key.revoke`, `api_key.list` (recorded only when refused) and `audit_log.list` (recorded only
+// when refused).
+type AuditAction string
+
+// AuditDetails Structured, non-secret details. Only the fields that apply are present.
+type AuditDetails struct {
+	// ApiKeyName The name of the API key that was created or revoked.
+	ApiKeyName   *string        `json:"api_key_name,omitempty"`
+	ApiKeyScopes *[]ApiKeyScope `json:"api_key_scopes,omitempty"`
+
+	// LockedUntil When the account lock ends.
+	LockedUntil *time.Time `json:"locked_until,omitempty"`
+
+	// Reason Why the action failed, was refused or locked the account: `invalid_password`,
+	// `account_locked`, `organization_not_active`, `insufficient_role` or `too_many_attempts`.
+	Reason *string `json:"reason,omitempty"`
+
+	// RequiredPermission A permission of the signed-in user. Operations state the one they require (`x-required-permission`).
+	RequiredPermission *Permission `json:"required_permission,omitempty"`
+
+	// Role Client portal role (MVP-03). `owner` and `sender` may read and send messages; `viewer` may only
+	// read (G3-3). Only `owner` manages API keys (MVP-03) and reads the security audit log. User
+	// management is not part of this version.
+	Role *Role `json:"role,omitempty"`
+
+	// Via The administration tool that performed a system action (`smsctl`).
+	Via *string `json:"via,omitempty"`
+}
+
+// AuditEvent One security event of the organization. Never contains passwords, session tokens, API keys or
+// their hashes, authorization headers or message text.
+type AuditEvent struct {
+	// Action What happened: `portal.sign_in` (a sign-in, successful or not), `portal.sign_out`,
+	// `portal.account_locked` (repeated failed attempts locked the account), `api_key.create`,
+	// `api_key.revoke`, `api_key.list` (recorded only when refused) and `audit_log.list` (recorded only
+	// when refused).
+	Action AuditAction `json:"action"`
+
+	// Actor The actor or target of an event.
+	Actor AuditParty `json:"actor"`
+
+	// Details Structured, non-secret details. Only the fields that apply are present.
+	Details    AuditDetails       `json:"details"`
+	Id         openapi_types.UUID `json:"id"`
+	OccurredAt time.Time          `json:"occurred_at"`
+
+	// Outcome `success`; `failure` (the credentials or the confirmed password were not accepted); `denied`
+	// (refused by policy, for example a role without the permission or an organization that is not
+	// active).
+	Outcome AuditOutcome `json:"outcome"`
+
+	// RequestId The request identifier (`X-Request-ID`), or `null` for actions outside a request.
+	RequestId *string `json:"request_id"`
+
+	// SourceIp The client IP address: the direct peer, or the address reported by a configured trusted
+	// proxy. `null` for actions outside a request.
+	SourceIp *string     `json:"source_ip"`
+	Target   *AuditParty `json:"target"`
+
+	// UserAgent The client's `User-Agent` (control characters removed, at most 256 characters), or `null`.
+	UserAgent *string `json:"user_agent"`
+}
+
+// AuditEventList defines model for AuditEventList.
+type AuditEventList struct {
+	Data []AuditEvent `json:"data"`
+
+	// NextCursor Cursor for the next page, or `null` when there are no more items.
+	NextCursor *string `json:"next_cursor"`
+}
+
+// AuditOutcome `success`; `failure` (the credentials or the confirmed password were not accepted); `denied`
+// (refused by policy, for example a role without the permission or an organization that is not
+// active).
+type AuditOutcome string
+
+// AuditParty The actor or target of an event.
+type AuditParty struct {
+	// Email The portal user's email address (portal users only), or `null`.
+	Email *string `json:"email"`
+
+	// Id The resource identifier (an API key's `id`; a UUID otherwise), or `null`.
+	Id *string `json:"id"`
+
+	// Type Actor: `portal_user`, `anonymous` (not signed in) or `system` (the platform, or its local
+	// administration tool). Target: `portal_user`, `portal_session` or `api_key`.
+	Type AuditPartyType `json:"type"`
+}
+
+// AuditPartyType Actor: `portal_user`, `anonymous` (not signed in) or `system` (the platform, or its local
+// administration tool). Target: `portal_user`, `portal_session` or `api_key`.
+type AuditPartyType string
 
 // Encoding Encoding chosen by the platform from the message text.
 type Encoding string
@@ -397,8 +579,8 @@ type Problem struct {
 }
 
 // Role Client portal role (MVP-03). `owner` and `sender` may read and send messages; `viewer` may only
-// read (G3-3). Only `owner` manages API keys (MVP-03). User management is not part of this
-// version.
+// read (G3-3). Only `owner` manages API keys (MVP-03) and reads the security audit log. User
+// management is not part of this version.
 type Role string
 
 // SenderId An approved sender ID of the organization.
@@ -430,8 +612,8 @@ type Session struct {
 		Email string `json:"email"`
 
 		// Role Client portal role (MVP-03). `owner` and `sender` may read and send messages; `viewer` may only
-		// read (G3-3). Only `owner` manages API keys (MVP-03). User management is not part of this
-		// version.
+		// read (G3-3). Only `owner` manages API keys (MVP-03) and reads the security audit log. User
+		// management is not part of this version.
 		Role Role `json:"role"`
 	} `json:"user"`
 }
@@ -507,6 +689,9 @@ type NotFound = Problem
 // PayloadTooLarge RFC 9457 problem details; `detail` never contains internal error text.
 type PayloadTooLarge = Problem
 
+// TooManySignInAttempts RFC 9457 problem details; `detail` never contains internal error text.
+type TooManySignInAttempts = Problem
+
 // Unauthenticated RFC 9457 problem details; `detail` never contains internal error text.
 type Unauthenticated = Problem
 
@@ -540,6 +725,30 @@ type RevokeApiKeyParams struct {
 	// XCSRFToken The `csrf_token` of the current session. A missing or wrong token receives `403`
 	// (`csrf-token-invalid`) and nothing is processed.
 	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// ListAuditEventsParams defines parameters for ListAuditEvents.
+type ListAuditEventsParams struct {
+	// Limit Maximum number of items to return.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor Opaque cursor from a previous page's `next_cursor`, used with the same filters.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Action Only events with this action.
+	Action *AuditAction `form:"action,omitempty" json:"action,omitempty"`
+
+	// Outcome Only events with this outcome.
+	Outcome *AuditOutcome `form:"outcome,omitempty" json:"outcome,omitempty"`
+
+	// OccurredFrom Only events at or after this time (RFC 3339).
+	OccurredFrom *time.Time `form:"occurred_from,omitempty" json:"occurred_from,omitempty"`
+
+	// OccurredBefore Only events before this time (RFC 3339); must be later than `occurred_from`.
+	OccurredBefore *time.Time `form:"occurred_before,omitempty" json:"occurred_before,omitempty"`
+
+	// XRequestID Optional correlation identifier, handled exactly as in the public API.
+	XRequestID *RequestId `json:"X-Request-ID,omitempty"`
 }
 
 // EstimateMessageParams defines parameters for EstimateMessage.
@@ -640,6 +849,9 @@ type ServerInterface interface {
 	// RevokeApiKey Revoke an API key
 	// (DELETE /portal/v1/api-keys/{api_key_id})
 	RevokeApiKey(w http.ResponseWriter, r *http.Request, apiKeyId ApiKeyId, params RevokeApiKeyParams)
+	// ListAuditEvents List security audit events
+	// (GET /portal/v1/audit-events)
+	ListAuditEvents(w http.ResponseWriter, r *http.Request, params ListAuditEventsParams)
 	// EstimateMessage Estimate encoding and segments
 	// (POST /portal/v1/message-estimates)
 	EstimateMessage(w http.ResponseWriter, r *http.Request, params EstimateMessageParams)
@@ -685,6 +897,12 @@ func (_ Unimplemented) CreateApiKey(w http.ResponseWriter, r *http.Request, para
 // RevokeApiKey Revoke an API key
 // (DELETE /portal/v1/api-keys/{api_key_id})
 func (_ Unimplemented) RevokeApiKey(w http.ResponseWriter, r *http.Request, apiKeyId ApiKeyId, params RevokeApiKeyParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListAuditEvents List security audit events
+// (GET /portal/v1/audit-events)
+func (_ Unimplemented) ListAuditEvents(w http.ResponseWriter, r *http.Request, params ListAuditEventsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -914,6 +1132,125 @@ func (siw *ServerInterfaceWrapper) RevokeApiKey(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RevokeApiKey(w, r, apiKeyId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListAuditEvents operation middleware
+func (siw *ServerInterfaceWrapper) ListAuditEvents(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListAuditEventsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "action" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "action", r.URL.Query(), &params.Action, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "action"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "action", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "outcome" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "outcome", r.URL.Query(), &params.Outcome, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "outcome"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "outcome", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "occurred_from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "occurred_from", r.URL.Query(), &params.OccurredFrom, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "occurred_from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "occurred_from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "occurred_before" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "occurred_before", r.URL.Query(), &params.OccurredBefore, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "occurred_before"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "occurred_before", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "X-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Request-ID")]; found {
+		var XRequestID RequestId
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Request-ID", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", valueList[0], &XRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Request-ID", Err: err})
+			return
+		}
+
+		params.XRequestID = &XRequestID
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAuditEvents(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1536,6 +1873,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/portal/v1/api-keys/{api_key_id}", wrapper.RevokeApiKey)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/portal/v1/audit-events", wrapper.ListAuditEvents)
 	})
 
 	return r

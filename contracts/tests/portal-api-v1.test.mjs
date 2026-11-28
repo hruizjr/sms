@@ -1,5 +1,5 @@
 // Contract tests for contracts/openapi/portal-api-v1.yaml (Phase 4 Group 3; owner decisions G3-1 to
-// G3-6). Redocly checks validity and style; these tests check the security rules of the portal API
+// G3-6; Group 6: audit log, API key last use, sign-in rate limit). Redocly checks validity and style; these tests check the security rules of the portal API
 // and that it stays consistent with the public API. They read the bundled specifications, so run
 // `pnpm run bundle` first (`pnpm run check` does both). Standard library only (node:test).
 
@@ -88,7 +88,9 @@ test('every operation except the session declares the permission it requires', (
     if (o.path === '/portal/v1/session') continue;
     const want = o.path.startsWith('/portal/v1/api-keys')
       ? 'api_keys:manage'
-      : o.method === 'get'
+      : o.path.startsWith('/portal/v1/audit-events')
+        ? 'audit_log:read'
+        : o.method === 'get'
         ? 'messages:read'
         : 'messages:send';
     assert.equal(o.op['x-required-permission'], want, o.id);
@@ -164,4 +166,36 @@ test('responses never contain the message text or provider identifiers', () => {
       assert.ok(!text.includes(forbidden), `${name} must not contain ${forbidden}`);
     }
   }
+});
+
+test('the audit log is read-only and never contains secrets, credentials or message text', () => {
+  const item = spec.paths['/portal/v1/audit-events'];
+  assert.deepEqual(Object.keys(item).filter((k) => METHODS.includes(k)), ['get']);
+  assert.equal(item.get['x-required-permission'], 'audit_log:read');
+  assert.ok(item.get.responses['403']);
+  const names = ['AuditEvent', 'AuditParty', 'AuditDetails'].flatMap((name) =>
+    Object.keys(spec.components.schemas[name].properties),
+  );
+  for (const name of names) {
+    assert.doesNotMatch(name, /password|secret|hash|token|authorization|cookie|^key$|body|text|tenant/i, `audit field ${name}`);
+  }
+  assert.equal(spec.components.schemas.AuditDetails.additionalProperties, false);
+  // Only owners hold audit_log:read, as for API key management.
+  assert.ok(spec.components.schemas.Permission.enum.includes('audit_log:read'));
+});
+
+test('sign-in declares the per-source rate limit with Retry-After', () => {
+  const tooMany = resolve(spec.paths['/portal/v1/session'].post.responses['429']);
+  assert.ok(tooMany, 'POST /portal/v1/session must declare 429');
+  assert.ok(resolve(tooMany.headers['Retry-After']), '429 must declare Retry-After');
+  assert.match(tooMany.content['application/problem+json'].example.type, /too-many-sign-in-attempts$/);
+});
+
+test('API keys report when they were last used, nullable', () => {
+  const key = spec.components.schemas.ApiKey;
+  assert.ok(key.required.includes('last_used_at'));
+  assert.deepEqual(
+    key.properties.last_used_at.oneOf.map((s) => s.type),
+    ['string', 'null'],
+  );
 });

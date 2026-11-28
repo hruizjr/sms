@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
@@ -136,6 +137,8 @@ type Config struct {
 	// provider's capabilities; the dispatcher uses both.
 	Provider ProviderConfig
 	Dispatch DispatchConfig
+	// SignInLimit is the per-source sign-in rate limit of the client portal (Phase 4 Group 6).
+	SignInLimit SignInLimitConfig
 }
 
 // HTTPConfig configures the public application HTTP server.
@@ -145,6 +148,9 @@ type HTTPConfig struct {
 	ReadHeaderTimeout time.Duration
 	WriteTimeout      time.Duration
 	IdleTimeout       time.Duration
+	// TrustedProxies are the proxies whose X-Forwarded-For header determines the client address
+	// (TRUSTED_PROXIES; none by default).
+	TrustedProxies []netip.Prefix
 }
 
 // MetricsConfig configures the separate, non-public metrics listener.
@@ -237,6 +243,8 @@ func Load(lookup LookupFunc) (Config, error) {
 	cfg.Database = r.database(cfg.Env)
 	cfg.Provider = r.provider(cfg.Env)
 	cfg.Dispatch = r.dispatch()
+	cfg.HTTP.TrustedProxies = r.trustedProxies()
+	cfg.SignInLimit = r.signInLimit()
 
 	httpHost, httpPort, httpOK := r.address(EnvHTTPAddr, cfg.HTTP.Addr)
 	metricsHost, metricsPort, metricsOK := r.address(EnvMetricsAddr, cfg.Metrics.Addr)

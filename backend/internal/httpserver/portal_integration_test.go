@@ -13,12 +13,14 @@ import (
 	"time"
 
 	"github.com/hruizjr/sms/backend/internal/apikey"
+	"github.com/hruizjr/sms/backend/internal/audit"
 	"github.com/hruizjr/sms/backend/internal/database"
 	"github.com/hruizjr/sms/backend/internal/database/dbtest"
 	"github.com/hruizjr/sms/backend/internal/messaging"
 	"github.com/hruizjr/sms/backend/internal/messaging/provider/simulator"
 	"github.com/hruizjr/sms/backend/internal/portal"
 	"github.com/hruizjr/sms/backend/internal/portalapi"
+	"github.com/hruizjr/sms/backend/internal/signinlimit"
 	"github.com/hruizjr/sms/backend/internal/tenancy"
 )
 
@@ -30,11 +32,16 @@ type portalClient struct {
 	h      http.Handler
 	cookie *http.Cookie
 	csrf   string
+	// remote is the connection's peer address (RemoteAddr); "" keeps httptest's default.
+	remote string
 }
 
 func (c *portalClient) do(method, target, body string, header map[string]string) (int, http.Header, []byte) {
 	c.t.Helper()
 	req := newRequest(c.t, method, target, body)
+	if c.remote != "" {
+		req.RemoteAddr = c.remote
+	}
 	if c.cookie != nil {
 		req.AddCookie(c.cookie)
 	}
@@ -119,7 +126,7 @@ func TestIntegrationPortalEndToEnd(t *testing.T) {
 	}
 	deps, logs := testDeps(true)
 	deps.PublicAPI = &PublicAPIDeps{Messages: msgs, Auth: keys}
-	deps.Portal = &PortalDeps{Messages: msgs, Auth: accounts, APIKeys: keys}
+	deps.Portal = &PortalDeps{Messages: msgs, Auth: accounts, APIKeys: keys, Audit: audit.NewService(db), SignInLimiter: testSignInLimiter(t, db)}
 	h := NewRouter(deps)
 
 	tenants := tenancy.NewRepository(db.Pool())
@@ -193,7 +200,7 @@ func TestIntegrationPortalEndToEnd(t *testing.T) {
 	var session portalapi.Session
 	_ = json.Unmarshal(b, &session)
 	if code != http.StatusOK || session.User.Email != "owner@a.example.invalid" || session.User.Role != "owner" ||
-		session.Organization.Name != "Portal Tenant A" || len(session.Permissions) != 3 || session.CsrfToken != owner.csrf {
+		session.Organization.Name != "Portal Tenant A" || len(session.Permissions) != 4 || session.CsrfToken != owner.csrf {
 		t.Fatalf("GET session: %d %s", code, b)
 	}
 	if strings.Contains(string(b), tenantA.String()) {
@@ -360,7 +367,7 @@ func TestIntegrationPortalEndToEnd(t *testing.T) {
 	}
 
 	// 10. Portal sessions and API keys are separate.
-	_, apiToken, err := keys.Create(ctx, tenantA, "test", []apikey.Scope{apikey.ScopeMessagesRead})
+	_, apiToken, err := keys.Create(ctx, tenantA, "test", []apikey.Scope{apikey.ScopeMessagesRead}, audit.System, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,4 +410,15 @@ func mustParseMessageID(t *testing.T, s string) messaging.MessageID {
 		t.Fatal(err)
 	}
 	return id
+}
+
+// testSignInLimiter is a per-source sign-in limiter for tests that do not exercise the limit (high
+// enough never to be reached).
+func testSignInLimiter(t *testing.T, db *database.DB) *signinlimit.Limiter {
+	t.Helper()
+	l, err := signinlimit.New(db, signinlimit.Config{MaxAttempts: 10000, Window: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return l
 }

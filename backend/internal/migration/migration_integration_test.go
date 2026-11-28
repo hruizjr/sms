@@ -30,7 +30,8 @@ const (
 	baselineVersion  = 20261125041208 // migrations/20261125041208_baseline.sql
 	tenantsVersion   = 20261126175603 // migrations/20261126175603_create_tenants.sql
 	messagingVersion = 20261127150000 // migrations/20261127150000_create_messaging.sql
-	latestVersion    = 20261127200000 // migrations/20261127200000_create_portal_accounts.sql
+	portalVersion    = 20261127200000 // migrations/20261127200000_create_portal_accounts.sql
+	latestVersion    = 20261128120000 // migrations/20261128120000_create_security_audit_and_sign_in_limits.sql
 )
 
 func testContext(t *testing.T) context.Context {
@@ -111,11 +112,15 @@ func TestIntegrationEmbeddedMigrations(t *testing.T) {
 		"public.api_keys sms_migrator", "public.dispatch_jobs sms_migrator", "public.goose_db_version sms_migrator",
 		"public.idempotency_keys sms_migrator", "public.message_bodies sms_migrator", "public.message_receipts sms_migrator",
 		"public.message_status_history sms_migrator", "public.messages sms_migrator",
-		"public.portal_login_directory sms_migrator", "public.portal_sessions sms_migrator", "public.portal_users sms_migrator",
-		"public.provider_receipts sms_migrator", "public.sender_ids sms_migrator", "public.submission_attempts sms_migrator",
-		"public.tenants sms_migrator",
+		"public.platform_security_events sms_migrator", "public.portal_login_directory sms_migrator",
+		"public.portal_sessions sms_migrator", "public.portal_sign_in_rate_limits sms_migrator", "public.portal_users sms_migrator",
+		"public.provider_receipts sms_migrator", "public.security_audit_events sms_migrator", "public.sender_ids sms_migrator",
+		"public.submission_attempts sms_migrator", "public.tenants sms_migrator",
 	}
-	afterMessaging := slices.DeleteFunc(slices.Clone(want), func(s string) bool { return strings.HasPrefix(s, "public.portal_") })
+	group6 := []string{"public.platform_security_events sms_migrator", "public.portal_sign_in_rate_limits sms_migrator",
+		"public.security_audit_events sms_migrator"}
+	afterPortal := slices.DeleteFunc(slices.Clone(want), func(s string) bool { return slices.Contains(group6, s) })
+	afterMessaging := slices.DeleteFunc(slices.Clone(afterPortal), func(s string) bool { return strings.HasPrefix(s, "public.portal_") })
 	afterTenants := []string{"public.goose_db_version sms_migrator", "public.tenants sms_migrator"}
 	if got := tablesAndOwners(t, ctx, db); !slices.Equal(got, want) {
 		t.Errorf("tables after migrating = %v, want %v", got, want)
@@ -128,8 +133,15 @@ func TestIntegrationEmbeddedMigrations(t *testing.T) {
 	}
 
 	// Down rolls back one migration at a time (local development and tests only): first the
-	// portal tables, then the messaging tables, then the tenants table, then the baseline. Rolling
-	// back past zero is reported.
+	// security audit and rate-limit tables, then the portal tables, then the messaging tables, then
+	// the tenants table, then the baseline. Rolling back past zero is reported.
+	if _, err := runner.Down(ctx); err != nil {
+		t.Fatalf("Down() error: %v", err)
+	}
+	assertVersion(t, ctx, runner, portalVersion)
+	if got := tablesAndOwners(t, ctx, db); !slices.Equal(got, afterPortal) {
+		t.Errorf("tables after rolling back the security audit migration = %v, want %v", got, afterPortal)
+	}
 	if _, err := runner.Down(ctx); err != nil {
 		t.Fatalf("Down() error: %v", err)
 	}

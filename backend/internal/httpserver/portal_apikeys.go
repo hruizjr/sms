@@ -10,6 +10,7 @@ import (
 	"slices"
 
 	"github.com/hruizjr/sms/backend/internal/apikey"
+	"github.com/hruizjr/sms/backend/internal/audit"
 	"github.com/hruizjr/sms/backend/internal/middleware"
 	"github.com/hruizjr/sms/backend/internal/portal"
 	"github.com/hruizjr/sms/backend/internal/portalapi"
@@ -21,7 +22,7 @@ const maxAPIKeyRequestBytes = 4 << 10
 
 // ListApiKeys implements GET /portal/v1/api-keys.
 func (a *portalAPI) ListApiKeys(w http.ResponseWriter, r *http.Request, _ portalapi.ListApiKeysParams) {
-	p, ok := a.require(w, r, portal.PermissionAPIKeysManage)
+	p, ok := a.requireAudited(w, r, portal.PermissionAPIKeysManage, audit.ActionAPIKeyList)
 	if !ok {
 		return
 	}
@@ -40,9 +41,11 @@ func (a *portalAPI) ListApiKeys(w http.ResponseWriter, r *http.Request, _ portal
 // CreateApiKey implements POST /portal/v1/api-keys with the same key service as smsctl. The owner
 // re-enters their current password first (owner decision G4-7): without a successful
 // re-authentication no key is created and nothing secret is returned. The full key is in the success
-// response only; neither it nor the password is ever stored or logged.
+// response only; neither it nor the password is ever stored or logged. A failed re-authentication
+// and a created key are recorded in the audit log (by the portal and key services, in the same
+// transaction as the change).
 func (a *portalAPI) CreateApiKey(w http.ResponseWriter, r *http.Request, _ portalapi.CreateApiKeyParams) {
-	p, ok := a.require(w, r, portal.PermissionAPIKeysManage)
+	p, ok := a.requireAudited(w, r, portal.PermissionAPIKeysManage, audit.ActionAPIKeyCreate)
 	if !ok {
 		return
 	}
@@ -59,7 +62,7 @@ func (a *portalAPI) CreateApiKey(w http.ResponseWriter, r *http.Request, _ porta
 		writePortalProblem(w, r, http.StatusBadRequest, problemValidationError, "The request is invalid", "One or more fields are invalid.", errs)
 		return
 	}
-	switch err := a.auth.Reauthenticate(r.Context(), p, req.currentPassword); {
+	switch err := a.auth.Reauthenticate(r.Context(), p, req.currentPassword, audit.ActionAPIKeyCreate); {
 	case errors.Is(err, portal.ErrReauthenticationFailed):
 		a.logger.InfoContext(r.Context(), "api key creation refused: re-authentication failed",
 			slog.String("request_id", middleware.RequestIDFromContext(r.Context())),
@@ -71,7 +74,7 @@ func (a *portalAPI) CreateApiKey(w http.ResponseWriter, r *http.Request, _ porta
 		a.serverError(w, r, "api key re-authentication", err)
 		return
 	}
-	key, token, err := a.keys.Create(r.Context(), p.TenantID, req.name, req.scopes)
+	key, token, err := a.keys.Create(r.Context(), p.TenantID, req.name, req.scopes, audit.PortalUser(p.UserID), "")
 	switch {
 	case errors.Is(err, apikey.ErrInvalidLabel):
 		writePortalProblem(w, r, http.StatusBadRequest, problemValidationError, "The request is invalid", "One or more fields are invalid.",
@@ -96,7 +99,7 @@ func (a *portalAPI) CreateApiKey(w http.ResponseWriter, r *http.Request, _ porta
 // RevokeApiKey implements DELETE /portal/v1/api-keys/{api_key_id}. Revoking a key that is already
 // revoked returns it unchanged; a key of another tenant is not found (row-level security hides it).
 func (a *portalAPI) RevokeApiKey(w http.ResponseWriter, r *http.Request, apiKeyID portalapi.ApiKeyId, _ portalapi.RevokeApiKeyParams) {
-	p, ok := a.require(w, r, portal.PermissionAPIKeysManage)
+	p, ok := a.requireAudited(w, r, portal.PermissionAPIKeysManage, audit.ActionAPIKeyRevoke)
 	if !ok {
 		return
 	}
@@ -105,7 +108,7 @@ func (a *portalAPI) RevokeApiKey(w http.ResponseWriter, r *http.Request, apiKeyI
 		notFound(w, r)
 		return
 	}
-	key, err := a.keys.Revoke(r.Context(), p.TenantID, id)
+	key, err := a.keys.Revoke(r.Context(), p.TenantID, id, audit.PortalUser(p.UserID), "")
 	if errors.Is(err, apikey.ErrNotFound) {
 		// Not found, or already revoked: answer with the revoked key if it exists.
 		keys, listErr := a.keys.List(r.Context(), p.TenantID)
@@ -147,6 +150,10 @@ func toPortalAPIKey(k apikey.Key) portalapi.ApiKey {
 	if k.RevokedAt != nil {
 		revoked := k.RevokedAt.UTC()
 		out.Status, out.RevokedAt = "revoked", &revoked
+	}
+	if k.LastUsedAt != nil {
+		used := k.LastUsedAt.UTC()
+		out.LastUsedAt = &used
 	}
 	return out
 }

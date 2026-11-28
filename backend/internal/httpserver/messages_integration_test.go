@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/hruizjr/sms/backend/internal/apikey"
+	"github.com/hruizjr/sms/backend/internal/audit"
 	"github.com/hruizjr/sms/backend/internal/database"
 	"github.com/hruizjr/sms/backend/internal/database/dbtest"
 	"github.com/hruizjr/sms/backend/internal/messaging"
@@ -60,7 +61,7 @@ func TestIntegrationPublicAPIEndToEnd(t *testing.T) {
 		if err := msgs.ApproveSenderID(ctx, tn.ID, "EXAMPLECO"); err != nil {
 			t.Fatal(err)
 		}
-		_, token, err := keys.Create(ctx, tn.ID, "test", []apikey.Scope{apikey.ScopeMessagesSend, apikey.ScopeMessagesRead})
+		_, token, err := keys.Create(ctx, tn.ID, "test", []apikey.Scope{apikey.ScopeMessagesSend, apikey.ScopeMessagesRead}, audit.System, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -177,7 +178,7 @@ func TestIntegrationPublicAPIEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := keys.Revoke(ctx, p.TenantID, p.KeyID); err != nil {
+	if _, err := keys.Revoke(ctx, p.TenantID, p.KeyID, audit.System, ""); err != nil {
 		t.Fatal(err)
 	}
 	if code, _, _ = call(tokenB, http.MethodGet, "/v1/messages", "", ""); code != 401 {

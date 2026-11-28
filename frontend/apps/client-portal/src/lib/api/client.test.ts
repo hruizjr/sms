@@ -84,6 +84,46 @@ describe('portal API client', () => {
     ]);
   });
 
+  it('builds audit log queries with every filter', async () => {
+    const { api, transport } = client(() => json(200, { data: [], next_cursor: null }));
+    await api.listAuditEvents();
+    await api.listAuditEvents({
+      limit: 50,
+      cursor: 'c/1',
+      action: 'api_key.create',
+      outcome: 'denied',
+      occurredFrom: '2026-11-27T16:00:00.000Z',
+      occurredBefore: '2026-11-28T16:00:00.000Z',
+    });
+    expect(transport.calls.map((c) => c.path)).toEqual([
+      '/portal/v1/audit-events',
+      '/portal/v1/audit-events?limit=50&cursor=c%2F1&action=api_key.create&outcome=denied&occurred_from=2026-11-27T16%3A00%3A00.000Z&occurred_before=2026-11-28T16%3A00%3A00.000Z',
+    ]);
+    expect(
+      transport.calls.every((c) => c.method === 'GET' && c.headers['X-CSRF-Token'] === undefined),
+    ).toBe(true);
+  });
+
+  it('reads Retry-After from a refused request, ignoring invalid values', async () => {
+    let header = '360';
+    const { api } = client(() =>
+      problem(429, 'too-many-sign-in-attempts', {}, { 'Retry-After': header }),
+    );
+    const refused = (await api
+      .signIn('a@example.invalid', 'x')
+      .catch((e: unknown) => e)) as ApiError;
+    expect(refused).toBeInstanceOf(ApiError);
+    expect(refused.status).toBe(429);
+    expect(refused.problemType).toBe('too-many-sign-in-attempts');
+    expect(refused.retryAfterSeconds).toBe(360);
+    for (header of ['Fri, 27 Nov 2026 08:00:00 GMT', '-1', '1.5', '']) {
+      const e = (await api
+        .signIn('a@example.invalid', 'x')
+        .catch((err: unknown) => err)) as ApiError;
+      expect(e.retryAfterSeconds).toBeUndefined();
+    }
+  });
+
   it('signs out with DELETE and the CSRF token', async () => {
     const { api, transport } = client(() => new Response(null, { status: 204 }));
     await api.signOut();

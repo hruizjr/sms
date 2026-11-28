@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -83,8 +84,9 @@ func TestLoadDefaults(t *testing.T) {
 		ShutdownTimeout: DefaultShutdownTimeout,
 		Provider:        defaultProvider(ProviderSimulator),
 		Dispatch:        defaultDispatch(),
+		SignInLimit:     SignInLimitConfig{MaxAttempts: DefaultSignInMaxAttempts, Window: DefaultSignInWindow},
 	}
-	if cfg != want {
+	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("Load() defaults:\n got %+v\nwant %+v", cfg, want)
 	}
 }
@@ -134,10 +136,11 @@ func TestLoadValidCustomValues(t *testing.T) {
 		Database:        defaultDatabase(SSLModeVerifyFull),
 		ShutdownTimeout: 45 * time.Second,
 		// Production has no default provider (no production provider exists yet).
-		Provider: defaultProvider(""),
-		Dispatch: defaultDispatch(),
+		Provider:    defaultProvider(""),
+		Dispatch:    defaultDispatch(),
+		SignInLimit: SignInLimitConfig{MaxAttempts: DefaultSignInMaxAttempts, Window: DefaultSignInWindow},
 	}
-	if cfg != want {
+	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("Load() custom values:\n got %+v\nwant %+v", cfg, want)
 	}
 }
@@ -281,7 +284,7 @@ func TestLoadInvalidValues(t *testing.T) {
 			if !strings.Contains(err.Error(), tt.wantKey) {
 				t.Errorf("error %q does not name the offending variable %s", err, tt.wantKey)
 			}
-			if cfg != (Config{}) {
+			if !reflect.DeepEqual(cfg, Config{}) {
 				t.Errorf("Load() returned a partially filled Config on error: %+v", cfg)
 			}
 		})

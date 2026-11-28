@@ -1,4 +1,11 @@
-import type { ApiKey, Message, MessageDetail, Session, Transport } from '../lib/api/client';
+import type {
+  ApiKey,
+  AuditEvent,
+  Message,
+  MessageDetail,
+  Session,
+  Transport,
+} from '../lib/api/client';
 
 /*
  * A fake portal API for tests: a transport that answers from a handler function and records every
@@ -46,6 +53,7 @@ export function problem(
   status: number,
   type: string,
   extra: Record<string, unknown> = {},
+  headers: Record<string, string> = {},
 ): Response {
   return new Response(
     JSON.stringify({
@@ -55,7 +63,7 @@ export function problem(
       detail: `${type} detail`,
       ...extra,
     }),
-    { status, headers: { 'Content-Type': 'application/problem+json' } },
+    { status, headers: { 'Content-Type': 'application/problem+json', ...headers } },
   );
 }
 
@@ -70,7 +78,7 @@ export function sessionFor(role: 'owner' | 'sender' | 'viewer' = 'owner'): Sessi
         ? ['messages:read']
         : role === 'sender'
           ? ['messages:read', 'messages:send']
-          : ['messages:read', 'messages:send', 'api_keys:manage'],
+          : ['messages:read', 'messages:send', 'api_keys:manage', 'audit_log:read'],
     csrf_token: CSRF,
     expires_at: '2026-11-27T20:00:00Z',
     idle_expires_at: '2026-11-27T08:30:00Z',
@@ -144,6 +152,27 @@ export function apiKeyFixture(overrides: Partial<ApiKey> = {}): ApiKey {
     status: 'active',
     created_at: '2026-11-27T08:00:00Z',
     revoked_at: null,
+    last_used_at: null,
+    ...overrides,
+  };
+}
+
+export function auditEventFixture(overrides: Partial<AuditEvent> = {}): AuditEvent {
+  return {
+    id: '0193f0a1-7c3e-7d2a-9b1e-2f6c8d4e5a01',
+    occurred_at: '2026-11-28T01:30:00Z',
+    action: 'portal.sign_in',
+    outcome: 'success',
+    actor: {
+      type: 'portal_user',
+      id: '0193f0a1-0000-7000-8000-000000000001',
+      email: 'owner@example.invalid',
+    },
+    target: { type: 'portal_session', id: '0193f0a1-0000-7000-8000-0000000000aa', email: null },
+    request_id: '9b2f4c1e7d3a5b60',
+    source_ip: '203.0.113.10',
+    user_agent: 'Mozilla/5.0 (Example)',
+    details: {},
     ...overrides,
   };
 }

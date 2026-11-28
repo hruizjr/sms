@@ -72,8 +72,9 @@ func TestIntegrationProvisionedRoleAttributes(t *testing.T) {
 	if want := []string{
 		"api_keys sms_migrator", "dispatch_jobs sms_migrator", "goose_db_version sms_migrator",
 		"idempotency_keys sms_migrator", "message_bodies sms_migrator", "message_receipts sms_migrator",
-		"message_status_history sms_migrator", "messages sms_migrator", "portal_login_directory sms_migrator",
-		"portal_sessions sms_migrator", "portal_users sms_migrator", "provider_receipts sms_migrator",
+		"message_status_history sms_migrator", "messages sms_migrator", "platform_security_events sms_migrator",
+		"portal_login_directory sms_migrator", "portal_sessions sms_migrator", "portal_sign_in_rate_limits sms_migrator",
+		"portal_users sms_migrator", "provider_receipts sms_migrator", "security_audit_events sms_migrator",
 		"sender_ids sms_migrator", "submission_attempts sms_migrator", "tenants sms_migrator",
 	}; !slices.Equal(owners, want) {
 		t.Errorf("table owners = %v, want %v", owners, want)
@@ -82,8 +83,10 @@ func TestIntegrationProvisionedRoleAttributes(t *testing.T) {
 		t.Errorf("sms_app owns %d relations, want 0", n)
 	}
 	// The application role's table privileges are exactly those the tenancy, API key and messaging
-	// code needs: no DELETE or TRUNCATE anywhere; history and receipt tables are insert-only; columns
-	// the database sets (IDs, statuses on insert, timestamps) cannot be inserted.
+	// code needs: no TRUNCATE anywhere and no DELETE except on the operational sign-in rate-limit
+	// counters; history, receipt and audit tables are insert-only (the platform audit table cannot
+	// even be read); columns the database sets (IDs, statuses on insert, timestamps) cannot be
+	// inserted.
 	privileges := value[[]string](t, ctx, admin, `
 		SELECT array_agg(p ORDER BY p) FROM (
 		    SELECT table_name || ' ' || privilege_type AS p FROM information_schema.role_table_grants
@@ -104,7 +107,7 @@ func TestIntegrationProvisionedRoleAttributes(t *testing.T) {
 	}
 	grant("tenants", []string{"SELECT"}, map[string][]string{"INSERT": {"display_name"}, "UPDATE": {"status", "updated_at"}})
 	grant("api_keys", []string{"SELECT"}, map[string][]string{
-		"INSERT": {"tenant_id", "label", "secret_hash", "scopes"}, "UPDATE": {"revoked_at"}})
+		"INSERT": {"tenant_id", "label", "secret_hash", "scopes"}, "UPDATE": {"revoked_at", "last_used_at"}})
 	grant("sender_ids", []string{"SELECT", "INSERT"}, map[string][]string{"INSERT": {"tenant_id", "sender_id", "approved_at"}})
 	grant("messages", []string{"SELECT"}, map[string][]string{
 		"INSERT": {"tenant_id", "client_reference", "destination", "sender_id", "encoding", "segment_count"},
@@ -133,6 +136,14 @@ func TestIntegrationProvisionedRoleAttributes(t *testing.T) {
 	grant("portal_sessions", []string{"SELECT"}, map[string][]string{
 		"INSERT": {"tenant_id", "user_id", "secret_hash", "created_at", "last_seen_at", "expires_at"},
 		"UPDATE": {"last_seen_at", "revoked_at"}})
+	// Security audit log and sign-in rate limit (Phase 4 Group 6).
+	grant("security_audit_events", []string{"SELECT"}, map[string][]string{"INSERT": {
+		"tenant_id", "occurred_at", "action", "outcome", "actor_type", "actor_id", "target_type", "target_id",
+		"request_id", "source_ip", "user_agent", "details"}})
+	grant("platform_security_events", nil, map[string][]string{"INSERT": {
+		"occurred_at", "action", "outcome", "request_id", "source_ip", "user_agent", "details"}})
+	grant("portal_sign_in_rate_limits", []string{"SELECT", "DELETE"}, map[string][]string{
+		"INSERT": {"source", "window_start_at", "attempt_count"}, "UPDATE": {"window_start_at", "attempt_count"}})
 	slices.Sort(want)
 	if !slices.Equal(privileges, want) {
 		t.Errorf("sms_app privileges = %v, want %v", privileges, want)
@@ -195,6 +206,20 @@ func TestIntegrationApplicationRoleCannotCreateOrBypass(t *testing.T) {
 		`UPDATE portal_sessions SET expires_at = expires_at`,
 		`UPDATE portal_login_directory SET tenant_id = tenant_id`,
 		`ALTER TABLE portal_users DISABLE ROW LEVEL SECURITY`,
+		// Security audit log (Phase 4 Group 6): append-only; the platform events cannot be read; no
+		// rate-limit counter can be truncated; no audit trigger can be disabled.
+		`UPDATE security_audit_events SET outcome = outcome`,
+		`DELETE FROM security_audit_events`,
+		`TRUNCATE security_audit_events`,
+		`ALTER TABLE security_audit_events DISABLE TRIGGER security_audit_events_append_only`,
+		`ALTER TABLE security_audit_events DISABLE ROW LEVEL SECURITY`,
+		`SELECT count(*) FROM platform_security_events`,
+		`UPDATE platform_security_events SET outcome = outcome`,
+		`DELETE FROM platform_security_events`,
+		`TRUNCATE platform_security_events`,
+		`TRUNCATE portal_sign_in_rate_limits`,
+		`UPDATE api_keys SET created_at = created_at`,
+		`INSERT INTO security_audit_events (id, tenant_id, occurred_at, action, outcome, actor_type) VALUES (uuidv7(), uuidv7(), now(), 'portal.sign_in', 'success', 'system')`,
 	}
 	for _, sql := range denied {
 		_, err := app.Pool().Exec(ctx, sql)
@@ -232,12 +257,15 @@ func TestIntegrationRequireApplicationRole(t *testing.T) {
 		{"bootstrap superuser", roles.Admin, []string{"is a superuser", "has BYPASSRLS", "has CREATEROLE"}},
 		{"migration role", roles.Migrator, []string{
 			"owns tables or other relations: api_keys, dispatch_jobs, goose_db_version, goose_db_version_id_seq, " +
-				"idempotency_keys, message_bodies, message_receipts, messages, message_status_history, portal_login_directory, " +
-				"portal_sessions, portal_users, provider_receipts, sender_ids, submission_attempts, tenants",
+				"idempotency_keys, message_bodies, message_receipts, messages, message_status_history, platform_security_events, " +
+				"portal_login_directory, portal_sessions, portal_sign_in_rate_limits, portal_users, provider_receipts, " +
+				"security_audit_events, sender_ids, submission_attempts, tenants",
+			"owns functions: reject_audit_event_change()",
 			"may create objects in schemas: public",
 			"has TRUNCATE on: api_keys, dispatch_jobs, goose_db_version, idempotency_keys, message_bodies, message_receipts, " +
-				"messages, message_status_history, portal_login_directory, portal_sessions, portal_users, provider_receipts, " +
-				"sender_ids, submission_attempts, tenants"}},
+				"messages, message_status_history, platform_security_events, portal_login_directory, portal_sessions, " +
+				"portal_sign_in_rate_limits, portal_users, provider_receipts, security_audit_events, sender_ids, " +
+				"submission_attempts, tenants"}},
 	}
 	for _, tc := range refused {
 		db, err := database.Open(ctx, tc.cfg, "sms-roleguard-test", database.RequireApplicationRole())
@@ -387,7 +415,7 @@ func TestIntegrationProvisioningUpgradesAnExistingDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	runMigrations(t, ctx, migrator, migrations.FS)
-	if v := value[int64](t, ctx, admin, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`); v != 20261127200000 {
+	if v := value[int64](t, ctx, admin, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`); v != 20261128120000 {
 		t.Errorf("version after upgrade = %d", v)
 	}
 	if err := database.CheckApplicationRole(ctx, open(t, dbtest.RoleConfig(t, adminCfg, dbroles.App)).Pool()); err != nil {

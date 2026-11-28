@@ -25,6 +25,15 @@
 // row-level security, like API keys. A session ends at the first of: 30 minutes without a request
 // (idle timeout), 12 hours after sign-in (absolute lifetime), sign-out, or revocation (G3-3).
 //
+// # Audit
+//
+// Every sign-in, sign-out, failed sign-in, account lock and failed re-authentication is written to
+// the security audit log (package audit, owner decision G4-8) in the same transaction as the state
+// it changes: a session is created only together with its sign-in event, and a failed attempt is
+// counted only together with its event. When the event cannot be written the operation fails with an
+// error instead of succeeding unaudited. A sign-in for an address that is not registered belongs to
+// no organization and is recorded as a platform event, without the address that was tried.
+//
 // # CSRF
 //
 // The CSRF token of a session is derived from its secret (SHA-256 with a separate label), so it is
@@ -49,6 +58,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/hruizjr/sms/backend/internal/audit"
 	"github.com/hruizjr/sms/backend/internal/database"
 	"github.com/hruizjr/sms/backend/internal/database/sqlcgen"
 	"github.com/hruizjr/sms/backend/internal/tenancy"
@@ -71,19 +81,21 @@ func (r Role) Valid() bool { return r == RoleOwner || r == RoleSender || r == Ro
 type Permission string
 
 // Permissions (G3-3, MVP-03): Owner and Sender may read and send; Viewer may only read. Only the
-// Owner manages the organization's API keys (MVP-03: "Owner (manages users and API keys)"). User
-// management is not implemented.
+// Owner manages the organization's API keys (MVP-03: "Owner (manages users and API keys)") and reads
+// its security audit log (Phase 4 Group 6; the owner is the organization's account administrator).
+// User management is not implemented.
 const (
 	PermissionMessagesRead  Permission = "messages:read"
 	PermissionMessagesSend  Permission = "messages:send"
 	PermissionAPIKeysManage Permission = "api_keys:manage"
+	PermissionAuditLogRead  Permission = "audit_log:read"
 )
 
 // Permissions returns the permissions of r, in a fixed order.
 func (r Role) Permissions() []Permission {
 	switch r {
 	case RoleOwner:
-		return []Permission{PermissionMessagesRead, PermissionMessagesSend, PermissionAPIKeysManage}
+		return []Permission{PermissionMessagesRead, PermissionMessagesSend, PermissionAPIKeysManage, PermissionAuditLogRead}
 	case RoleSender:
 		return []Permission{PermissionMessagesRead, PermissionMessagesSend}
 	case RoleViewer:
@@ -343,9 +355,13 @@ func (s *Service) RevokeUserSessions(ctx context.Context, tenantID tenancy.ID, e
 // lockout exactly like failed sign-ins (Policy.MaxFailures, Policy.LockDuration); while the account
 // is locked every attempt fails and is not counted. A success clears the failure count. It returns
 // ErrReauthenticationFailed for a wrong password or a locked account.
-func (s *Service) Reauthenticate(ctx context.Context, p Principal, password string) error {
+//
+// A failure is recorded in the audit log as a failed action (the action being confirmed, for example
+// audit.ActionAPIKeyCreate), in the same transaction as the failure count; a lock it starts is
+// recorded too. A success records nothing here: the confirmed action records its own event.
+func (s *Service) Reauthenticate(ctx context.Context, p Principal, password string, action audit.Action) error {
 	if len(password) > MaxPasswordBytes {
-		return s.failReauthentication(ctx, password)
+		return s.failReauthentication(ctx, p, password, action, audit.ReasonInvalidPassword)
 	}
 	userID := pgUUID(p.UserID)
 	var cred sqlcgen.GetPortalUserCredentialRow
@@ -355,7 +371,7 @@ func (s *Service) Reauthenticate(ctx context.Context, p Principal, password stri
 		return err
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return s.failReauthentication(ctx, password)
+		return s.failReauthentication(ctx, p, password, action, audit.ReasonInvalidPassword)
 	}
 	if err != nil {
 		return fmt.Errorf("portal re-authentication: %w", err)
@@ -363,7 +379,7 @@ func (s *Service) Reauthenticate(ctx context.Context, p Principal, password stri
 
 	now := s.now()
 	if cred.LockedUntil != nil && cred.LockedUntil.After(now) {
-		return s.failReauthentication(ctx, password)
+		return s.failReauthentication(ctx, p, password, action, audit.ReasonAccountLocked)
 	}
 	ok, err := s.hasher.verify(ctx, password, cred.PasswordHash)
 	if err != nil {
@@ -372,11 +388,11 @@ func (s *Service) Reauthenticate(ctx context.Context, p Principal, password stri
 	err = s.db.InTenantTx(ctx, p.TenantID, func(tx pgx.Tx) error {
 		q := sqlcgen.New(tx)
 		if !ok {
-			_, err := q.RecordFailedLogin(ctx, sqlcgen.RecordFailedLoginParams{
-				Now: now, MaxFailures: int32(s.policy.MaxFailures), LockUntil: now.Add(s.policy.LockDuration), //nolint:gosec // small configured value
-				TenantID: pgUUID(p.TenantID), ID: userID,
+			return s.recordFailure(ctx, tx, p.TenantID, p.UserID, now, audit.Event{
+				OccurredAt: now, Action: action, Outcome: audit.OutcomeFailure, Actor: audit.PortalUser(p.UserID),
+				Target:  &audit.Target{Type: audit.TargetPortalUser, ID: p.UserID},
+				Details: audit.Details{Reason: audit.ReasonInvalidPassword},
 			})
-			return err
 		}
 		if cred.FailedLoginCount == 0 {
 			return nil
@@ -394,13 +410,46 @@ func (s *Service) Reauthenticate(ctx context.Context, p Principal, password stri
 	return nil
 }
 
-// failReauthentication spends the same hashing work as a real check and returns
-// ErrReauthenticationFailed.
-func (s *Service) failReauthentication(ctx context.Context, password string) error {
+// failReauthentication spends the same hashing work as a real check, records the failed action
+// (without counting it toward the lockout) and returns ErrReauthenticationFailed.
+func (s *Service) failReauthentication(ctx context.Context, p Principal, password string, action audit.Action, reason audit.Reason) error {
 	if err := s.fail(ctx, password); !errors.Is(err, ErrInvalidCredentials) {
 		return err
 	}
+	err := s.db.InTenantTx(ctx, p.TenantID, func(tx pgx.Tx) error {
+		return audit.Insert(ctx, tx, p.TenantID, audit.Event{
+			OccurredAt: s.now(), Action: action, Outcome: audit.OutcomeFailure, Actor: audit.PortalUser(p.UserID),
+			Target:  &audit.Target{Type: audit.TargetPortalUser, ID: p.UserID},
+			Details: audit.Details{Reason: reason},
+		})
+	})
+	if err != nil {
+		return fmt.Errorf("portal re-authentication: %w", err)
+	}
 	return ErrReauthenticationFailed
+}
+
+// recordFailure counts one failed sign-in or re-authentication of userID, writes ev and, when this
+// failure starts a lock, an account-locked event, all through tx.
+func (s *Service) recordFailure(ctx context.Context, tx pgx.Tx, tenantID tenancy.ID, userID [16]byte, now time.Time, ev audit.Event) error {
+	res, err := sqlcgen.New(tx).RecordFailedLogin(ctx, sqlcgen.RecordFailedLoginParams{
+		Now: now, MaxFailures: int32(s.policy.MaxFailures), LockUntil: now.Add(s.policy.LockDuration), //nolint:gosec // small configured value
+		TenantID: pgUUID(tenantID), ID: pgUUID(userID),
+	})
+	if err != nil {
+		return err
+	}
+	if err := audit.Insert(ctx, tx, tenantID, ev); err != nil {
+		return err
+	}
+	if !res.NewlyLocked {
+		return nil
+	}
+	return audit.Insert(ctx, tx, tenantID, audit.Event{
+		OccurredAt: now, Action: audit.ActionAccountLocked, Outcome: audit.OutcomeSuccess, Actor: audit.System,
+		Target:  &audit.Target{Type: audit.TargetPortalUser, ID: userID},
+		Details: audit.Details{Reason: audit.ReasonTooManyAttempts, LockedUntil: res.LockedUntil},
+	})
 }
 
 // Unlock clears the lockout of the user of tenantID with email.
@@ -425,16 +474,24 @@ func (s *Service) Unlock(ctx context.Context, tenantID tenancy.ID, email string)
 func (s *Service) Login(ctx context.Context, email, password string) (Session, error) {
 	normalized, emailErr := NormalizeEmail(email)
 	if emailErr != nil || len(password) > MaxPasswordBytes {
-		return Session{}, s.fail(ctx, password)
+		// Not a possible account or password: refused before any lookup (unchanged since G3-3).
+		return Session{}, s.failUnknown(ctx, password, audit.ReasonInvalidInput)
 	}
 	entry, err := sqlcgen.New(s.db.Pool()).LookupLoginDirectory(ctx, normalized)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Session{}, s.fail(ctx, password)
+		return Session{}, s.failUnknown(ctx, password, audit.ReasonUnknownAccount)
 	}
 	if err != nil {
 		return Session{}, fmt.Errorf("portal login: %w", err)
 	}
 	tenantID, userID := tenancy.ID(entry.TenantID.Bytes), entry.UserID
+	userTarget := &audit.Target{Type: audit.TargetPortalUser, ID: userID.Bytes}
+	failed := func(now time.Time, reason audit.Reason) audit.Event {
+		return audit.Event{
+			OccurredAt: now, Action: audit.ActionSignIn, Outcome: audit.OutcomeFailure, Actor: audit.Anonymous,
+			Target: userTarget, Details: audit.Details{Reason: reason},
+		}
+	}
 
 	var cred sqlcgen.GetPortalUserCredentialRow
 	var tenant tenancy.Tenant
@@ -453,8 +510,17 @@ func (s *Service) Login(ctx context.Context, email, password string) (Session, e
 
 	now := s.now()
 	if cred.LockedUntil != nil && cred.LockedUntil.After(now) {
-		// Locked: spend the same work, record nothing (attempts while locked do not extend the lock).
-		return Session{}, s.fail(ctx, password)
+		// Locked: spend the same work and record the refused attempt, without counting it (attempts
+		// while locked do not extend the lock).
+		if err := s.fail(ctx, password); !errors.Is(err, ErrInvalidCredentials) {
+			return Session{}, err
+		}
+		if err := s.db.InTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+			return audit.Insert(ctx, tx, tenantID, failed(now, audit.ReasonAccountLocked))
+		}); err != nil {
+			return Session{}, fmt.Errorf("portal login: record failure: %w", err)
+		}
+		return Session{}, ErrInvalidCredentials
 	}
 	ok, err := s.hasher.verify(ctx, password, cred.PasswordHash)
 	if err != nil {
@@ -462,11 +528,7 @@ func (s *Service) Login(ctx context.Context, email, password string) (Session, e
 	}
 	if !ok {
 		err := s.db.InTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
-			_, err := sqlcgen.New(tx).RecordFailedLogin(ctx, sqlcgen.RecordFailedLoginParams{
-				Now: now, MaxFailures: int32(s.policy.MaxFailures), LockUntil: now.Add(s.policy.LockDuration), //nolint:gosec // small configured value
-				TenantID: entry.TenantID, ID: userID,
-			})
-			return err
+			return s.recordFailure(ctx, tx, tenantID, userID.Bytes, now, failed(now, audit.ReasonInvalidPassword))
 		})
 		if err != nil {
 			return Session{}, fmt.Errorf("portal login: record failure: %w", err)
@@ -474,6 +536,15 @@ func (s *Service) Login(ctx context.Context, email, password string) (Session, e
 		return Session{}, ErrInvalidCredentials
 	}
 	if tenant.Status != tenancy.StatusActive {
+		err := s.db.InTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+			return audit.Insert(ctx, tx, tenantID, audit.Event{
+				OccurredAt: now, Action: audit.ActionSignIn, Outcome: audit.OutcomeDenied, Actor: audit.PortalUser(userID.Bytes),
+				Target: userTarget, Details: audit.Details{Reason: audit.ReasonOrganizationNotActive},
+			})
+		})
+		if err != nil {
+			return Session{}, fmt.Errorf("portal login: record refusal: %w", err)
+		}
 		return Session{}, ErrTenantNotActive
 	}
 
@@ -492,7 +563,14 @@ func (s *Service) Login(ctx context.Context, email, password string) (Session, e
 		sessionID, err = q.CreatePortalSession(ctx, sqlcgen.CreatePortalSessionParams{
 			TenantID: entry.TenantID, UserID: userID, SecretHash: hash[:], Now: now, ExpiresAt: now.Add(s.policy.MaxLifetime),
 		})
-		return err
+		if err != nil {
+			return err
+		}
+		// The session exists only together with its sign-in event.
+		return audit.Insert(ctx, tx, tenantID, audit.Event{
+			OccurredAt: now, Action: audit.ActionSignIn, Outcome: audit.OutcomeSuccess, Actor: audit.PortalUser(userID.Bytes),
+			Target: &audit.Target{Type: audit.TargetPortalSession, ID: sessionID.Bytes},
+		})
 	})
 	if err != nil {
 		return Session{}, fmt.Errorf("portal login: create session: %w", err)
@@ -505,6 +583,21 @@ func (s *Service) Login(ctx context.Context, email, password string) (Session, e
 			ExpiresAt: now.Add(s.policy.MaxLifetime), IdleExpiresAt: minTime(now.Add(s.policy.IdleTimeout), now.Add(s.policy.MaxLifetime)),
 		},
 	}, nil
+}
+
+// failUnknown spends the same work as a real check, records a platform event (the address belongs to
+// no organization; the address tried is not recorded) and returns ErrInvalidCredentials.
+func (s *Service) failUnknown(ctx context.Context, password string, reason audit.Reason) error {
+	if err := s.fail(ctx, password); !errors.Is(err, ErrInvalidCredentials) {
+		return err
+	}
+	if err := audit.InsertPlatform(ctx, s.db.Pool(), audit.PlatformEvent{
+		OccurredAt: s.now(), Action: audit.ActionSignIn, Outcome: audit.OutcomeFailure,
+		Details: audit.Details{Reason: reason},
+	}); err != nil {
+		return fmt.Errorf("portal login: %w", err)
+	}
+	return ErrInvalidCredentials
 }
 
 // fail verifies password against the dummy hash (equal work) and returns ErrInvalidCredentials.
@@ -574,13 +667,21 @@ func (s *Service) Authenticate(ctx context.Context, token string) (Principal, er
 	return p, nil
 }
 
-// Logout revokes the principal's session. Revoking an already revoked session is not an error.
+// Logout revokes the principal's session and records the sign-out in the same transaction. Revoking
+// an already revoked session is not an error and records nothing.
 func (s *Service) Logout(ctx context.Context, p Principal) error {
 	err := s.db.InTenantTx(ctx, p.TenantID, func(tx pgx.Tx) error {
-		_, err := sqlcgen.New(tx).RevokePortalSession(ctx, sqlcgen.RevokePortalSessionParams{
-			Now: s.now(), TenantID: pgUUID(p.TenantID), ID: pgUUID(p.SessionID),
+		now := s.now()
+		n, err := sqlcgen.New(tx).RevokePortalSession(ctx, sqlcgen.RevokePortalSessionParams{
+			Now: now, TenantID: pgUUID(p.TenantID), ID: pgUUID(p.SessionID),
 		})
-		return err
+		if err != nil || n == 0 {
+			return err
+		}
+		return audit.Insert(ctx, tx, p.TenantID, audit.Event{
+			OccurredAt: now, Action: audit.ActionSignOut, Outcome: audit.OutcomeSuccess, Actor: audit.PortalUser(p.UserID),
+			Target: &audit.Target{Type: audit.TargetPortalSession, ID: p.SessionID},
+		})
 	})
 	if err != nil {
 		return fmt.Errorf("portal logout: %w", err)
