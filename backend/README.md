@@ -155,6 +155,7 @@ report `503` when the pool is exhausted.
 | Application | `POST`, `GET`, `DELETE /portal/v1/session` | Client portal sign-in (sets the session cookie), current session (user, organization, permissions, CSRF token), sign-out. |
 | Application | `GET /portal/v1/sender-ids`, `POST /portal/v1/message-estimates` | The organization's approved sender IDs; encoding and segment estimate from the shared segmentation function. |
 | Application | `GET`, `POST /portal/v1/messages`, `GET /portal/v1/messages/{message_id}` | Portal list, submission (same engine and idempotency as `/v1`) and detail with customer-visible status history. |
+| Application | `GET`, `POST /portal/v1/api-keys`, `DELETE /portal/v1/api-keys/{api_key_id}` | Owners only: list the organization's API keys (metadata only), create one (the full key is in the `201` response only), revoke one (Phase 4 Group 4). |
 
 The `/v1` endpoints follow [`contracts/openapi/public-api-v1.yaml`](../contracts/openapi/public-api-v1.yaml)
 exactly. Not implemented (no decided values or features yet): rate limits (`429`), credit checks (`402`) and
@@ -286,8 +287,14 @@ portal session never opens `/v1`, and an API key never opens `/portal/v1`.
 - **CSRF:** every `POST`/`DELETE` except sign-in needs the session's CSRF token in `X-CSRF-Token` (it is in the
   `GET /portal/v1/session` response and is derived from the cookie's secret, so it is never stored). Sign-in
   accepts only `application/json`.
-- **Permissions:** Owner and Sender may read and send; Viewer may only read. Checked by every handler; the tenant
-  always comes from the session.
+- **Permissions:** Owner and Sender may read and send; Viewer may only read; only the Owner manages API keys
+  (`api_keys:manage`, MVP-03). Checked by every handler; the tenant always comes from the session.
+- **API keys** (Phase 4 Group 4, decision log §21): the portal calls the same `apikey.Service` as `smsctl` and the
+  public API. Creating a key requires the owner's current password (`current_password`; `portal.Service.Reauthenticate`,
+  owner decision G4-7): failures count toward the sign-in lockout and receive `403 reauthentication-failed`, and no
+  key is created. Only the hash of a key's secret is stored; the full key is returned once (`Cache-Control: no-store`)
+  and never logged, nor is the password. Revocation applies from the next public API request. Last use is not
+  recorded yet (G4-6); a durable audit log of key events is required before production (G4-8).
 - **Messages:** submission calls the same `messaging.Service.Accept` as `POST /v1/messages` (same idempotency
   records, dispatcher, simulator and history). The detail view returns the customer-visible status history only.
 

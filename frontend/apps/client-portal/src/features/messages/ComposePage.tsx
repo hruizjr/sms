@@ -1,5 +1,5 @@
-import { Button, Card } from '@sms/ui';
-import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
+import { Button, Card, Icon } from '@sms/ui';
+import { useEffect, useRef, useState, type ReactNode, type SyntheticEvent } from 'react';
 import { Alert } from '../../components/feedback/Alert';
 import { Skeleton } from '../../components/feedback/Skeleton';
 import { SelectField, TextAreaField, TextField } from '../../components/form/Field';
@@ -9,7 +9,8 @@ import {
   type MessageCreateRequest,
   type MessageEstimate,
 } from '../../lib/api/client';
-import { Link, navigate } from '../../lib/router';
+import { PageHeader } from '../../components/layout/PageHeader';
+import { navigate } from '../../lib/router';
 import { hasPermission, useSession, useSignedInSession } from '../auth/session';
 import { encodingLabel } from './status';
 
@@ -82,13 +83,12 @@ export function ComposePage({ newIdempotencyKey = defaultKey }: ComposePageProps
   }, []);
 
   return (
-    <div className="space-y-6">
-      <p>
-        <Link to="/messages" className="text-sm font-medium text-primary underline">
-          ← All messages
-        </Link>
-      </p>
-      <h1 className="text-2xl font-semibold sm:text-3xl">Send SMS</h1>
+    <div>
+      <PageHeader
+        back={{ to: '/messages', label: 'Messages' }}
+        title="Send SMS"
+        description="Send one SMS to one Philippine mobile number. Acceptance is confirmed immediately; delivery is reported later by the provider."
+      />
       {hasPermission(session, 'messages:send') ? (
         <ComposeForm newIdempotencyKey={newIdempotencyKey} />
       ) : (
@@ -117,6 +117,12 @@ function ComposeForm({ newIdempotencyKey }: { newIdempotencyKey: () => string })
   // create a second message (ADR-0018).
   const intent = useRef<{ content: string; key: string } | undefined>(undefined);
   const inFlight = useRef(false);
+  const reviewRef = useRef<HTMLDivElement>(null);
+
+  // Move focus (and the viewport, on small screens) to the review step when it opens.
+  useEffect(() => {
+    if (reviewing) reviewRef.current?.focus();
+  }, [reviewing]);
 
   useEffect(() => {
     let active = true;
@@ -300,51 +306,53 @@ function ComposeForm({ newIdempotencyKey }: { newIdempotencyKey: () => string })
           : '';
 
   return (
-    <div className="grid gap-6 lg:grid-cols-3">
-      <Card className="lg:col-span-2">
-        <form noValidate onSubmit={onReview} className="space-y-4">
+    <div className="grid items-start gap-6 lg:grid-cols-3">
+      <Card heading="Compose" className="lg:col-span-2">
+        <form noValidate onSubmit={onReview} className="space-y-5">
           {failure !== undefined && (
             <Alert tone="error" title={failure.title}>
               {failure.detail}
             </Alert>
           )}
-          <TextField
-            label="Recipient mobile number"
-            type="tel"
-            name="to"
-            inputMode="tel"
-            autoComplete="off"
-            placeholder="+639171234567"
-            value={fields.to}
-            onChange={(e) => {
-              update('to', e.target.value);
-            }}
-            disabled={reviewing}
-            error={errors.to}
-            hint="One Philippine mobile number in international format (+639…)."
-          />
-          <SelectField
-            label="Sender ID"
-            name="sender_id"
-            value={fields.senderId}
-            onChange={(e) => {
-              update('senderId', e.target.value);
-            }}
-            disabled={reviewing}
-            error={errors.senderId}
-            hint="Only your organization’s approved sender IDs are listed."
-          >
-            <option value="">Choose a sender ID</option>
-            {senderIds.ids.map((id) => (
-              <option key={id} value={id}>
-                {id}
-              </option>
-            ))}
-          </SelectField>
+          <div className="grid gap-5 sm:grid-cols-2">
+            <TextField
+              label="Recipient mobile number"
+              type="tel"
+              name="to"
+              inputMode="tel"
+              autoComplete="off"
+              placeholder="+639171234567"
+              value={fields.to}
+              onChange={(e) => {
+                update('to', e.target.value);
+              }}
+              disabled={reviewing}
+              error={errors.to}
+              hint="One Philippine mobile number in international format (+639…)."
+            />
+            <SelectField
+              label="Sender ID"
+              name="sender_id"
+              value={fields.senderId}
+              onChange={(e) => {
+                update('senderId', e.target.value);
+              }}
+              disabled={reviewing}
+              error={errors.senderId}
+              hint="Only your organization’s approved sender IDs are listed."
+            >
+              <option value="">Choose a sender ID</option>
+              {senderIds.ids.map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
+            </SelectField>
+          </div>
           <TextAreaField
             label="Message"
             name="body"
-            rows={6}
+            rows={7}
             value={fields.body}
             onChange={(e) => {
               update('body', e.target.value);
@@ -352,60 +360,95 @@ function ComposeForm({ newIdempotencyKey }: { newIdempotencyKey: () => string })
             disabled={reviewing}
             error={errors.body}
             hint={
-              <span aria-live="polite" data-testid="message-counter">
-                {characters} / {MAX_CHARACTERS} characters
-                {segmentsText !== '' && ` · ${segmentsText}`}
+              <span
+                aria-live="polite"
+                data-testid="message-counter"
+                className="flex flex-wrap justify-between gap-x-4 gap-y-1"
+              >
+                <span className="tabular-nums">
+                  {characters} / {MAX_CHARACTERS} characters
+                </span>
+                {segmentsText !== '' && <span>{segmentsText}</span>}
               </span>
             }
           />
-          {!reviewing && <Button type="submit">Review message</Button>}
+          {!reviewing && (
+            <div className="flex justify-end border-t border-border pt-4">
+              <Button type="submit">Review message</Button>
+            </div>
+          )}
         </form>
       </Card>
 
-      {reviewing && (
-        <Card heading="Review and send" className="lg:col-span-1">
-          <dl className="space-y-2 text-text">
-            <div>
-              <dt className="text-sm text-text-muted">Recipients</dt>
-              <dd>1 ({normalizeNumber(fields.to)})</dd>
-            </div>
-            <div>
-              <dt className="text-sm text-text-muted">Sender ID</dt>
-              <dd>{fields.senderId}</dd>
-            </div>
-            <div>
-              <dt className="text-sm text-text-muted">Segments</dt>
-              <dd>
+      {reviewing ? (
+        <div ref={reviewRef} tabIndex={-1} className="focus:outline-none">
+          <Card heading="Review and send" description="Check the details before sending.">
+            <dl className="divide-y divide-border">
+              <ReviewRow term="Recipients">1 ({normalizeNumber(fields.to)})</ReviewRow>
+              <ReviewRow term="Sender ID">{fields.senderId}</ReviewRow>
+              <ReviewRow term="Segments">
                 {estimate.status === 'ready'
-                  ? `${String(estimate.value.segment_count)} (${encodingLabel(estimate.value.encoding)})`
+                  ? `${String(estimate.value.segment_count)} · ${encodingLabel(estimate.value.encoding)}`
                   : 'Calculated by the platform on submission'}
-              </dd>
+              </ReviewRow>
+              <ReviewRow term="Estimated cost">
+                Not available: billing is not enabled yet.
+              </ReviewRow>
+            </dl>
+            <p className="mt-3 text-xs text-text-muted">
+              Acceptance means the platform stored your message for sending; delivery is reported
+              later by the provider.
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              <Button loading={sending} onClick={() => void send()}>
+                {sending ? 'Sending…' : 'Send message'}
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={sending}
+                onClick={() => {
+                  setReviewing(false);
+                }}
+              >
+                Edit
+              </Button>
             </div>
-            <div>
-              <dt className="text-sm text-text-muted">Estimated cost</dt>
-              <dd>Not available: billing is not enabled yet.</dd>
-            </div>
-          </dl>
-          <p className="mt-4 text-sm text-text-muted">
-            Acceptance means the platform stored your message for sending; delivery is reported
-            later by the provider.
-          </p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button loading={sending} onClick={() => void send()}>
-              {sending ? 'Sending…' : 'Send message'}
-            </Button>
-            <Button
-              variant="secondary"
-              disabled={sending}
-              onClick={() => {
-                setReviewing(false);
-              }}
-            >
-              Edit
-            </Button>
-          </div>
+          </Card>
+        </div>
+      ) : (
+        <Card heading="Sending guidelines">
+          <ul className="space-y-3 text-text-muted">
+            <Guideline>One recipient per message; Philippine mobile numbers only.</Guideline>
+            <Guideline>
+              Up to {MAX_CHARACTERS} characters. Long messages are split into segments; characters
+              outside GSM-7 switch the whole message to Unicode (UCS-2), which fits fewer characters
+              per segment.
+            </Guideline>
+            <Guideline>
+              Each send has its own request key, so a repeated click or a retry never creates a
+              duplicate message.
+            </Guideline>
+          </ul>
         </Card>
       )}
     </div>
+  );
+}
+
+function ReviewRow({ term, children }: { term: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-0.5 py-2.5 first:pt-0">
+      <dt className="text-xs font-medium text-text-muted">{term}</dt>
+      <dd className="text-sm text-text">{children}</dd>
+    </div>
+  );
+}
+
+function Guideline({ children }: { children: ReactNode }) {
+  return (
+    <li className="flex gap-2">
+      <Icon name="check" className="mt-0.5 text-success" />
+      <span>{children}</span>
+    </li>
   );
 }

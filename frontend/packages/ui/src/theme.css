@@ -23,6 +23,7 @@
 
   /* Backgrounds */
   --color-surface: #ffffff; /* cards, header, controls */
+  --color-surface-subtle: #f9fafb; /* table headers, sidebar, read-only panels */
   --color-surface-muted: #f3f4f6; /* page background, subtle hover */
 
   /* Text */
@@ -37,14 +38,24 @@
   --color-primary: #1e3a5f;
   --color-primary-hover: #2c5282;
   --color-primary-foreground: #ffffff;
+  --color-primary-subtle: #eaf0f7; /* current navigation item, selected options */
   --color-danger: #b42318;
   --color-danger-hover: #912018;
   --color-danger-foreground: #ffffff;
 
-  /* Status text (always paired with words or an icon, never colour alone) */
+  /* Status text (always paired with words or an icon, never colour alone), and the tinted
+     backgrounds of status badges and alerts */
   --color-success: #067647;
+  --color-success-subtle: #ecfdf3;
   --color-warning: #b54708;
+  --color-warning-subtle: #fffaeb;
   --color-info: #175cd3;
+  --color-info-subtle: #eff8ff;
+  --color-danger-subtle: #fef3f2;
+
+  /* Code samples */
+  --color-code: #111827;
+  --color-code-foreground: #e5e7eb;
 
   /* Keyboard focus indicator */
   --color-focus: #2563eb;

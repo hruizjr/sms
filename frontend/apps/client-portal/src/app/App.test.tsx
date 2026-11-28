@@ -53,10 +53,12 @@ describe('portal shell and session', () => {
     expect(window.location.pathname).toBe('/messages');
     const banner = screen.getByRole('banner');
     expect(banner).toHaveTextContent('Example Co');
-    expect(banner).toHaveTextContent('owner@example.invalid (Owner)');
+    expect(banner).toHaveTextContent('owner@example.invalid');
+    expect(banner).toHaveTextContent('Role: Owner');
     const nav = within(screen.getByRole('navigation', { name: 'Main' }));
     expect(nav.getByRole('link', { name: 'Messages' })).toHaveAttribute('aria-current', 'page');
     expect(nav.getByRole('link', { name: 'Send SMS' })).toBeInTheDocument();
+    expect(nav.getByRole('link', { name: 'API keys' })).toHaveAttribute('href', '/api-keys');
     expect(transport.calls.find((c) => c.method === 'POST')?.body).toEqual({
       email: 'owner@example.invalid',
       password: 'a long password',
@@ -67,7 +69,8 @@ describe('portal shell and session', () => {
     renderApp('/messages', signedIn('viewer', { 'GET /portal/v1/messages?limit=25': emptyList }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Messages' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Send SMS' })).not.toBeInTheDocument();
-    expect(screen.getByRole('banner')).toHaveTextContent('(Viewer)');
+    expect(screen.getByRole('banner')).toHaveTextContent('Role: Viewer');
+    expect(screen.queryByRole('link', { name: 'API keys' })).not.toBeInTheDocument();
   });
 
   it('returns to the sign-in page with a notice when the session ends', async () => {
@@ -93,7 +96,9 @@ describe('portal shell and session', () => {
         'DELETE /portal/v1/session': () => new Response(null, { status: 204 }),
       }),
     );
-    fireEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
+    // Wait for the page to load first, so the sign-out request is the last one.
+    expect(await screen.findByRole('region', { name: 'No messages yet' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Sign in' })).toBeInTheDocument();
     expect(transport.calls.at(-1)).toMatchObject({
       method: 'DELETE',

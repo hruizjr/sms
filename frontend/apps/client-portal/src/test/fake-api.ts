@@ -1,4 +1,4 @@
-import type { Message, MessageDetail, Session, Transport } from '../lib/api/client';
+import type { ApiKey, Message, MessageDetail, Session, Transport } from '../lib/api/client';
 
 /*
  * A fake portal API for tests: a transport that answers from a handler function and records every
@@ -65,7 +65,12 @@ export function sessionFor(role: 'owner' | 'sender' | 'viewer' = 'owner'): Sessi
   return {
     user: { email: `${role}@example.invalid`, role },
     organization: { name: 'Example Co' },
-    permissions: role === 'viewer' ? ['messages:read'] : ['messages:read', 'messages:send'],
+    permissions:
+      role === 'viewer'
+        ? ['messages:read']
+        : role === 'sender'
+          ? ['messages:read', 'messages:send']
+          : ['messages:read', 'messages:send', 'api_keys:manage'],
     csrf_token: CSRF,
     expires_at: '2026-11-27T20:00:00Z',
     idle_expires_at: '2026-11-27T08:30:00Z',
@@ -126,5 +131,19 @@ export function signedIn(
     if (route !== undefined) return route(request);
     if (key === 'GET /portal/v1/session') return json(200, sessionFor(role));
     return problem(404, 'not-found');
+  };
+}
+
+export function apiKeyFixture(overrides: Partial<ApiKey> = {}): ApiKey {
+  const id = overrides.id ?? '06h1wh346hsf13tppjr44p43pw';
+  return {
+    id,
+    name: 'Order notifications',
+    prefix: `smsk_06h1wh346hsf13tppjr44p43aa_${id}`,
+    scopes: ['messages:send', 'messages:read'],
+    status: 'active',
+    created_at: '2026-11-27T08:00:00Z',
+    revoked_at: null,
+    ...overrides,
   };
 }

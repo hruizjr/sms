@@ -1,6 +1,7 @@
 // Test support shared by the frontend packages. Not exported from the package root, so it never
 // reaches an application bundle.
 export { contrastRatio, relativeLuminance } from './contrast';
+export { installDialogPolyfill } from './dialog-polyfill';
 export {
   BLOCKED_NETWORK_APIS,
   installNetworkGuard,

@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Living document — thirteen ADRs accepted (2026-11-25; ADR-0010 and ADR-0012 (limited scope) on 2026-11-26); others Proposed | Project owner | 2026-11-27 |
+| Living document — thirteen ADRs accepted (2026-11-25; ADR-0010 and ADR-0012 (limited scope) on 2026-11-26); others Proposed | Project owner | 2026-11-28 |
 
 ## 1. What an ADR is and why we use them
 
@@ -1647,6 +1647,35 @@ G3-6). **No ADR status changed.**
 | G3-7 | **One messaging engine.** Portal submissions go through `messaging.Service.Accept` with the same idempotency records (scope: organization + `create_message`), dispatcher, provider and status history as `POST /v1/messages`. The portal generates one idempotency key per intended send and reuses it on retries. The portal shows customer-visible statuses and history only, never provider details or the message text |
 | G3-8 | **Narrowed frontend guardrails.** `fetch` is allowed only in `src/lib/api/client.ts`; the production CSP allows `connect-src 'self'`; the development proxy forwards `/portal` (never `/v1`); browser storage stays forbidden; tests keep the network guard and use an injected fake transport |
 | G3-9 | **Not implemented** (out of scope or not decided): billing and cost estimates (the confirmation step says cost is not available), bulk sending, user and API key management, registration, password recovery, inbound SMS, webhooks, admin portal, analytics; per-IP sign-in rate limiting; an audit log table (S-8); a retention job for expired sessions (§10.8); serving the portal from a production host (D-145) |
+
+**Out of scope (unchanged):** real SMPP or telco adapters, real credentials, third-party aggregators, billing,
+pricing, production deployment, Kafka, RabbitMQ and Redis. The simulator remains the only provider.
+
+## 21. Phase 4 Group 4 — enterprise client portal and API key management (2026-11-27)
+
+On 2026-11-27 the owner approved **Phase 4 Group 4**: an enterprise-quality redesign of the client portal and
+customer-facing API key management (list, create, revoke) for the public messaging API, as one Draft pull request.
+No blocking decision was found: the existing approved decisions cover the authorization question. **No ADR status
+changed.** G4-1 to G4-5 are the existing decisions applied and the engineering decisions made within the approved
+scope, listed so they can be reviewed. G4-6 to G4-9 are **owner decisions of 2026-11-28** on the questions the
+pull request left open.
+
+| # | Decision |
+| - | -------- |
+| G4-1 | **Only owners manage API keys**, applying MVP-03 (§14: "Owner (manages users and API keys)"). The portal permission `api_keys:manage` belongs to the Owner role only; Sender and Viewer receive `403`. The tenant comes from the session; a key of another organization is reported as `404` |
+| G4-2 | **One key service.** The portal endpoints (`GET`/`POST /portal/v1/api-keys`, `DELETE /portal/v1/api-keys/{id}`) call the same `apikey.Service` as `smsctl` and the public API's Bearer authentication, which is unchanged. Only the SHA-256 hash of a key's secret is stored; the full key is returned once, in the `201` response (`Cache-Control: no-store`), and never logged (creation and revocation are logged with tenant, user and key IDs). Revocation takes effect for the next public API request; revoking an already revoked key returns it unchanged. Key names are validated against the existing column constraint (1–100 characters, no control characters) |
+| G4-3 | **No schema change.** The `api_keys` table has no last-used time, so the portal says that last use is not recorded rather than showing an invented value |
+| G4-4 | **Design system extended, no UI library.** New semantic tokens (subtle surfaces and status tints, code-sample colours) with contrast tests; new shared primitives `Badge`, `Icon` (hand-drawn SVG line icons, decorative only), `Dialog` (native `<dialog>` with `showModal()`), and refined `Button` and `Card`. Navigation: sidebar on large screens, menu button below 1024 px; tables become stacked rows below 1280 px |
+| G4-5 | **Not implemented** (out of scope): user management and invitations; MFA for client users; billing, pricing and costs; bulk sending; analytics. Last-used tracking, the audit log and key limits are decided in G4-6, G4-8 and G4-9 |
+
+**Owner decisions (2026-11-28):**
+
+| # | Decision |
+| - | -------- |
+| G4-6 | **API key last-used tracking — deferred** to a later group. When implemented, prefer **throttled** database updates (for example at most one write per key per interval, like the portal's last-seen time, G3-5) rather than a write on every public API request |
+| G4-7 | **Password re-authentication before creating an API key — approved, required.** The signed-in owner re-enters their current password (`current_password` in `POST /portal/v1/api-keys`). Enforced by the backend (`portal.Service.Reauthenticate`), checked against the user's tenant-owned Argon2id credentials under the tenant context. Failed attempts count toward the existing sign-in lockout (five consecutive failures lock the account for 15 minutes, G3-3); while locked every attempt fails; a success clears the count. A wrong password or locked account receives `403` (`reauthentication-failed`), no key is created and nothing secret is returned. The password is never logged, stored or echoed; the frontend clears it after every attempt. The one-time display of a new key is unchanged |
+| G4-8 | **Durable security audit log — required before production.** API key creation and revocation (with the other events of the security baseline, §12 of AGENTS.md) must be recorded as auditable security events in a durable, append-only audit trail. Ordinary application logs are **not** a substitute. The implementation (S-8) may follow in a subsequent group; until then the structured log lines (tenant, user and key IDs) remain operational logging only |
+| G4-9 | **No fixed limit on API keys per organization** for now. No arbitrary limit is introduced; configurable limits are revisited when customer usage and operational requirements justify them |
 
 **Out of scope (unchanged):** real SMPP or telco adapters, real credentials, third-party aggregators, billing,
 pricing, production deployment, Kafka, RabbitMQ and Redis. The simulator remains the only provider.

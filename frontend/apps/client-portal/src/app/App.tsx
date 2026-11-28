@@ -3,6 +3,8 @@ import { useEffect } from 'react';
 import { Alert } from '../components/feedback/Alert';
 import { Skeleton } from '../components/feedback/Skeleton';
 import { AppShell } from '../components/layout/AppShell';
+import { PageHeader } from '../components/layout/PageHeader';
+import { ApiKeysPage } from '../features/api-keys/ApiKeysPage';
 import { SignInPage } from '../features/auth/SignInPage';
 import { SessionProvider, useSession } from '../features/auth/session';
 import { ComposePage } from '../features/messages/ComposePage';
@@ -20,12 +22,14 @@ export type AppProps = {
 };
 
 /**
- * The client portal (Phase 4 Group 3): sign-in, the organization's messages, message details and
- * single-SMS composition, against the session-authenticated portal API. Routes:
+ * The client portal (Phase 4 Groups 3 and 4): sign-in, the organization's messages, message details,
+ * single-SMS composition and API key management, against the session-authenticated portal API.
+ * Routes:
  *
  *   /messages        message list (also the start page, "/")
  *   /messages/new    compose and send one SMS
  *   /messages/{id}   message details and status history
+ *   /api-keys        API keys of the public API (owners)
  *
  * Without a valid session every route shows the sign-in page. All access control is enforced by the
  * server; hiding a link here is a convenience only.
@@ -91,6 +95,9 @@ function Portal({ newIdempotencyKey }: { newIdempotencyKey: (() => string) | und
   } else if (path === '/messages/new') {
     page = <ComposePage {...(newIdempotencyKey ? { newIdempotencyKey } : {})} />;
     routeKey = 'compose';
+  } else if (path === '/api-keys') {
+    page = <ApiKeysPage />;
+    routeKey = 'api-keys';
   } else if (detail?.[1] !== undefined) {
     const justSent = new URLSearchParams(window.location.search).has('sent');
     page = <MessageDetailPage id={detail[1]} justSent={justSent} />;
@@ -109,13 +116,14 @@ function Portal({ newIdempotencyKey }: { newIdempotencyKey: (() => string) | und
 
 function NotFound() {
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Page not found</h1>
-      <p>
-        <Link to="/messages" className="font-medium text-primary underline">
-          Go to your messages
-        </Link>
-      </p>
+    <div>
+      <PageHeader
+        title="Page not found"
+        description="The address does not match a page of the portal."
+      />
+      <Link to="/messages" className="text-sm font-medium text-primary underline">
+        Go to your messages
+      </Link>
     </div>
   );
 }

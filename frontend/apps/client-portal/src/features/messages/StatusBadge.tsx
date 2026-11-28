@@ -1,21 +1,19 @@
+import { Badge, type BadgeTone } from '@sms/ui';
 import { statusInfo, type StatusTone } from './status';
 
-const toneClasses: Record<StatusTone, string> = {
-  progress: 'border-info text-info',
-  success: 'border-success text-success',
-  warning: 'border-warning text-warning',
-  danger: 'border-danger text-danger',
+const tones: Record<StatusTone, BadgeTone> = {
+  progress: 'info',
+  success: 'success',
+  warning: 'warning',
+  danger: 'danger',
 };
 
 /** A status shown as icon and text, never colour alone (AGENTS.md §8.9). */
 export function StatusBadge({ status }: { status: string }) {
   const info = statusInfo(status);
   return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-control border bg-surface px-2 py-0.5 text-sm font-medium whitespace-nowrap ${toneClasses[info.tone]}`}
-    >
-      <span aria-hidden="true">{info.icon}</span>
+    <Badge tone={tones[info.tone]} icon={info.icon}>
       {info.label}
-    </span>
+    </Badge>
   );
 }

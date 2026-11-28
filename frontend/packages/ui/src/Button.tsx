@@ -1,7 +1,7 @@
 import type { ComponentPropsWithRef } from 'react';
 import { classNames } from './class-names';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'danger';
+export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'danger-secondary' | 'ghost';
 export type ButtonSize = 'sm' | 'md';
 
 export type ButtonProps = {
@@ -12,14 +12,18 @@ export type ButtonProps = {
 } & ComponentPropsWithRef<'button'>;
 
 const variantClasses: Record<ButtonVariant, string> = {
-  primary: 'bg-primary text-primary-foreground hover:bg-primary-hover',
-  secondary: 'border border-border-strong bg-surface text-text hover:bg-surface-muted',
-  danger: 'bg-danger text-danger-foreground hover:bg-danger-hover',
+  primary: 'bg-primary text-primary-foreground shadow-sm hover:bg-primary-hover',
+  secondary: 'border border-border-strong bg-surface text-text shadow-sm hover:bg-surface-muted',
+  danger: 'bg-danger text-danger-foreground shadow-sm hover:bg-danger-hover',
+  /** A destructive action that opens a confirmation (for example "Revoke" in a table row). */
+  'danger-secondary':
+    'border border-border-strong bg-surface text-danger shadow-sm hover:bg-danger-subtle',
+  ghost: 'text-text-muted hover:bg-surface-muted hover:text-text',
 };
 
 const sizeClasses: Record<ButtonSize, string> = {
   sm: 'min-h-8 px-3 text-sm',
-  md: 'min-h-10 px-4 text-sm',
+  md: 'min-h-9 px-3.5 text-sm',
 };
 
 /**
@@ -43,7 +47,7 @@ export function Button({
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       className={classNames(
-        'inline-flex items-center justify-center gap-2 rounded-control font-medium',
+        'inline-flex items-center justify-center gap-2 rounded-control font-medium whitespace-nowrap transition-colors',
         'disabled:cursor-not-allowed disabled:opacity-60',
         variantClasses[variant],
         sizeClasses[size],

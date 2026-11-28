@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — pending owner review (MFA, MVP roles and API key scopes in §3 updated for owner decisions of 2026-11-26; portal sessions and passwords in §3 for decision log §20, 2026-11-27) | Project owner | 2026-11-27 |
+| Draft — pending owner review (MFA, MVP roles and API key scopes in §3 updated for owner decisions of 2026-11-26; portal sessions and passwords in §3 for decision log §20, 2026-11-27; S-3 status for §21; S-3 and S-8 for G4-7 and G4-8, 2026-11-28) | Project owner | 2026-11-28 |
 
 This baseline sets the minimum security principles for all work. It is **not** a complete security
 program; §11 lists the security engineering still required. Nothing here is legal advice.
@@ -171,12 +171,12 @@ program; §11 lists the security engineering still required. Nothing here is leg
 | - | --------- | ---- |
 | S-1 | Formal threat model (data flows, trust boundaries, STRIDE or similar) | Architecture phase |
 | S-2 | RBAC role and permission design for client and admin portals | Before identity implementation |
-| S-3 | Session, MFA, and API key design details | Client portal sessions and API keys designed and implemented (decision log §19, §20); MFA and admin sessions remain open |
+| S-3 | Session, MFA, and API key design details | Client portal sessions and API keys designed and implemented, including owner-only API key management in the portal with password re-authentication before a key is created (decision log §19, §20, §21, G4-7); MFA, admin sessions and re-authentication for other sensitive actions remain open |
 | S-4 | Data classification and retention schedule (with counsel) | Before storing production data |
 | S-5 | Privacy impact assessment; DPO and NPC obligations (with counsel) | Before production |
 | S-6 | Secret management and key rotation design | Hosting decision |
 | S-7 | Abuse-prevention policy and tooling (KYC, sender ID vetting, content rules) | Before production sending |
-| S-8 | Audit log tamper-evidence design | Before admin features |
+| S-8 | Audit log tamper-evidence design | Before admin features, and before production in any case: API key creation and revocation must be durable audit events; application logs are not a substitute (owner decision G4-8, 2026-11-28) |
 | S-9 | Incident response and breach notification runbooks | Before production |
 | S-10 | Independent penetration test | Before production launch |
 | S-11 | Telco-specific security requirements (from telco checklist) | When telco specs received |

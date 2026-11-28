@@ -83,11 +83,52 @@ test('message submission requires an Idempotency-Key, like the public API', () =
   assert.equal(key.schema.pattern, publicKey.schema.pattern);
 });
 
-test('message operations declare the permission they require', () => {
+test('every operation except the session declares the permission it requires', () => {
   for (const o of operations()) {
     if (o.path === '/portal/v1/session') continue;
-    const want = o.method === 'get' ? 'messages:read' : 'messages:send';
+    const want = o.path.startsWith('/portal/v1/api-keys')
+      ? 'api_keys:manage'
+      : o.method === 'get'
+        ? 'messages:read'
+        : 'messages:send';
     assert.equal(o.op['x-required-permission'], want, o.id);
+  }
+});
+
+test('API key scopes are exactly the public API permissions', () => {
+  const publicPermissions = new Set();
+  for (const item of Object.values(publicSpec.paths)) {
+    for (const method of METHODS) {
+      const permission = item[method]?.['x-required-permission'];
+      if (permission) publicPermissions.add(permission);
+    }
+  }
+  assert.deepEqual([...spec.components.schemas.ApiKeyScope.enum].sort(), [...publicPermissions].sort());
+});
+
+test('API key metadata never contains a secret; only the create response returns the key, uncached', () => {
+  const properties = Object.keys(spec.components.schemas.ApiKey.properties);
+  for (const name of properties) {
+    assert.doesNotMatch(name, /secret|hash|^key$|token|tenant/, `ApiKey property ${name}`);
+  }
+  assert.equal(spec.components.schemas.ApiKeyList.properties.data.items.$ref, '#/components/schemas/ApiKey');
+  const keyBearing = Object.entries(spec.components.schemas)
+    .filter(([, schema]) => schema.properties?.key !== undefined)
+    .map(([name]) => name);
+  assert.deepEqual(keyBearing, ['ApiKeyCreated']);
+  const created = spec.paths['/portal/v1/api-keys'].post.responses['201'];
+  assert.equal(created.content['application/json'].schema.$ref, '#/components/schemas/ApiKeyCreated');
+  assert.deepEqual(created.headers['Cache-Control'].schema.enum, ['no-store']);
+});
+
+test('creating an API key requires re-authentication with the current password', () => {
+  const request = spec.components.schemas.ApiKeyCreateRequest;
+  assert.ok(request.required.includes('current_password'));
+  assert.equal(request.properties.current_password.writeOnly, true);
+  assert.equal(request.properties.current_password.format, 'password');
+  assert.ok(spec.paths['/portal/v1/api-keys'].post.responses['403']);
+  for (const name of ['ApiKey', 'ApiKeyCreated', 'Session']) {
+    assert.ok(!JSON.stringify(spec.components.schemas[name]).includes('password'), `${name} must not contain a password`);
   }
 });
 

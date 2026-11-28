@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/hruizjr/sms/backend/internal/apikey"
 	"github.com/hruizjr/sms/backend/internal/messaging"
 	"github.com/hruizjr/sms/backend/internal/middleware"
 	"github.com/hruizjr/sms/backend/internal/portal"
@@ -35,6 +36,8 @@ type PortalAuthenticator interface {
 	Login(ctx context.Context, email, password string) (portal.Session, error)
 	Authenticate(ctx context.Context, token string) (portal.Principal, error)
 	Logout(ctx context.Context, p portal.Principal) error
+	// Reauthenticate verifies the signed-in user's current password before a sensitive action.
+	Reauthenticate(ctx context.Context, p portal.Principal, password string) error
 }
 
 // PortalMessageService is what the portal needs from the messaging engine (implemented by
@@ -45,11 +48,20 @@ type PortalMessageService interface {
 	ListSenderIDs(ctx context.Context, tenantID tenancy.ID) ([]string, error)
 }
 
+// PortalAPIKeyService is what the portal needs to manage API keys (implemented by apikey.Service;
+// the same service that verifies keys on the public API).
+type PortalAPIKeyService interface {
+	List(ctx context.Context, tenantID tenancy.ID) ([]apikey.Key, error)
+	Create(ctx context.Context, tenantID tenancy.ID, label string, scopes []apikey.Scope) (apikey.Key, string, error)
+	Revoke(ctx context.Context, tenantID tenancy.ID, keyID [16]byte) (apikey.Key, error)
+}
+
 // PortalDeps are the dependencies of the client portal API. When they are set, NewRouter mounts
-// /portal/v1.
+// /portal/v1. All are required.
 type PortalDeps struct {
 	Auth     PortalAuthenticator
 	Messages PortalMessageService
+	APIKeys  PortalAPIKeyService
 }
 
 type portalPrincipalKey struct{}
@@ -64,7 +76,7 @@ func portalPrincipalFrom(ctx context.Context) portal.Principal {
 // session's CSRF token; each handler checks the permission its operation requires. The tenant is
 // taken from the session only.
 func mountPortalAPI(r chi.Router, deps PortalDeps, logger *slog.Logger) {
-	api := &portalAPI{auth: deps.Auth, svc: deps.Messages, logger: logger}
+	api := &portalAPI{auth: deps.Auth, svc: deps.Messages, keys: deps.APIKeys, logger: logger}
 	r.Group(func(r chi.Router) {
 		r.Use(api.requireSession)
 		portalapi.HandlerWithOptions(api, portalapi.ChiServerOptions{
@@ -77,6 +89,7 @@ func mountPortalAPI(r chi.Router, deps PortalDeps, logger *slog.Logger) {
 type portalAPI struct {
 	auth   PortalAuthenticator
 	svc    PortalMessageService
+	keys   PortalAPIKeyService
 	logger *slog.Logger
 }
 

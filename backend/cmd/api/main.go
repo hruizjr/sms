@@ -102,7 +102,9 @@ func run() error {
 
 	// The public API (API keys) and the client portal (sessions) share one messaging engine, so a
 	// portal message gets exactly the same idempotency, dispatch and status handling.
+	// One API key service for both: the portal creates and revokes the keys the public API verifies.
 	messages := messaging.NewService(db, caps)
+	keys := apikey.NewService(db)
 	portalAccounts, err := portal.NewService(db)
 	if err != nil {
 		return err
@@ -114,11 +116,12 @@ func run() error {
 		Database:  db,
 		PublicAPI: &httpserver.PublicAPIDeps{
 			Messages: messages,
-			Auth:     apikey.NewService(db),
+			Auth:     keys,
 		},
 		Portal: &httpserver.PortalDeps{
 			Messages: messages,
 			Auth:     portalAccounts,
+			APIKeys:  keys,
 		},
 	})
 	server := httpserver.NewServer(httpserver.ServerConfig{
