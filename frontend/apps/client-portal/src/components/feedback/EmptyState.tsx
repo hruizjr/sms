@@ -7,26 +7,31 @@ export function EmptyState({
   title,
   children,
   action,
+  bare = false,
 }: {
   icon: IconName;
   title: string;
   children: ReactNode;
   action?: ReactNode;
+  /** Inside a card that already draws the border. */
+  bare?: boolean;
 }) {
   const headingId = useId();
   return (
     <section
       aria-labelledby={headingId}
-      className="flex flex-col items-center rounded-card border border-dashed border-border-strong bg-surface px-6 py-12 text-center"
+      className={`flex flex-col items-center px-6 py-14 text-center ${
+        bare ? '' : 'rounded-card border border-border bg-surface shadow-xs'
+      }`}
     >
-      <span className="flex size-10 items-center justify-center rounded-full bg-surface-muted text-text-muted">
+      <span className="flex size-11 items-center justify-center rounded-full border border-border bg-surface-subtle text-text-muted">
         <Icon name={icon} className="size-5" />
       </span>
-      <h2 id={headingId} className="mt-4 text-sm font-semibold text-text">
+      <h2 id={headingId} className="mt-4 text-base font-semibold text-text">
         {title}
       </h2>
-      <p className="mt-1 max-w-sm text-sm text-text-muted">{children}</p>
-      {action !== undefined && <div className="mt-5">{action}</div>}
+      <p className="mt-1.5 max-w-md text-sm text-text-muted">{children}</p>
+      {action !== undefined && <div className="mt-6">{action}</div>}
     </section>
   );
 }

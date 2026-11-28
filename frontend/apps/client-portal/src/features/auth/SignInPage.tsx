@@ -68,48 +68,52 @@ export function SignInPage({ notice }: { notice?: string }) {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-1 text-center">
-        <h1 className="text-xl font-semibold tracking-tight">Sign in</h1>
-        <p className="text-sm text-text-muted">Send SMS and follow your organization’s messages.</p>
-      </div>
-      {notice !== undefined && <Alert tone="info" title={notice} />}
-      {failure !== undefined && (
-        <Alert tone="error" title="Sign-in failed">
-          {failure}
-        </Alert>
-      )}
       <Card>
-        <form noValidate onSubmit={(e) => void onSubmit(e)} className="space-y-4">
-          <TextField
-            label="Email address"
-            type="email"
-            name="email"
-            autoComplete="username"
-            value={email}
-            onChange={(e) => {
-              setEmail(e.target.value);
-            }}
-            error={errors.email}
-            required
-          />
-          <TextField
-            label="Password"
-            type="password"
-            name="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => {
-              setPassword(e.target.value);
-            }}
-            error={errors.password}
-            required
-          />
-          <Button type="submit" loading={submitting} className="w-full">
-            {submitting ? 'Signing in…' : 'Sign in'}
-          </Button>
-        </form>
+        <div className="space-y-5 sm:p-2">
+          <div className="space-y-1">
+            <h1 className="text-xl font-semibold tracking-tight">Sign in</h1>
+            <p className="text-sm text-text-muted">
+              Send SMS and follow your organization’s messages.
+            </p>
+          </div>
+          {notice !== undefined && <Alert tone="info" title={notice} />}
+          {failure !== undefined && (
+            <Alert tone="error" title="Sign-in failed">
+              {failure}
+            </Alert>
+          )}
+          <form noValidate onSubmit={(e) => void onSubmit(e)} className="space-y-4">
+            <TextField
+              label="Email address"
+              type="email"
+              name="email"
+              autoComplete="username"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+              }}
+              error={errors.email}
+              required
+            />
+            <TextField
+              label="Password"
+              type="password"
+              name="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+              }}
+              error={errors.password}
+              required
+            />
+            <Button type="submit" loading={submitting} className="w-full">
+              {submitting ? 'Signing in…' : 'Sign in'}
+            </Button>
+          </form>
+        </div>
       </Card>
-      <p className="text-center text-xs text-text-muted">
+      <p className="px-2 text-center text-xs text-text-muted">
         Accounts are created by the platform team. There is no self-registration or password reset
         by email yet; contact your administrator if you cannot sign in.
       </p>

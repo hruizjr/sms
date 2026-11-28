@@ -1,4 +1,4 @@
-import { Button, Dialog } from '@sms/ui';
+import { Button, Dialog, Icon } from '@sms/ui';
 import { useId, useRef, useState, type SyntheticEvent } from 'react';
 import { Alert } from '../../components/feedback/Alert';
 import { TextField } from '../../components/form/Field';
@@ -183,7 +183,11 @@ export function CreateApiKeyDialog({
             </p>
           )}
         </fieldset>
-        <div className="border-t border-border pt-4">
+        <div className="space-y-3 rounded-control border border-border bg-surface-subtle p-4">
+          <p className="flex items-center gap-2 text-sm font-medium text-text">
+            <Icon name="lock" className="text-text-muted" />
+            Confirm it’s you
+          </p>
           <TextField
             label="Your current password"
             type="password"

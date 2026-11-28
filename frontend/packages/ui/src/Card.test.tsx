@@ -42,3 +42,20 @@ describe('Card header', () => {
     expect(screen.getByRole('button', { name: 'New' })).toBeInTheDocument();
   });
 });
+
+describe('Card footer', () => {
+  it('shows a footer row after the content', () => {
+    render(
+      <Card heading="Messages" footer="Showing 2 messages">
+        Rows
+      </Card>,
+    );
+    const region = screen.getByRole('region', { name: 'Messages' });
+    expect(region.lastElementChild).toHaveTextContent('Showing 2 messages');
+  });
+
+  it('shows a footer on a card without a heading', () => {
+    render(<Card footer="Note">Content</Card>);
+    expect(screen.getByText('Note')).toBeInTheDocument();
+  });
+});

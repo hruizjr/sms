@@ -1,7 +1,8 @@
 import { Badge, type BadgeTone } from '@sms/ui';
 import { statusInfo, type StatusTone } from './status';
 
-const tones: Record<StatusTone, BadgeTone> = {
+/** The badge tone of each status tone (shared with the status panel and history). */
+export const STATUS_BADGE_TONES: Record<StatusTone, BadgeTone> = {
   progress: 'info',
   success: 'success',
   warning: 'warning',
@@ -12,7 +13,7 @@ const tones: Record<StatusTone, BadgeTone> = {
 export function StatusBadge({ status }: { status: string }) {
   const info = statusInfo(status);
   return (
-    <Badge tone={tones[info.tone]} icon={info.icon}>
+    <Badge tone={STATUS_BADGE_TONES[info.tone]} icon={info.icon}>
       {info.label}
     </Badge>
   );

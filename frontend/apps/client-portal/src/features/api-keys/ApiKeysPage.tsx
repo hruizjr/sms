@@ -72,6 +72,15 @@ function ApiKeys() {
     createButton.current?.focus();
   }, [created]);
 
+  // After a revoke, the row's Revoke button is gone: move focus to "Create API key" instead of
+  // leaving it on the page body.
+  const focusAfterRevoke = useRef(false);
+  useEffect(() => {
+    if (!focusAfterRevoke.current || revoking !== undefined) return;
+    focusAfterRevoke.current = false;
+    createButton.current?.focus();
+  }, [revoking]);
+
   useEffect(() => {
     let active = true;
     api.listApiKeys().then(
@@ -137,7 +146,9 @@ function ApiKeys() {
 
       {notice !== undefined && <Alert tone="success" title={notice} />}
 
-      {state.status === 'loading' && <Skeleton lines={4} label="Loading API keys…" />}
+      {state.status === 'loading' && (
+        <Skeleton variant="table" lines={3} label="Loading API keys…" />
+      )}
 
       {state.status === 'error' && (
         <Alert
@@ -166,7 +177,7 @@ function ApiKeys() {
           description={`${String(state.keys.filter((k) => k.status === 'active').length)} active · ${String(state.keys.filter((k) => k.status === 'revoked').length)} revoked`}
           actions={openCreate}
           padding="none"
-          className="overflow-hidden"
+          footer="The platform does not record when a key was last used. Revoke keys you no longer need."
         >
           <KeyTable
             keys={state.keys}
@@ -175,9 +186,6 @@ function ApiKeys() {
               setRevoking(key);
             }}
           />
-          <p className="border-t border-border bg-surface-subtle px-4 py-3 text-xs text-text-muted sm:px-5">
-            The platform does not record when a key was last used. Revoke keys you no longer need.
-          </p>
         </Card>
       )}
 
@@ -199,6 +207,7 @@ function ApiKeys() {
           setRevoking(undefined);
         }}
         onRevoked={(key) => {
+          focusAfterRevoke.current = true;
           setRevoking(undefined);
           upsert(key);
           setNotice(`API key “${key.name}” was revoked.`);
@@ -223,7 +232,7 @@ function KeyTable({ keys, onRevoke }: { keys: ApiKey[]; onRevoke: (key: ApiKey) 
       <caption className="sr-only">API keys, active keys first</caption>
       <thead className="hidden border-b border-border bg-surface-subtle text-xs text-text-muted xl:table-header-group">
         <tr>
-          <th scope="col" className="px-5 py-2.5 font-medium">
+          <th scope="col" className="py-2.5 pr-4 pl-5 font-medium">
             Name
           </th>
           <th scope="col" className="px-4 py-2.5 font-medium">
@@ -235,20 +244,20 @@ function KeyTable({ keys, onRevoke }: { keys: ApiKey[]; onRevoke: (key: ApiKey) 
           <th scope="col" className="px-4 py-2.5 font-medium">
             Status
           </th>
-          <th scope="col" className="px-5 py-2.5 text-right font-medium">
+          <th scope="col" className="py-2.5 pr-5 pl-4 text-right font-medium">
             <span className="sr-only">Actions</span>
           </th>
         </tr>
       </thead>
-      <tbody className="divide-y divide-border">
+      <tbody>
         {keys.map((key) => {
           const revoked = key.status === 'revoked';
           return (
             <tr
               key={key.id}
-              className="grid grid-cols-2 gap-x-3 gap-y-2 px-4 py-4 transition-colors hover:bg-surface-subtle sm:px-5 xl:table-row xl:p-0"
+              className="grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border px-4 py-4 transition-colors first:border-t-0 hover:bg-surface-subtle sm:px-5 xl:table-row xl:p-0"
             >
-              <td className="order-1 min-w-0 xl:px-5 xl:py-3">
+              <td className="order-1 min-w-0 xl:py-3 xl:pr-4 xl:pl-5">
                 <p className={`truncate font-medium ${revoked ? 'text-text-muted' : 'text-text'}`}>
                   {key.name}
                 </p>
@@ -271,7 +280,7 @@ function KeyTable({ keys, onRevoke }: { keys: ApiKey[]; onRevoke: (key: ApiKey) 
                   ({key.scopes.map((scope) => SCOPE_LABELS[scope].title).join(', ')})
                 </span>
               </td>
-              <td className="order-4 col-span-2 text-xs text-text-muted xl:px-4 xl:py-3 xl:whitespace-nowrap">
+              <td className="order-4 col-span-2 text-xs text-text-muted tabular-nums xl:px-4 xl:py-3 xl:text-sm xl:whitespace-nowrap">
                 <span className="xl:hidden">Created </span>
                 {formatDateTime(key.created_at, 'short')}
                 {key.revoked_at !== null && (
@@ -283,7 +292,7 @@ function KeyTable({ keys, onRevoke }: { keys: ApiKey[]; onRevoke: (key: ApiKey) 
               </td>
               <td className="order-2 self-start justify-self-end xl:px-4 xl:py-3">
                 {revoked ? (
-                  <span className="flex flex-col gap-0.5">
+                  <span className="flex flex-col items-start gap-0.5">
                     <Badge tone="neutral" icon="x">
                       Revoked
                     </Badge>
@@ -300,7 +309,7 @@ function KeyTable({ keys, onRevoke }: { keys: ApiKey[]; onRevoke: (key: ApiKey) 
                 )}
               </td>
               <td
-                className={`order-5 col-span-2 xl:px-5 xl:py-3 xl:text-right ${revoked ? 'hidden xl:table-cell' : ''}`}
+                className={`order-5 col-span-2 xl:py-3 xl:pr-5 xl:pl-4 xl:text-right ${revoked ? 'hidden xl:table-cell' : ''}`}
               >
                 {!revoked && (
                   <Button

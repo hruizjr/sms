@@ -1679,3 +1679,27 @@ pull request left open.
 
 **Out of scope (unchanged):** real SMPP or telco adapters, real credentials, third-party aggregators, billing,
 pricing, production deployment, Kafka, RabbitMQ and Redis. The simulator remains the only provider.
+
+---
+
+## 22. Phase 4 Group 5 — enterprise client portal UI (2026-11-28)
+
+On 2026-11-28, after Phase 4 Group 4 was merged, the owner approved **Phase 4 Group 5**: a refinement of the existing
+client portal into an enterprise-grade SaaS console (application shell and navigation, page headers, typography,
+spacing and surfaces, the messages list, message details, the compose and review flow, API key management, and
+shared components and tokens), as one Draft pull request. It is a **frontend-only** group: routes, API contracts,
+authentication, CSRF protection, role permissions, backend behaviour and database schemas are unchanged, and no
+dependency or UI library is added. **No ADR status changed.** G5-1 to G5-5 are the engineering decisions made within
+the approved scope, listed so they can be reviewed.
+
+| # | Decision |
+| - | -------- |
+| G5-1 | **Tokens refined, not rebranded.** Cooler neutral surfaces and borders, a clearer primary blue, and navigation tokens (`nav-*`) for a dark sidebar, all `#rrggbb` with WCAG 2.2 AA contrast tests (4.5:1 text, 3:1 focus and boundaries), including a separate focus colour on the dark navigation. Still the light theme of owner decision F7; branding remains open |
+| G5-2 | **Application shell.** A fixed dark sidebar from 1024 px (organization, navigation by permission, account and sign-out). Below 1024 px a top bar opens the same navigation in a modal panel on the native `<dialog>` (focus kept inside, Escape and outside click close it, focus returns to the menu button, closes after navigation). Pages use breadcrumbs instead of a back link |
+| G5-3 | **Messages list density.** The status filter and refresh sit in a toolbar inside the table card, the loaded count and "Load more" in its footer. The table is used from 768 px (stacked rows below), with segments and last status update from 1280 px; the whole row opens the message (the message ID remains the row's link). No summary counts or charts are shown, because the API returns pages, not totals |
+| G5-4 | **Details and compose.** Message details show a status panel (label, explanation, reason), a label–value list, a copy action for the message ID and a status history with status icons and the current status marked. Compose shows its two steps (compose, review and send) and the review includes the message text as entered; the idempotency, confirmation and error handling of Group 3 are unchanged |
+| G5-5 | **Fixes found in browser checks.** After a key is revoked, focus moves to "Create API key" instead of being lost with the removed row button; table rows draw their own separators so that a row moved after a revoke cannot show a dark border; the API key permission and password re-authentication controls are grouped and labelled as before |
+
+**Not implemented (out of scope, unchanged):** new features or endpoints, billing or cost display, analytics, user
+management, admin portal, dark mode, new dependencies. G4-6 (last-used tracking) and G4-8 (durable audit log) remain
+open.

@@ -1,12 +1,14 @@
-import { Button, Card } from '@sms/ui';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Button, Card, Icon } from '@sms/ui';
+import { useCallback, useEffect, useState } from 'react';
+import { CopyButton } from '../../components/actions/CopyButton';
+import { DescriptionItem, DescriptionList } from '../../components/data/DescriptionList';
 import { Alert } from '../../components/feedback/Alert';
 import { Skeleton } from '../../components/feedback/Skeleton';
 import { ApiError, NetworkError, type MessageDetail } from '../../lib/api/client';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { useSession } from '../auth/session';
 import { StatusBadge } from './StatusBadge';
-import { encodingLabel, formatDateTime, statusInfo } from './status';
+import { encodingLabel, formatDateTime, statusInfo, type StatusTone } from './status';
 
 /** While a message is in progress, its status is refreshed at this interval. */
 export const REFRESH_INTERVAL_MS = 3000;
@@ -72,13 +74,14 @@ export function MessageDetailPage({ id, justSent = false }: { id: string; justSe
   return (
     <div>
       <PageHeader
-        back={{ to: '/messages', label: 'Messages' }}
+        breadcrumbs={[{ to: '/messages', label: 'Messages' }]}
         title="Message details"
         meta={state.status === 'loaded' ? <StatusBadge status={state.message.status} /> : undefined}
         description={
-          state.status === 'loaded' ? (
-            <span className="font-mono text-xs break-all">{state.message.id}</span>
-          ) : undefined
+          <span className="flex min-w-0 flex-wrap items-center gap-x-1 font-mono text-xs break-all">
+            {id}
+            {state.status === 'loaded' && <CopyButton value={id} label="Copy message ID" />}
+          </span>
         }
       />
 
@@ -118,18 +121,40 @@ export function MessageDetailPage({ id, justSent = false }: { id: string; justSe
   );
 }
 
+const PANEL_TONES: Record<StatusTone, { panel: string; icon: string }> = {
+  progress: { panel: 'border-info/30 bg-info-subtle', icon: 'text-info' },
+  success: { panel: 'border-success/30 bg-success-subtle', icon: 'text-success' },
+  warning: { panel: 'border-warning/30 bg-warning-subtle', icon: 'text-warning' },
+  danger: { panel: 'border-danger/30 bg-danger-subtle', icon: 'text-danger' },
+};
+
+const DOT_TONES: Record<StatusTone, string> = {
+  progress: 'border-info/30 bg-info-subtle text-info',
+  success: 'border-success/30 bg-success-subtle text-success',
+  warning: 'border-warning/30 bg-warning-subtle text-warning',
+  danger: 'border-danger/30 bg-danger-subtle text-danger',
+};
+
 function Details({ message }: { message: MessageDetail }) {
   const info = statusInfo(message.status);
+  const tone = PANEL_TONES[info.tone];
   const history = message.status_history;
   return (
-    <div className="grid gap-6 lg:grid-cols-3">
-      <Card heading="Summary" className="lg:col-span-2">
-        <div className="mb-5 flex gap-3 rounded-control border border-border bg-surface-subtle p-3">
-          <StatusBadge status={message.status} />
-          <div className="min-w-0 space-y-1 text-sm">
+    <div className="grid items-start gap-6 lg:grid-cols-3">
+      <Card
+        heading="Summary"
+        className="lg:col-span-2"
+        footer="The message text is not shown: the platform does not display message content after submission."
+      >
+        <div className={`mb-5 flex gap-3 rounded-control border p-4 ${tone.panel}`}>
+          <Icon name={info.icon} className={`mt-0.5 size-5 ${tone.icon}`} />
+          <div className="min-w-0 space-y-1 text-sm text-text">
+            <p className="font-semibold">{info.label}</p>
             <p>{info.explanation}</p>
             {message.status_reason !== null && (
-              <p className="text-text-muted">Reason: {message.status_reason.description}</p>
+              <p>
+                <span className="font-medium">Reason:</span> {message.status_reason.description}
+              </p>
             )}
             {message.status_category === 'in_progress' && (
               <p className="flex items-center gap-1.5 text-text-muted">
@@ -139,73 +164,72 @@ function Details({ message }: { message: MessageDetail }) {
             )}
           </div>
         </div>
-        <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
-          <Row term="Recipient">
-            <span className="tabular-nums">{message.to}</span>
-          </Row>
-          <Row term="Sender ID">{message.sender_id}</Row>
-          <Row term="Message ID" wide>
+        <DescriptionList>
+          <DescriptionItem term="Recipient">
+            <span className="font-medium tabular-nums">{message.to}</span>
+          </DescriptionItem>
+          <DescriptionItem term="Sender ID">{message.sender_id}</DescriptionItem>
+          <DescriptionItem term="Message ID">
             <span className="font-mono text-xs break-all">{message.id}</span>
-          </Row>
-          <Row term="Encoding">{encodingLabel(message.encoding)}</Row>
-          <Row term="Segments">{message.segment_count}</Row>
-          <Row term="Submitted">{formatDateTime(message.accepted_at)}</Row>
-          <Row term="Status updated">{formatDateTime(message.status_updated_at)}</Row>
-        </dl>
-        <p className="mt-5 border-t border-border pt-4 text-xs text-text-muted">
-          The message text is not shown: the platform does not display message content after
-          submission.
-        </p>
+          </DescriptionItem>
+          <DescriptionItem term="Encoding">{encodingLabel(message.encoding)}</DescriptionItem>
+          <DescriptionItem term="Segments">
+            <span className="tabular-nums">{message.segment_count}</span>
+          </DescriptionItem>
+          <DescriptionItem term="Submitted">
+            <span className="tabular-nums">{formatDateTime(message.accepted_at)}</span>
+          </DescriptionItem>
+          <DescriptionItem term="Status updated">
+            <span className="tabular-nums">{formatDateTime(message.status_updated_at)}</span>
+          </DescriptionItem>
+        </DescriptionList>
       </Card>
-      <Card heading="Status history" description="In the order the changes happened">
-        <ol className="space-y-0">
-          {history.map((change, i) => (
-            <li
-              key={`${change.status}-${change.occurred_at}-${String(i)}`}
-              className="relative flex gap-3 pb-5 last:pb-0"
-            >
-              {i < history.length - 1 && (
-                <span
-                  aria-hidden="true"
-                  className="absolute top-5 bottom-0 left-1 w-px bg-border"
-                />
-              )}
-              <span
-                aria-hidden="true"
-                className={`relative mt-1.5 size-2.5 shrink-0 rounded-full border-2 ${
-                  i === history.length - 1
-                    ? 'border-primary bg-primary'
-                    : 'border-border-strong bg-surface'
-                }`}
-              />
-              <div className="min-w-0 space-y-1">
-                <StatusBadge status={change.status} />
-                <p className="text-xs text-text-muted">{formatDateTime(change.occurred_at)}</p>
-                {change.status_reason !== null && (
-                  <p className="text-sm text-text-muted">{change.status_reason.description}</p>
-                )}
-              </div>
-            </li>
-          ))}
-        </ol>
+      <Card heading="Status history" description="Oldest first, in the order the changes happened">
+        {history.length === 0 ? (
+          <p className="text-text-muted">No status changes recorded yet.</p>
+        ) : (
+          <ol>
+            {history.map((change, i) => {
+              const changeInfo = statusInfo(change.status);
+              return (
+                <li
+                  key={`${change.status}-${change.occurred_at}-${String(i)}`}
+                  className="relative flex gap-3 pb-5 last:pb-0"
+                >
+                  {i < history.length - 1 && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute top-8 bottom-1 left-3.5 w-px bg-border"
+                    />
+                  )}
+                  <span
+                    aria-hidden="true"
+                    className={`relative flex size-7 shrink-0 items-center justify-center rounded-full border ${DOT_TONES[changeInfo.tone]}`}
+                  >
+                    <Icon name={changeInfo.icon} className="size-3.5" />
+                  </span>
+                  <div className="min-w-0 pt-0.5">
+                    <p className="text-sm font-medium text-text">
+                      {changeInfo.label}
+                      {i === history.length - 1 && (
+                        <span className="ml-2 text-xs font-normal text-text-muted">Current</span>
+                      )}
+                    </p>
+                    <p className="text-xs text-text-muted tabular-nums">
+                      {formatDateTime(change.occurred_at)}
+                    </p>
+                    {change.status_reason !== null && (
+                      <p className="mt-1 text-sm text-text-muted">
+                        {change.status_reason.description}
+                      </p>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        )}
       </Card>
-    </div>
-  );
-}
-
-function Row({
-  term,
-  wide = false,
-  children,
-}: {
-  term: string;
-  wide?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div className={wide ? 'sm:col-span-2' : undefined}>
-      <dt className="text-xs font-medium text-text-muted">{term}</dt>
-      <dd className="mt-1 text-sm text-text">{children}</dd>
     </div>
   );
 }

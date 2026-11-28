@@ -7,7 +7,7 @@ import { useId, type ComponentPropsWithoutRef, type ReactNode } from 'react';
  */
 
 const controlClasses =
-  'block w-full rounded-control border bg-surface px-3 py-2 text-base text-text shadow-sm transition-colors placeholder:text-text-muted hover:border-text-muted focus:border-focus disabled:cursor-not-allowed disabled:bg-surface-subtle disabled:text-text-muted sm:text-sm';
+  'block min-h-9 w-full rounded-control border bg-surface px-3 py-2 text-base text-text shadow-xs transition-colors placeholder:text-text-muted hover:border-text-muted focus:border-focus disabled:cursor-not-allowed disabled:bg-surface-subtle disabled:text-text-muted sm:text-sm';
 
 type FieldFrameProps = {
   label: string;
