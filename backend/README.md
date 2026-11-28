@@ -290,8 +290,11 @@ portal session never opens `/v1`, and an API key never opens `/portal/v1`.
 - **Permissions:** Owner and Sender may read and send; Viewer may only read; only the Owner manages API keys
   (`api_keys:manage`, MVP-03). Checked by every handler; the tenant always comes from the session.
 - **API keys** (Phase 4 Group 4, decision log §21): the portal calls the same `apikey.Service` as `smsctl` and the
-  public API. Only the hash of a key's secret is stored; the full key is returned once (`Cache-Control: no-store`)
-  and never logged. Revocation applies from the next public API request. Last use is not recorded.
+  public API. Creating a key requires the owner's current password (`current_password`; `portal.Service.Reauthenticate`,
+  owner decision G4-7): failures count toward the sign-in lockout and receive `403 reauthentication-failed`, and no
+  key is created. Only the hash of a key's secret is stored; the full key is returned once (`Cache-Control: no-store`)
+  and never logged, nor is the password. Revocation applies from the next public API request. Last use is not
+  recorded yet (G4-6); a durable audit log of key events is required before production (G4-8).
 - **Messages:** submission calls the same `messaging.Service.Accept` as `POST /v1/messages` (same idempotency
   records, dispatcher, simulator and history). The detail view returns the customer-visible status history only.
 

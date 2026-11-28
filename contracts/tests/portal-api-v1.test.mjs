@@ -121,6 +121,17 @@ test('API key metadata never contains a secret; only the create response returns
   assert.deepEqual(created.headers['Cache-Control'].schema.enum, ['no-store']);
 });
 
+test('creating an API key requires re-authentication with the current password', () => {
+  const request = spec.components.schemas.ApiKeyCreateRequest;
+  assert.ok(request.required.includes('current_password'));
+  assert.equal(request.properties.current_password.writeOnly, true);
+  assert.equal(request.properties.current_password.format, 'password');
+  assert.ok(spec.paths['/portal/v1/api-keys'].post.responses['403']);
+  for (const name of ['ApiKey', 'ApiKeyCreated', 'Session']) {
+    assert.ok(!JSON.stringify(spec.components.schemas[name]).includes('password'), `${name} must not contain a password`);
+  }
+});
+
 test('no request lets the browser choose a tenant', () => {
   for (const o of operations()) {
     for (const p of (o.op.parameters ?? []).map(resolve)) {

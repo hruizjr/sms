@@ -42,7 +42,8 @@ info:
     An organization's owners manage the API keys of the public API (MVP-03; permission
     `api_keys:manage`). Keys are created and verified by the same key service as the local administration
     tool: only a hash of the key's secret is stored, so a key's full value cannot be shown again after
-    creation. Revocation takes effect for the next public API request.
+    creation. Creating a key requires the owner's current password (re-authentication, G4-7).
+    Revocation takes effect for the next public API request.
 
     ## Conventions
 
@@ -378,8 +379,12 @@ paths:
       summary: Create an API key
       description: |
         Creates an API key of the organization with a name and the public API permissions (scopes) it
-        grants. The response contains the full key (`key`) **once**: the platform stores only a hash of
-        its secret and can never return it again. Requires `api_keys:manage`.
+        grants. The owner must re-enter their current password (`current_password`, owner decision G4-7):
+        a wrong password, or an account that is temporarily locked, receives `403`
+        (`reauthentication-failed`) and no key is created. Failed attempts count toward the same account
+        lockout as failed sign-ins. The password is never stored or logged. The response contains the
+        full key (`key`) **once**: the platform stores only a hash of its secret and can never return it
+        again. Requires `api_keys:manage`.
       x-required-permission: api_keys:manage
       parameters:
         - $ref: '#/components/parameters/RequestId'
@@ -594,7 +599,9 @@ components:
     Forbidden:
       description: |
         Refused: the CSRF token is missing or wrong (`csrf-token-invalid`), the user's role lacks the
-        permission (`forbidden`), or the organization is not active (`account-not-active`).
+        permission (`forbidden`), the organization is not active (`account-not-active`), or the current
+        password given to confirm the action is wrong or the account is temporarily locked
+        (`reauthentication-failed`).
       headers:
         X-Request-ID:
           $ref: '#/components/headers/XRequestID'
@@ -1007,7 +1014,7 @@ components:
     ApiKeyCreateRequest:
       type: object
       additionalProperties: false
-      required: [name, scopes]
+      required: [name, scopes, current_password]
       properties:
         name:
           type: string
@@ -1022,6 +1029,15 @@ components:
           uniqueItems: true
           items:
             $ref: '#/components/schemas/ApiKeyScope'
+        current_password:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 1024
+          writeOnly: true
+          description: |
+            The signed-in owner's current password, to confirm the action (re-authentication). Never
+            stored or logged.
     ApiKeyCreated:
       type: object
       required: [api_key, key]

@@ -129,6 +129,9 @@ var (
 	ErrEmailTaken = errors.New("a portal user with this email address already exists")
 	// ErrUserNotFound: no such portal user of the tenant.
 	ErrUserNotFound = errors.New("portal user not found")
+	// ErrReauthenticationFailed: the current password given to confirm a sensitive action is wrong,
+	// or the account is temporarily locked. The cause is not distinguished.
+	ErrReauthenticationFailed = errors.New("re-authentication failed")
 )
 
 const (
@@ -332,6 +335,72 @@ func (s *Service) RevokeUserSessions(ctx context.Context, tenantID tenancy.ID, e
 		return 0, fmt.Errorf("revoke portal sessions: %w", err)
 	}
 	return n, nil
+}
+
+// Reauthenticate verifies the current password of the signed-in user p before a sensitive action,
+// such as creating an API key (owner decision G4-7). The password is checked against the user's
+// tenant-owned credentials and is never stored or logged. Failed attempts count toward the account
+// lockout exactly like failed sign-ins (Policy.MaxFailures, Policy.LockDuration); while the account
+// is locked every attempt fails and is not counted. A success clears the failure count. It returns
+// ErrReauthenticationFailed for a wrong password or a locked account.
+func (s *Service) Reauthenticate(ctx context.Context, p Principal, password string) error {
+	if len(password) > MaxPasswordBytes {
+		return s.failReauthentication(ctx, password)
+	}
+	userID := pgUUID(p.UserID)
+	var cred sqlcgen.GetPortalUserCredentialRow
+	err := s.db.InTenantTx(ctx, p.TenantID, func(tx pgx.Tx) error {
+		var err error
+		cred, err = sqlcgen.New(tx).GetPortalUserCredential(ctx, sqlcgen.GetPortalUserCredentialParams{TenantID: pgUUID(p.TenantID), ID: userID})
+		return err
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return s.failReauthentication(ctx, password)
+	}
+	if err != nil {
+		return fmt.Errorf("portal re-authentication: %w", err)
+	}
+
+	now := s.now()
+	if cred.LockedUntil != nil && cred.LockedUntil.After(now) {
+		return s.failReauthentication(ctx, password)
+	}
+	ok, err := s.hasher.verify(ctx, password, cred.PasswordHash)
+	if err != nil {
+		return fmt.Errorf("portal re-authentication: verify password: %w", err)
+	}
+	err = s.db.InTenantTx(ctx, p.TenantID, func(tx pgx.Tx) error {
+		q := sqlcgen.New(tx)
+		if !ok {
+			_, err := q.RecordFailedLogin(ctx, sqlcgen.RecordFailedLoginParams{
+				Now: now, MaxFailures: int32(s.policy.MaxFailures), LockUntil: now.Add(s.policy.LockDuration), //nolint:gosec // small configured value
+				TenantID: pgUUID(p.TenantID), ID: userID,
+			})
+			return err
+		}
+		if cred.FailedLoginCount == 0 {
+			return nil
+		}
+		// Clears the count of earlier failures (the account is not locked here).
+		_, err := q.UnlockPortalUser(ctx, sqlcgen.UnlockPortalUserParams{TenantID: pgUUID(p.TenantID), ID: userID, Now: now})
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("portal re-authentication: record result: %w", err)
+	}
+	if !ok {
+		return ErrReauthenticationFailed
+	}
+	return nil
+}
+
+// failReauthentication spends the same hashing work as a real check and returns
+// ErrReauthenticationFailed.
+func (s *Service) failReauthentication(ctx context.Context, password string) error {
+	if err := s.fail(ctx, password); !errors.Is(err, ErrInvalidCredentials) {
+		return err
+	}
+	return ErrReauthenticationFailed
 }
 
 // Unlock clears the lockout of the user of tenantID with email.

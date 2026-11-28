@@ -14,7 +14,7 @@ Current contents (Phase 3 Group 3; portal API added in Phase 4 Group 3 and exten
 | Path | Contents |
 | ---- | -------- |
 | `openapi/public-api-v1.yaml` | **Draft** public developer API v1: message submission and status (implemented in Phase 4 Group 2, simulator provider only) |
-| `openapi/portal-api-v1.yaml` | **Draft** client portal API v1 (`/portal/v1`): session sign-in and sign-out, the organization's messages, single-SMS submission, segment estimate, and (Phase 4 Group 4) owner-only API key management: list, create (full key returned once), revoke. Cookie session plus CSRF token; used only by the platform's own client portal (decision log §20, §21) |
+| `openapi/portal-api-v1.yaml` | **Draft** client portal API v1 (`/portal/v1`): session sign-in and sign-out, the organization's messages, single-SMS submission, segment estimate, and (Phase 4 Group 4) owner-only API key management: list, create (with the owner's current password; full key returned once), revoke. Cookie session plus CSRF token; used only by the platform's own client portal (decision log §20, §21) |
 | `openapi/README.md` | Semantics of the public API, status reference, problem types, and open owner decisions |
 | `tests/` | Contract tests (Node.js built-in test runner, no extra dependencies) |
 | `redocly.yaml` | OpenAPI lint rules (`@redocly/cli`, approved in decision log §7.2) |

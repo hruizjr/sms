@@ -213,7 +213,8 @@ The Vite development server forwards `/healthz`, `/readyz` and the portal API (`
 `127.0.0.1:8080`, so the portal and the API share one origin. The public API (`/v1`) is not forwarded.
 
 **API keys** (Phase 4 Group 4): signed in as an `owner`, open **API keys**, choose **Create API key**, give it a
-name and permissions, and copy the key from the one-time display (it cannot be shown again). Try it against the
+name and permissions, confirm with your current password, and copy the key from the one-time display (it cannot be
+shown again). Wrong passwords count toward the five-attempt sign-in lockout. Try it against the
 public API on `http://127.0.0.1:8080/v1/messages` with the `curl` example on that page (replace the placeholder host).
 **Revoke** asks for confirmation; the public API then refuses the key (`401`). Senders and viewers cannot manage keys.
 

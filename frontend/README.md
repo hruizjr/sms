@@ -16,7 +16,7 @@ Phase 4 Group 3 added the first working **client portal**
 Phase 4 Group 4 redesigned the portal and added **API keys** for organization owners
 ([decision log §21](../docs/engineering/decision-log.md#21-phase-4-group-4--enterprise-client-portal-and-api-key-management-2026-11-27)):
 a sidebar (menu button below 1024 px), one page header and status badge style, responsive tables, and an API keys
-page to list, create (name and permissions) and revoke keys. A new key is shown **once**, held in memory only, with a
+page to list, create (name, permissions and the owner's current password) and revoke keys. A new key is shown **once**, held in memory only, with a
 copy button and a `curl` example that uses a placeholder, never the key.
 
 Not here yet, each needing separate owner approval: an admin portal; billing or cost display; user or sender ID

@@ -39,6 +39,12 @@ async function openCreateDialog() {
   return screen.findByRole('dialog', { name: 'Create API key' });
 }
 
+const PASSWORD = 'owner password for tests';
+
+function typePassword(dialog: HTMLElement, value = PASSWORD) {
+  fireEvent.change(within(dialog).getByLabelText('Your current password'), { target: { value } });
+}
+
 async function createKey(handler: Handler) {
   const result = renderApp('/api-keys', handler);
   const dialog = await openCreateDialog();
@@ -46,6 +52,7 @@ async function createKey(handler: Handler) {
     target: { value: '  Billing system ' },
   });
   fireEvent.click(within(dialog).getByRole('checkbox', { name: /Read messages/ }));
+  typePassword(dialog);
   fireEvent.click(within(dialog).getByRole('button', { name: 'Create key' }));
   await screen.findByRole('region', { name: 'API key “Billing system” created' });
   // The panel moves focus to its heading in an effect after it is mounted.
@@ -117,7 +124,7 @@ describe('API keys page', () => {
     expect(screen.getByText(/does not record when a key was last used/)).toBeInTheDocument();
   });
 
-  it('validates the name and permissions before creating', async () => {
+  it('validates the name, permissions and current password before creating', async () => {
     const { transport } = renderApp('/api-keys', signedIn('owner', { [LIST]: () => keys() }));
     const dialog = await openCreateDialog();
     expect(within(dialog).getByLabelText('Name')).toHaveFocus();
@@ -126,7 +133,12 @@ describe('API keys page', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create key' }));
     expect(within(dialog).getByText('Enter a name for the key.')).toBeInTheDocument();
     expect(within(dialog).getByText('Choose at least one permission.')).toBeInTheDocument();
+    expect(within(dialog).getByText('Enter your current password to confirm.')).toBeInTheDocument();
     expect(within(dialog).getByLabelText('Name')).toHaveAttribute('aria-invalid', 'true');
+    expect(within(dialog).getByLabelText('Your current password')).toHaveAttribute(
+      'autocomplete',
+      'current-password',
+    );
     expect(transport.calls.filter((c) => c.method === 'POST')).toHaveLength(0);
   });
 
@@ -147,6 +159,7 @@ describe('API keys page', () => {
       target: { value: '  Billing system ' },
     });
     fireEvent.click(within(dialog).getByRole('checkbox', { name: /Read messages/ }));
+    typePassword(dialog);
     const submit = within(dialog).getByRole('button', { name: 'Create key' });
     fireEvent.click(submit);
     fireEvent.click(submit);
@@ -160,7 +173,7 @@ describe('API keys page', () => {
     expect(posts[0]).toMatchObject({
       path: '/portal/v1/api-keys',
       headers: { 'X-CSRF-Token': CSRF },
-      body: { name: 'Billing system', scopes: ['messages:send'] },
+      body: { name: 'Billing system', scopes: ['messages:send'], current_password: PASSWORD },
     });
 
     const panel = await screen.findByRole('region', { name: 'API key “Billing system” created' });
@@ -231,10 +244,39 @@ describe('API keys page', () => {
     );
     const dialog = await openCreateDialog();
     fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'x' } });
+    typePassword(dialog);
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create key' }));
     expect(await within(dialog).findByText('Server says no.')).toBeInTheDocument();
     expect(within(dialog).getByRole('alert')).toHaveTextContent('Check the highlighted fields.');
   });
+
+  /* eslint-disable no-restricted-properties -- this test reads browser storage to prove the password is never written to it */
+  it('shows no key when the password confirmation fails, and clears the password', async () => {
+    const { transport } = renderApp(
+      '/api-keys',
+      signedIn('owner', {
+        [LIST]: () => keys(),
+        [CREATE]: () => problem(403, 'reauthentication-failed'),
+      }),
+    );
+    const dialog = await openCreateDialog();
+    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Billing' } });
+    typePassword(dialog, 'not my password');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create key' }));
+    expect(await within(dialog).findByText(/password is incorrect/)).toBeInTheDocument();
+    const field = within(dialog).getByLabelText('Your current password');
+    expect(field).toHaveValue('');
+    expect(field).toHaveAttribute('aria-invalid', 'true');
+    // Still signed in (a 403 is not a session end), the dialog stays open, and no key is shown.
+    expect(screen.getByRole('dialog', { name: 'Create API key' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Your new API key')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Sign in' })).not.toBeInTheDocument();
+    expect(transport.calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+    expect(window.localStorage.length).toBe(0);
+    expect(window.sessionStorage.length).toBe(0);
+    expect(document.body.innerHTML).not.toContain('not my password');
+  });
+  /* eslint-enable no-restricted-properties */
 
   it('asks for confirmation before revoking, and can be cancelled', async () => {
     const { transport } = renderApp(

@@ -36,6 +36,8 @@ type PortalAuthenticator interface {
 	Login(ctx context.Context, email, password string) (portal.Session, error)
 	Authenticate(ctx context.Context, token string) (portal.Principal, error)
 	Logout(ctx context.Context, p portal.Principal) error
+	// Reauthenticate verifies the signed-in user's current password before a sensitive action.
+	Reauthenticate(ctx context.Context, p portal.Principal, password string) error
 }
 
 // PortalMessageService is what the portal needs from the messaging engine (implemented by

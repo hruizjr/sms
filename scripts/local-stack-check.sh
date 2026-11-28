@@ -267,10 +267,13 @@ expect "a viewer cannot list API keys (got $portal_code)" equals "$portal_code" 
 cookie="$owner_cookie" csrf="$owner_csrf"
 
 echo "== Client portal: API key management (Phase 4 Group 4)"
-portal POST api-keys -H "Content-Type: application/json" --data '{"name":"Stack check key","scopes":["messages:send"]}'
+key_request() { printf '{"name":"Stack check key","scopes":["messages:send","messages:read"],"current_password":"%s"}' "$1"; }
+portal POST api-keys -H "Content-Type: application/json" --data "$(key_request "$portal_password")"
 expect "creating an API key without the CSRF token is 403 (got $portal_code)" equals "$portal_code" 403
-portal POST api-keys -H "X-CSRF-Token: $csrf" -H "Content-Type: application/json" --data '{"name":"Stack check key","scopes":["messages:send","messages:read"]}'
-expect "POST /portal/v1/api-keys is 201 (got $portal_code)" equals "$portal_code" 201
+portal POST api-keys -H "X-CSRF-Token: $csrf" -H "Content-Type: application/json" --data "$(key_request "not the password")"
+expect "creating an API key with a wrong current password is 403 (got $portal_code)" bash -c "[[ '$portal_code' == 403 ]] && grep -q reauthentication-failed <<<'$portal_body'"
+portal POST api-keys -H "X-CSRF-Token: $csrf" -H "Content-Type: application/json" --data "$(key_request "$portal_password")"
+expect "POST /portal/v1/api-keys with the current password is 201 (got $portal_code)" equals "$portal_code" 201
 portal_key="$(grep -o '"key":"smsk_[0-9a-z_]*"' <<<"$portal_body" | cut -d'"' -f4)"
 portal_key_id="$(grep -o '"id":"[0-9a-z]*"' <<<"$portal_body" | head -n 1 | cut -d'"' -f4)"
 portal_api_send() {

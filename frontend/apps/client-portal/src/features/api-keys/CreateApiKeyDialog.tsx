@@ -9,9 +9,13 @@ import { SCOPE_LABELS, SCOPES, apiKeyErrorMessage } from './scopes';
 const MAX_NAME = 100;
 const DEFAULT_SCOPES: ApiKeyScope[] = ['messages:send', 'messages:read'];
 
-type Errors = { name?: string; scopes?: string };
+type Errors = { name?: string; scopes?: string; password?: string };
 
-/** The create form: a name and the permissions the key grants. */
+/**
+ * The create form: a name, the permissions the key grants, and the owner's current password
+ * (re-authentication, owner decision G4-7; the server checks it). The password is held in this
+ * component's state only while the dialog is in use and is cleared after every attempt.
+ */
 export function CreateApiKeyDialog({
   open,
   onClose,
@@ -26,6 +30,7 @@ export function CreateApiKeyDialog({
   const scopesId = useId();
   const [name, setName] = useState('');
   const [scopes, setScopes] = useState<ApiKeyScope[]>(DEFAULT_SCOPES);
+  const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<Errors>({});
   const [failure, setFailure] = useState<string | undefined>(undefined);
   const [saving, setSaving] = useState(false);
@@ -38,6 +43,7 @@ export function CreateApiKeyDialog({
     if (open) {
       setName('');
       setScopes(DEFAULT_SCOPES);
+      setPassword('');
       setErrors({});
       setFailure(undefined);
     }
@@ -50,6 +56,7 @@ export function CreateApiKeyDialog({
     else if (Array.from(trimmed).length > MAX_NAME)
       found.name = `Use at most ${String(MAX_NAME)} characters.`;
     if (scopes.length === 0) found.scopes = 'Choose at least one permission.';
+    if (password === '') found.password = 'Enter your current password to confirm.';
     return found;
   }
 
@@ -67,14 +74,24 @@ export function CreateApiKeyDialog({
       const result = await api.createApiKey({
         name: name.trim(),
         scopes: SCOPES.filter((s) => scopes.includes(s)),
+        current_password: password,
       });
+      setPassword('');
       onCreated(result);
     } catch (error: unknown) {
-      if (error instanceof ApiError && error.problemType === 'validation-error') {
+      // Never keep a password that was just sent: the owner types it again to retry.
+      setPassword('');
+      if (error instanceof ApiError && error.problemType === 'reauthentication-failed') {
+        setErrors({
+          password:
+            'The password is incorrect, or your account is temporarily locked after too many attempts.',
+        });
+      } else if (error instanceof ApiError && error.problemType === 'validation-error') {
         const fromServer: Errors = {};
         for (const e of error.problem?.errors ?? []) {
           if (e.pointer === '/name') fromServer.name = e.detail;
           if (e.pointer === '/scopes') fromServer.scopes = e.detail;
+          if (e.pointer === '/current_password') fromServer.password = e.detail;
         }
         setErrors(fromServer);
         setFailure('Check the highlighted fields.');
@@ -93,7 +110,7 @@ export function CreateApiKeyDialog({
       onClose={onClose}
       dismissible={!saving}
       title="Create API key"
-      description="The full key is shown once, right after it is created."
+      description="Confirm with your password. The full key is shown once, right after it is created."
       footer={
         <>
           <Button variant="secondary" disabled={saving} onClick={onClose}>
@@ -166,6 +183,23 @@ export function CreateApiKeyDialog({
             </p>
           )}
         </fieldset>
+        <div className="border-t border-border pt-4">
+          <TextField
+            label="Your current password"
+            type="password"
+            name="current_password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              setErrors((current) => ({ ...current, password: undefined }));
+            }}
+            error={errors.password}
+            hint="Required to create an API key. Repeated wrong attempts lock your account for 15 minutes."
+            disabled={saving}
+            required
+          />
+        </div>
       </form>
     </Dialog>
   );

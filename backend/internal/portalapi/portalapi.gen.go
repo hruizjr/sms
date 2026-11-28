@@ -194,6 +194,10 @@ type ApiKeyStatus string
 
 // ApiKeyCreateRequest defines model for ApiKeyCreateRequest.
 type ApiKeyCreateRequest struct {
+	// CurrentPassword The signed-in owner's current password, to confirm the action (re-authentication). Never
+	// stored or logged.
+	CurrentPassword *string `json:"current_password,omitempty"`
+
 	// Name A name to recognize the key (leading and trailing spaces are removed; no control characters).
 	//
 	// Examples: Order notifications

@@ -19,8 +19,12 @@ export interface paths {
         /**
          * Create an API key
          * @description Creates an API key of the organization with a name and the public API permissions (scopes) it
-         *     grants. The response contains the full key (`key`) **once**: the platform stores only a hash of
-         *     its secret and can never return it again. Requires `api_keys:manage`.
+         *     grants. The owner must re-enter their current password (`current_password`, owner decision G4-7):
+         *     a wrong password, or an account that is temporarily locked, receives `403`
+         *     (`reauthentication-failed`) and no key is created. Failed attempts count toward the same account
+         *     lockout as failed sign-ins. The password is never stored or logged. The response contains the
+         *     full key (`key`) **once**: the platform stores only a hash of its secret and can never return it
+         *     again. Requires `api_keys:manage`.
          */
         post: operations["createApiKey"];
         delete?: never;
@@ -211,6 +215,12 @@ export interface components {
             key: string;
         };
         ApiKeyCreateRequest: {
+            /**
+             * Format: password
+             * @description The signed-in owner's current password, to confirm the action (re-authentication). Never
+             *     stored or logged.
+             */
+            current_password: string;
             /**
              * @description A name to recognize the key (leading and trailing spaces are removed; no control characters).
              * @example Order notifications
@@ -429,7 +439,9 @@ export interface components {
         };
         /**
          * @description Refused: the CSRF token is missing or wrong (`csrf-token-invalid`), the user's role lacks the
-         *     permission (`forbidden`), or the organization is not active (`account-not-active`).
+         *     permission (`forbidden`), the organization is not active (`account-not-active`), or the current
+         *     password given to confirm the action is wrong or the account is temporarily locked
+         *     (`reauthentication-failed`).
          */
         Forbidden: {
             headers: {

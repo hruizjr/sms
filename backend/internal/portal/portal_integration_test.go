@@ -246,6 +246,91 @@ func TestIntegrationLockout(t *testing.T) {
 	}
 }
 
+// Re-authentication (owner decision G4-7) checks the signed-in user's current password and shares
+// the sign-in lockout: failures count toward it, a locked account cannot re-authenticate, and a
+// success clears the count.
+func TestIntegrationReauthenticate(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	tenantID := f.activeTenant(t, "Reauth Co")
+	otherTenant := f.activeTenant(t, "Other Reauth Co")
+	f.user(t, tenantID, "owner@example.invalid", RoleOwner)
+	f.user(t, otherTenant, "other@example.invalid", RoleOwner)
+	session, err := f.svc.Login(f.ctx, "owner@example.invalid", testPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := session.Principal
+	wrong := func() {
+		t.Helper()
+		if err := f.svc.Reauthenticate(f.ctx, p, "wrong password!!"); !errors.Is(err, ErrReauthenticationFailed) {
+			t.Fatalf("wrong password: %v, want ErrReauthenticationFailed", err)
+		}
+	}
+
+	if err := f.svc.Reauthenticate(f.ctx, p, testPassword); err != nil {
+		t.Fatalf("right password: %v", err)
+	}
+	for _, bad := range []string{"", strings.Repeat("x", MaxPasswordBytes+1)} {
+		if err := f.svc.Reauthenticate(f.ctx, p, bad); !errors.Is(err, ErrReauthenticationFailed) {
+			t.Errorf("password of %d bytes: %v", len(bad), err)
+		}
+	}
+	if err := f.svc.Reauthenticate(f.ctx, p, testPassword); err != nil { // clears the failure counted above
+		t.Fatalf("right password: %v", err)
+	}
+
+	// A principal re-addressed to another tenant finds no such user there (row-level security).
+	moved := p
+	moved.TenantID = otherTenant
+	if err := f.svc.Reauthenticate(f.ctx, moved, testPassword); !errors.Is(err, ErrReauthenticationFailed) {
+		t.Errorf("principal moved to another tenant: %v", err)
+	}
+
+	// A success clears earlier failures: 4 failures, a success, 4 more failures do not lock.
+	for range 4 {
+		wrong()
+	}
+	if err := f.svc.Reauthenticate(f.ctx, p, testPassword); err != nil {
+		t.Fatalf("after 4 failures: %v", err)
+	}
+	for range 4 {
+		wrong()
+	}
+	if err := f.svc.Reauthenticate(f.ctx, p, testPassword); err != nil {
+		t.Fatalf("after 4 more failures: %v", err)
+	}
+
+	// Five consecutive failures lock the account: re-authentication and sign-in both fail, even with
+	// the right password, until the lock runs out or an operator unlocks.
+	for range 5 {
+		wrong()
+	}
+	if err := f.svc.Reauthenticate(f.ctx, p, testPassword); !errors.Is(err, ErrReauthenticationFailed) {
+		t.Fatalf("locked account, right password: %v", err)
+	}
+	if _, err := f.svc.Login(f.ctx, "owner@example.invalid", testPassword); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("sign-in while locked by failed re-authentication: %v", err)
+	}
+	users, _ := f.svc.ListUsers(f.ctx, tenantID)
+	if len(users) != 1 || users[0].LockedUntil == nil || !users[0].LockedUntil.Equal(f.clock.Now().Add(15*time.Minute)) {
+		t.Fatalf("locked user = %+v", users)
+	}
+	f.clock.Advance(16 * time.Minute)
+	if err := f.svc.Reauthenticate(f.ctx, p, testPassword); err != nil {
+		t.Fatalf("after the lock ran out: %v", err)
+	}
+	for range 5 {
+		wrong()
+	}
+	if err := f.svc.Unlock(f.ctx, tenantID, "owner@example.invalid"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.Reauthenticate(f.ctx, p, testPassword); err != nil {
+		t.Fatalf("after unlock: %v", err)
+	}
+}
+
 func TestIntegrationSessionExpiryAndRevocation(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
