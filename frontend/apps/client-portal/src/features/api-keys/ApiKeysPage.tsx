@@ -62,6 +62,15 @@ function ApiKeys() {
   const [revoking, setRevoking] = useState<ApiKey | undefined>(undefined);
   const [notice, setNotice] = useState<string | undefined>(undefined);
   const createButton = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef(false);
+
+  // After the one-time key display is dismissed, return focus to "Create API key". Done after the
+  // panel (which held focus) has been removed, so the browser cannot move focus back to the page.
+  useEffect(() => {
+    if (!returnFocus.current || created !== undefined) return;
+    returnFocus.current = false;
+    createButton.current?.focus();
+  }, [created]);
 
   useEffect(() => {
     let active = true;
@@ -120,8 +129,8 @@ function ApiKeys() {
         <NewApiKeyPanel
           created={created}
           onDone={() => {
+            returnFocus.current = true;
             setCreated(undefined);
-            createButton.current?.focus();
           }}
         />
       )}

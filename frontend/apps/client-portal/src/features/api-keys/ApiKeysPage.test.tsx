@@ -35,7 +35,8 @@ afterEach(() => {
 
 async function openCreateDialog() {
   fireEvent.click(await screen.findByRole('button', { name: 'Create API key' }));
-  return screen.getByRole('dialog', { name: 'Create API key' });
+  // The native dialog is opened in an effect after the update is committed.
+  return screen.findByRole('dialog', { name: 'Create API key' });
 }
 
 async function createKey(handler: Handler) {
@@ -47,6 +48,10 @@ async function createKey(handler: Handler) {
   fireEvent.click(within(dialog).getByRole('checkbox', { name: /Read messages/ }));
   fireEvent.click(within(dialog).getByRole('button', { name: 'Create key' }));
   await screen.findByRole('region', { name: 'API key “Billing system” created' });
+  // The panel moves focus to its heading in an effect after it is mounted.
+  await waitFor(() => {
+    expect(screen.getByRole('heading', { name: 'API key “Billing system” created' })).toHaveFocus();
+  });
   return result;
 }
 
@@ -159,7 +164,10 @@ describe('API keys page', () => {
     });
 
     const panel = await screen.findByRole('region', { name: 'API key “Billing system” created' });
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // The native dialog is closed in an effect after the update is committed.
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
     expect(within(panel).getByLabelText('Your new API key')).toHaveValue(NEW_KEY);
     expect(within(panel).getByLabelText('Your new API key')).toHaveAccessibleDescription(
       /only time the full key is shown/,
@@ -204,7 +212,9 @@ describe('API keys page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Done' }));
     expect(screen.queryByLabelText('Your new API key')).not.toBeInTheDocument();
     expect(document.body.textContent).not.toContain(NEW_KEY);
-    expect(screen.getByRole('button', { name: 'Create API key' })).toHaveFocus();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Create API key' })).toHaveFocus();
+    });
   });
   /* eslint-enable no-restricted-properties */
 
@@ -234,10 +244,13 @@ describe('API keys page', () => {
     fireEvent.click(
       await screen.findByRole('button', { name: 'Revoke API key Order notifications' }),
     );
-    const dialog = screen.getByRole('dialog', { name: 'Revoke “Order notifications”?' });
+    const dialog = await screen.findByRole('dialog', { name: 'Revoke “Order notifications”?' });
     expect(dialog).toHaveAccessibleDescription(/cannot be undone/);
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // The native dialog is closed in an effect after the update is committed.
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
     expect(transport.calls.filter((c) => c.method === 'DELETE')).toHaveLength(0);
   });
 
@@ -254,11 +267,14 @@ describe('API keys page', () => {
     fireEvent.click(
       await screen.findByRole('button', { name: 'Revoke API key Order notifications' }),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Revoke key' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Revoke key' }));
     expect(
       await screen.findByText('API key “Order notifications” was revoked.'),
     ).toBeInTheDocument();
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // The native dialog is closed in an effect after the update is committed.
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
     const rows = within(screen.getByRole('table')).getAllByRole('row');
     expect(rows[1]).toHaveTextContent('Revoked');
     expect(screen.queryByRole('button', { name: /Revoke API key/ })).not.toBeInTheDocument();
@@ -284,7 +300,7 @@ describe('API keys page', () => {
     fireEvent.click(
       await screen.findByRole('button', { name: 'Revoke API key Order notifications' }),
     );
-    const dialog = screen.getByRole('dialog');
+    const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Revoke key' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
       'The key could not be revoked. Try again.',
