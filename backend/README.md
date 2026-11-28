@@ -221,6 +221,35 @@ Messaging (Phase 4 Group 2; `api` reads `SMS_PROVIDER` for the provider's capabi
 
 The dispatch values are engineering defaults for local development, not telco terms.
 
+Security (Phase 4 Group 6; `api` only):
+
+| Variable | Default | Rules |
+| -------- | ------- | ----- |
+| `TRUSTED_PROXIES` | **required in production**; elsewhere empty (none) | The actual IP addresses or CIDR prefixes of the reverse proxies or load balancers in front of the API (comma-separated, at most 64), or `none` when clients connect directly. Only a request whose direct peer is listed has its `X-Forwarded-For` read (see "Client IP addresses"). In production the API **refuses to start** when it is unset or blank. Refused: malformed entries, empty entries, host names, zones, IPv4-mapped forms, `/0`, entries broader than an IPv4 `/8` or an IPv6 `/32` (unless allowed below), and entries that together cover every address of a family (for example `0.0.0.0/1,128.0.0.0/1`), even when broad ranges are allowed. |
+| `TRUSTED_PROXIES_ALLOW_BROAD_RANGES` | `false` | `true` accepts entries broader than an IPv4 `/8` or an IPv6 `/32`; the API then logs a `SECURITY WARNING` naming them at every start. |
+| `SIGNIN_FAILURE_LIMIT_IPV4` | `100` | 1–1000000 failed sign-ins per IPv4 address and window |
+| `SIGNIN_FAILURE_LIMIT_IPV6_64` | `100` | 1–1000000 failed sign-ins per IPv6 `/64` and window |
+| `SIGNIN_FAILURE_LIMIT_IPV6_48` | `500` | 1–1000000 failed sign-ins per IPv6 `/48` and window; at least the `/64` limit |
+| `SIGNIN_FAILURE_WINDOW` | `15m` | 1m–24h |
+| `SIGNIN_REQUEST_RATE` | `10` | sign-in requests per second per IPv4 address or IPv6 `/64` (token bucket refill), > 0 and ≤ 10000 |
+| `SIGNIN_REQUEST_BURST` | `100` | 1–1000000 (token bucket capacity) |
+| `PASSWORD_HASH_CONCURRENCY` | `4` | 1–256 Argon2id computations at once (memory: 19 MiB each) |
+| `PASSWORD_HASH_QUEUE` | `32` | 0–100000 callers that may wait for a slot; more are refused at once (`503`) |
+| `PASSWORD_HASH_MAX_WAIT` | `1s` | longest wait for a slot (at most 1m), then `503` |
+
+**Sign-in limit defaults (owner decision, decision log §23).** They are initial, configurable values, not
+measurements of real traffic; review them once real traffic is observed. 100 **failed** attempts per IPv4 address
+or IPv6 `/64` in 15 minutes (500 per IPv6 `/48`) bound password guessing from one source to about 400 guesses an
+hour across all accounts, while successful sign-ins use none of the budget, so the users of one office or carrier
+NAT are not blocked by each other's sign-ins. The all-attempt token bucket (10 per second, burst 100) bounds the
+request rate, and so the password-hashing work, one source can cause.
+
+**Password-hashing defaults (measured here, not in production).** On the 4-vCPU development container used for
+this group, Argon2id with the stored parameters (19 MiB, 2 iterations) ran at about 31 hashes per second with one
+at a time, 58 per second with 4 at once and 69 per second with 8 (no further gain at 16). The default (4 at once,
+32 waiting, at most 1 s) keeps the hashing memory at 76 MiB and the worst queue wait near half a second. **These
+limits MUST be measured again on the production hardware before launch** (a production gate).
+
 The `/readyz` ping timeout is fixed at 2 seconds (`httpserver.DefaultReadinessTimeout`).
 
 The processes log only an explicit, non-sensitive startup summary (environment, log settings, listener
@@ -288,15 +317,171 @@ portal session never opens `/v1`, and an API key never opens `/portal/v1`.
   `GET /portal/v1/session` response and is derived from the cookie's secret, so it is never stored). Sign-in
   accepts only `application/json`.
 - **Permissions:** Owner and Sender may read and send; Viewer may only read; only the Owner manages API keys
-  (`api_keys:manage`, MVP-03). Checked by every handler; the tenant always comes from the session.
+  (`api_keys:manage`, MVP-03) and reads the audit log (`audit_log:read`, Group 6). Checked by every handler; the tenant always comes from the session.
 - **API keys** (Phase 4 Group 4, decision log §21): the portal calls the same `apikey.Service` as `smsctl` and the
   public API. Creating a key requires the owner's current password (`current_password`; `portal.Service.Reauthenticate`,
   owner decision G4-7): failures count toward the sign-in lockout and receive `403 reauthentication-failed`, and no
   key is created. Only the hash of a key's secret is stored; the full key is returned once (`Cache-Control: no-store`)
-  and never logged, nor is the password. Revocation applies from the next public API request. Last use is not
-  recorded yet (G4-6); a durable audit log of key events is required before production (G4-8).
+  and never logged, nor is the password. Revocation applies from the next public API request. Creation, failed
+  confirmations and revocation are audited (below); the last use of each key is shown (below).
 - **Messages:** submission calls the same `messaging.Service.Accept` as `POST /v1/messages` (same idempotency
   records, dispatcher, simulator and history). The detail view returns the customer-visible status history only.
+
+### Security audit log (Phase 4 Group 6, decision log §23)
+
+`internal/audit` records security events in a durable, append-only audit trail (owner decision G4-8). Ordinary
+logs remain operational logging only.
+
+| Event (`action`) | Outcomes recorded | Written by |
+| ---------------- | ----------------- | ---------- |
+| `portal.sign_in` | success (a session started), failure (wrong password, locked account), denied (organization not active) | `portal.Service.Login` |
+| `portal.sign_out` | success | `portal.Service.Logout` |
+| `portal.account_locked` | **enforced** (the platform applied a security control; actor `system`; details: `locked_until`). `enforced` is the outcome of this action only (a database check). | the failed sign-in or re-authentication that starts the lock |
+| `api_key.create` | success (key name and scopes), failure (password confirmation failed), denied (role) | `apikey.Service.Create`, `portal.Service.Reauthenticate`, the portal handler |
+| `api_key.revoke` | success, denied | `apikey.Service.Revoke`, the portal handler |
+| `api_key.list`, `audit_log.list` | denied only | the portal handler |
+| `portal_user.create`, `portal_user.unlock`, `portal_user.sessions_revoke` | success (actor `system`, details `via: smsctl`; creation also `role`) | `portal.Service.CreateUser`, `Unlock`, `RevokeUserSessions` (used by `smsctl`), in the same transaction as the change |
+| `sender_id.approve` | success (actor `system`, details `sender_id` and `via: smsctl`; no target) — a new approval only; approving an already approved sender ID changes and records nothing | `messaging.Service.ApproveSenderID` (`smsctl sender-id approve` and `bootstrap`), in the same transaction as the approval |
+
+**System actor.** Administration through `smsctl` is recorded with the actor `system` and `via: smsctl`: the tool
+has no operator identity (it runs with the API's database credentials), so these events do not say which person
+acted. Attributing an action to an operator needs authenticated, MFA-protected internal administrators (D-021).
+**Not audited yet:** the `smsctl` tenant registry commands (`tenant create`, the activation in `tenant create` and
+`bootstrap`, `tenant suspend`, `tenant reactivate`). They change a platform-owned table and need a platform
+administration audit design (security baseline S-14); no workaround writes them to a tenant's log.
+
+- **Tables.** `security_audit_events` is tenant-owned (forced RLS, the approved policy). Events that belong to no
+  organization — a sign-in for an address that is not registered (the address is **not** stored), malformed
+  sign-in input, and the first rate-limited sign-in of each source and window — go to `platform_security_events`,
+  which has no tenant column and which the application can insert into but **not read**: no portal user sees them;
+  database administrators do, until an approved internal administration function exists.
+- **Same transaction.** A key's creation or revocation, a session's creation, a sign-out, and a failed attempt's
+  count are committed together with their event. If the event cannot be written, the change is rolled back and the
+  request fails with `500` instead of succeeding unaudited. Refusals (`denied`) are refused whether or not their
+  event could be written; a write failure is logged as an error.
+- **Deduplication (B2 fix).** A refused request (`denied`) is recorded once per user, action and five-minute
+  interval, and an attempt on a locked account once per account, action and lock (sign-in and password
+  confirmation separately). These events carry a `dedup_key` built from server-side values only; a unique index on
+  `(tenant_id, dedup_key)` makes a repeat an `INSERT … ON CONFLICT DO NOTHING` that writes nothing. No existing event
+  is modified and no auxiliary table exists, so the mechanism itself cannot be used to create records: one user can
+  cause at most one refusal event per audited action and five minutes, and the number of users is set by
+  administrators. Failed sign-ins of an existing account remain one event each, bounded by the account lockout
+  (five per lock); unknown-account sign-ins are bounded by the failed-attempt budgets (below).
+- **Contents.** UTC time (assigned by PostgreSQL), tenant, actor type and ID, action, target type and ID, outcome, request ID, client IP
+  address, user agent (control characters removed, at most 256 characters) and fixed, non-secret details
+  (`audit.Details`). Never passwords, session tokens, CSRF tokens, API keys or their hashes, authorization headers
+  or message text.
+- **Identity and time.** PostgreSQL assigns each event's `id` (`uuidv7()`) and `occurred_at` (`clock_timestamp()`,
+  stored in UTC): `sms_app` has no `INSERT` privilege on either column, so the application cannot back-date an event
+  or choose an existing event's ID, and an upsert onto an existing event is refused (no `UPDATE`). The tenant is
+  checked by row-level security (`WITH CHECK`); the actor comes from the authenticated session.
+- **Append-only.** `sms_app` has `INSERT` (and `SELECT` on its tenant's events) only: no `UPDATE`, `DELETE` or
+  `TRUNCATE`. Triggers also reject `UPDATE`, `DELETE` and `TRUNCATE` by any role, including the table owner
+  `sms_migrator`. These controls stop ordinary application modification. They are **not tamper-proof** and do not
+  protect against a database superuser, or the table owner after disabling the triggers, who can still change or
+  remove rows; no evidence kept inside this database (including a hash chain) could prove otherwise. Evidence that
+  holds against a superuser needs an **external immutable export** or **externally anchored integrity evidence** —
+  a production requirement (security baseline S-8), not implemented here.
+- **Reading.** `GET /portal/v1/audit-events` (owners only, `audit_log:read`; filters `action`, `outcome`,
+  `occurred_from`, `occurred_before`; cursor pages). Sender and Viewer receive `403`, and the refusal is recorded.
+- **Retention.** No audit row is deleted automatically: the retention period is an open decision (S-4, §10.8).
+
+### Sign-in limits (Phase 4 Group 6, decision log §23)
+
+`internal/signinlimit` applies two layers to every portal sign-in request, per **source**, **before** any
+credential is looked at; a refusal is `429 too-many-sign-in-attempts` with `Retry-After` (seconds, rounded up),
+reveals nothing about any account, and never counts toward, starts or extends an account lock. The account lockout
+(five failures, 15 minutes, G3-3) is unchanged and independent.
+
+1. **All-attempt token bucket** per IPv4 address or IPv6 `/64` (`SIGNIN_REQUEST_RATE`, `SIGNIN_REQUEST_BURST`):
+   every request takes a token, including malformed ones; an empty bucket refuses (`Retry-After` until the next
+   token).
+2. **Failed-attempt budgets** within `SIGNIN_FAILURE_WINDOW` (a fixed window from the first reservation): per IPv4
+   address, per IPv6 `/64` and per IPv6 `/48` aggregate. Before the password is checked the attempt **reserves**
+   one slot in each budget of its source (the `/32`, or the `/48` and the `/64`), all or none. A successful sign-in,
+   and an attempt whose password was never checked (malformed request, `503`), **refunds exactly its own slots**;
+   every earlier failure stays counted, so a valid account of the attacker's own resets nothing. Failures include
+   wrong passwords, unknown addresses, locked accounts and organizations that are not active. Rotating IPv6
+   addresses or `/64`s inside one `/48` is stopped by the `/48` aggregate.
+3. **Bounded password hashing** (`PASSWORD_HASH_*`): at most `CONCURRENCY` Argon2id computations at once and at most
+   `QUEUE` callers waiting, each for at most `MAX_WAIT`; beyond that the API answers `503 service-busy` with
+   `Retry-After: 2` without checking the password (sign-in and API key creation). A distributed attack can still
+   make the service busy; it cannot exhaust memory or CPU, and a `503` uses no failure budget.
+
+- **Shared, atomic, durable.** `portal_sign_in_request_buckets` and `portal_sign_in_failure_budgets` (platform-owned,
+  no tenant data) live in PostgreSQL, so every API instance shares them and a restart resets nothing. A token is
+  taken by one atomic upsert; the budgets of an attempt are reserved in one transaction, always in the same order
+  (`/48` before `/64`), each by an atomic upsert that serializes concurrent attempts on its row, and the transaction
+  is rolled back when any budget would exceed its limit. Clock differences between instances cannot add tokens.
+- **Cleanup.** Every API process runs a cleanup cycle at start and then every minute
+  (`signinlimit.Limiter.Run`). A cycle deletes budgets whose window has ended and buckets that are full again, in
+  batches of at most 1,000 rows, each batch its own short transaction, and at most 50 batches per table: at most
+  50,000 rows per table, cycle and process, so a high-cardinality attack cannot make one cycle monopolize the
+  database. Each batch chooses its rows with `FOR UPDATE SKIP LOCKED`: cleanup never waits for a row that a sign-in
+  (or another process's cleanup) holds. It skips the row, and a later cycle takes it. A sign-in therefore cannot
+  deadlock with cleanup. The former single `DELETE` locked rows in table order and could deadlock with a sign-in
+  that locks an IPv6 `/48` before its `/64` (final review of PR #23; reproduced, and fixed with a regression test).
+  Several processes share the work instead of contending for it. A batch is chosen through the `window_start_at`
+  or `refilled_at` index and deleted through the primary key, so it costs the same however many rows wait.
+- **Empty budgets.** A budget whose slots were all refunded (successful sign-ins) is **not** deleted early: it stays
+  until its window ends, like any other. An empty budget and an absent one behave the same. Deleting empty budgets
+  early would need an index on the counter, which every reservation and refund changes, making each of those
+  updates a non-HOT update.
+- **Correctness does not depend on cleanup.** An ended window restarts on its next reservation and a bucket's tokens
+  are computed from the time, so a failed or skipped cycle only leaves rows in place.
+- **Storage is not bounded by a fixed number.** The tables hold one bucket row per source seen within a refill time
+  (10 s by default, longer for a source refused within the last five minutes) and one budget row per source with
+  a reservation in an open window, plus up to one cleanup interval. A row is created by any request from a new
+  source, without authentication, so the tables grow with the **rate of new source addresses** (IPv6 sources are
+  plentiful). If new sources arrive faster than cleanup's work bound removes them, the backlog grows; the cycle is
+  then reported as incomplete. Edge rate limiting (S-12) and monitoring of the metrics below are what bound it in
+  production.
+- **Metrics** (on the metrics listener, labels without addresses, users or tenants):
+  `sms_signin_limit_cleanup_runs_total{result="success"|"failure"}` (their sum is the number of attempts),
+  `sms_signin_limit_cleanup_incomplete_runs_total` (stopped at the work bound or failed, rows possibly left),
+  `sms_signin_limit_cleanup_duration_seconds` (histogram), `sms_signin_limit_cleanup_deleted_rows_total{table}`
+  (`failure_budgets`, `request_buckets`), and `sms_signin_limit_cleanup_last_success_timestamp_seconds` (0 until a
+  cycle succeeds; a failed cycle never moves it). A failed cycle is logged as an error, and an incomplete one as a
+  warning. The alert conditions production monitoring must configure are in the security baseline (§9.1).
+- **Audit.** One platform event per refused budget and window, and per refusing bucket and five minutes; a flood
+  cannot multiply audit writes.
+- **Known limits.**
+  - **Many networks.** An attacker holding many `/48`s (or many IPv4 addresses) gets a budget for each.
+  - **No token bucket per `/48`.** Every `/64` of a `/48` has its own token bucket; only the failure budget is
+    aggregated per `/48`.
+  - **Valid accounts.** A successful sign-in returns its failure slots, so sign-ins with **valid credentials** (an
+    attacker's own account, or several) are limited only by the token bucket of each source (10 per second). They
+    can keep the shared password-hashing queue full from a few addresses. The bounded hasher protects memory and CPU,
+    but other users then receive `503`. Hashing admission is first-come-first-served, not fair per source.
+  - **Shared addresses.** Failures from one NAT address can exhaust its budget for everyone behind it. The budget size
+    bounds this but does not prevent it.
+  - **Shared pool.** In a load test on the 4-vCPU development container, a sign-in flood on the same host raised `/v1/messages`
+    latency (p50 about 4 ms → about 80 ms) whether or not cleanup ran: the flood and the messages API share CPU and
+    the database pool.
+
+  Edge rate limiting or a WAF in front of the API, capacity measurements on production hardware, and an evaluation of
+  per-`/48` request limits and fair hashing admission are production gates (security baseline S-12); no new
+  threshold is set here.
+
+### Client IP addresses
+
+`middleware.ClientIP` determines the address used by the rate limit and the audit log. By default it is the
+**direct peer** of the connection; `X-Forwarded-For` and similar headers are ignored. When the peer is listed in
+`TRUSTED_PROXIES`, `X-Forwarded-For` is read from right to left, skipping trusted proxies, and the first other
+address is the client (an address a client prepends itself is never reached). A forwarded header from a peer that
+is not a configured proxy is never read. Behind a load balancer the proxies **must** be configured, or every client
+appears to come from the proxy and shares one sign-in limit; in production the API therefore refuses to start
+until `TRUSTED_PROXIES` is set explicitly (`none` when there is no proxy). `Forwarded`
+and `X-Real-IP` are not used. The access log still records no IP address.
+
+### API key last use (owner decision G4-6)
+
+After a key has authenticated **and** been authorized for a public API request, `apikey.Service.RecordUse` stores
+the time in `api_keys.last_used_at` (UTC) — at most once per key per minute: a conditional update skips the write
+while the stored time is less than a minute old, also across API instances. The portal therefore shows a time that
+can be up to a minute older than the key's latest request, and "Never used" for `null`. Invalid, revoked and
+wrongly scoped requests, and keys of an inactive organization, never update it. A failure to record it is logged
+and does not fail the request (the time is informational).
 
 Portal users are created locally with `smsctl` (there is no registration endpoint):
 
@@ -684,6 +869,10 @@ govulncheck reports type errors in the standard library rather than results.
     validated; still open for the owner.
 - **Readiness logging:** review the access-log severity of `/readyz` 503 responses (currently `ERROR`,
   per the Group 1 rule for status ≥ 500).
+- **Security, later groups:** audit tamper evidence (S-8), an audit retention period and expiry (S-4), an internal
+  view of platform security events (needs the admin portal with MFA, D-021), auditing of the `smsctl` tenant
+  registry commands (S-14), per-tenant or per-key public API rate limits, and the production monitoring and alerting
+  of security baseline §9.1 (only the metrics marked implemented there exist) are not implemented.
 - **Messaging, later groups:** rate limits, credit reservation and billing, suppression lists, sender ID and API
   key management endpoints, webhooks, real provider adapters (after official specifications and approval), and
   retention expiry of message bodies are not implemented.

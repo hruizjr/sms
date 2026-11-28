@@ -22,5 +22,8 @@ export function apiKeyErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiError && error.problemType === 'forbidden') {
     return 'Your role does not allow managing API keys.';
   }
+  if (error instanceof ApiError && error.problemType === 'service-busy') {
+    return 'The service is busy and could not check your password. Nothing was created. Try again in a moment.';
+  }
   return fallback;
 }

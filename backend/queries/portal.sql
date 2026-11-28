@@ -34,7 +34,7 @@ FROM portal_users
 WHERE tenant_id = @tenant_id AND email = @email;
 
 -- name: RecordFailedLogin :one
--- Counts one failed sign-in atomically. A lock that has run out starts a new count; the lock starts
+-- Counts one failed sign-in atomically (also used for failed re-authentication, G4-7). A lock that has run out starts a new count; the lock starts
 -- when the count reaches @max_failures. (Every expression sees the row as it was before the update.)
 UPDATE portal_users
 SET failed_login_count = CASE
@@ -49,7 +49,9 @@ SET failed_login_count = CASE
     END,
     updated_at = GREATEST(updated_at, @now::timestamptz)
 WHERE tenant_id = @tenant_id AND id = @id
-RETURNING failed_login_count, locked_until;
+RETURNING failed_login_count, locked_until,
+          -- true only for the update that started this lock (it stored this call's @lock_until)
+          COALESCE(locked_until = @lock_until::timestamptz, false)::boolean AS newly_locked;
 
 -- name: RecordSuccessfulLogin :exec
 UPDATE portal_users

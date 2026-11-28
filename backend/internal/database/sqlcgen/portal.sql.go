@@ -286,7 +286,9 @@ SET failed_login_count = CASE
     END,
     updated_at = GREATEST(updated_at, $1::timestamptz)
 WHERE tenant_id = $4 AND id = $5
-RETURNING failed_login_count, locked_until
+RETURNING failed_login_count, locked_until,
+          -- true only for the update that started this lock (it stored this call's @lock_until)
+          COALESCE(locked_until = $3::timestamptz, false)::boolean AS newly_locked
 `
 
 type RecordFailedLoginParams struct {
@@ -300,9 +302,10 @@ type RecordFailedLoginParams struct {
 type RecordFailedLoginRow struct {
 	FailedLoginCount int32
 	LockedUntil      *time.Time
+	NewlyLocked      bool
 }
 
-// Counts one failed sign-in atomically. A lock that has run out starts a new count; the lock starts
+// Counts one failed sign-in atomically (also used for failed re-authentication, G4-7). A lock that has run out starts a new count; the lock starts
 // when the count reaches @max_failures. (Every expression sees the row as it was before the update.)
 func (q *Queries) RecordFailedLogin(ctx context.Context, arg RecordFailedLoginParams) (RecordFailedLoginRow, error) {
 	row := q.db.QueryRow(ctx, recordFailedLogin,
@@ -313,7 +316,7 @@ func (q *Queries) RecordFailedLogin(ctx context.Context, arg RecordFailedLoginPa
 		arg.ID,
 	)
 	var i RecordFailedLoginRow
-	err := row.Scan(&i.FailedLoginCount, &i.LockedUntil)
+	err := row.Scan(&i.FailedLoginCount, &i.LockedUntil, &i.NewlyLocked)
 	return i, err
 }
 

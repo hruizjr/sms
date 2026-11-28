@@ -33,8 +33,9 @@ type NavItem = {
 type NavSection = { label: string; items: NavItem[] };
 
 /*
- * Information architecture: messaging work first, developer tools second. An item is shown only
- * when the session has its permission; the server enforces every permission regardless.
+ * Information architecture: messaging work first, developer tools second, security records third.
+ * An item is shown only when the session has its permission; the server enforces every permission
+ * regardless. A section without a permitted item is not shown.
  */
 const NAV: NavSection[] = [
   {
@@ -65,6 +66,18 @@ const NAV: NavSection[] = [
         icon: 'key',
         permission: 'api_keys:manage',
         isCurrent: (p) => p.startsWith('/api-keys'),
+      },
+    ],
+  },
+  {
+    label: 'Security',
+    items: [
+      {
+        to: '/audit-log',
+        label: 'Audit log',
+        icon: 'shield',
+        permission: 'audit_log:read',
+        isCurrent: (p) => p.startsWith('/audit-log'),
       },
     ],
   },

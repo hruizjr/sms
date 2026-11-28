@@ -100,7 +100,11 @@ describe('API keys page', () => {
               status: 'revoked',
               revoked_at: '2026-11-27T10:00:00Z',
             }),
-            apiKeyFixture({ name: 'Order notifications', scopes: ['messages:read'] }),
+            apiKeyFixture({
+              name: 'Order notifications',
+              scopes: ['messages:read'],
+              last_used_at: '2026-11-28T02:15:00Z',
+            }),
           ),
       }),
     );
@@ -121,7 +125,11 @@ describe('API keys page', () => {
       }),
     ).toBeInTheDocument();
     expect(within(revoked).queryByRole('button')).not.toBeInTheDocument();
-    expect(screen.getByText(/does not record when a key was last used/)).toBeInTheDocument();
+    // Last use: the recorded time (Manila time), or a clear "Never used" for a key never used.
+    expect(within(table).getByRole('columnheader', { name: 'Last used' })).toBeInTheDocument();
+    expect(active).toHaveTextContent('Last used Nov 28, 2026, 10:15 AM PHT');
+    expect(revoked).toHaveTextContent('Never used');
+    expect(screen.getByText(/recorded at most once a minute/)).toBeInTheDocument();
   });
 
   it('validates the name, permissions and current password before creating', async () => {
@@ -248,6 +256,26 @@ describe('API keys page', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create key' }));
     expect(await within(dialog).findByText('Server says no.')).toBeInTheDocument();
     expect(within(dialog).getByRole('alert')).toHaveTextContent('Check the highlighted fields.');
+  });
+
+  it('explains a busy service (503) without creating a key', async () => {
+    renderApp(
+      '/api-keys',
+      signedIn('owner', {
+        [LIST]: () => keys(),
+        [CREATE]: () => problem(503, 'service-busy', {}, { 'Retry-After': '2' }),
+      }),
+    );
+    const dialog = await openCreateDialog();
+    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Billing' } });
+    typePassword(dialog);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create key' }));
+    expect(
+      await within(dialog).findByText(
+        'The service is busy and could not check your password. Nothing was created. Try again in a moment.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText('Your new API key')).not.toBeInTheDocument();
   });
 
   /* eslint-disable no-restricted-properties -- this test reads browser storage to prove the password is never written to it */

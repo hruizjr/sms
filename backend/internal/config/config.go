@@ -136,6 +136,10 @@ type Config struct {
 	// provider's capabilities; the dispatcher uses both.
 	Provider ProviderConfig
 	Dispatch DispatchConfig
+	// SignInLimit is the layered per-source sign-in limit of the client portal (Phase 4 Group 6).
+	SignInLimit SignInLimitConfig
+	// PasswordHash bounds password hashing (Phase 4 Group 6).
+	PasswordHash PasswordHashConfig
 }
 
 // HTTPConfig configures the public application HTTP server.
@@ -145,6 +149,9 @@ type HTTPConfig struct {
 	ReadHeaderTimeout time.Duration
 	WriteTimeout      time.Duration
 	IdleTimeout       time.Duration
+	// Proxies are the proxies whose X-Forwarded-For header determines the client address
+	// (TRUSTED_PROXIES; required in production, none by default elsewhere).
+	Proxies TrustedProxyConfig
 }
 
 // MetricsConfig configures the separate, non-public metrics listener.
@@ -237,6 +244,9 @@ func Load(lookup LookupFunc) (Config, error) {
 	cfg.Database = r.database(cfg.Env)
 	cfg.Provider = r.provider(cfg.Env)
 	cfg.Dispatch = r.dispatch()
+	cfg.HTTP.Proxies = r.trustedProxies()
+	cfg.SignInLimit = r.signInLimit()
+	cfg.PasswordHash = r.passwordHash()
 
 	httpHost, httpPort, httpOK := r.address(EnvHTTPAddr, cfg.HTTP.Addr)
 	metricsHost, metricsPort, metricsOK := r.address(EnvMetricsAddr, cfg.Metrics.Addr)

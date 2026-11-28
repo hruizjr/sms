@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/hruizjr/sms/backend/internal/audit"
 	"github.com/hruizjr/sms/backend/internal/database"
 	"github.com/hruizjr/sms/backend/internal/database/dbtest"
 	"github.com/hruizjr/sms/backend/internal/tenancy"
@@ -263,27 +264,27 @@ func TestIntegrationReauthenticate(t *testing.T) {
 	p := session.Principal
 	wrong := func() {
 		t.Helper()
-		if err := f.svc.Reauthenticate(f.ctx, p, "wrong password!!"); !errors.Is(err, ErrReauthenticationFailed) {
+		if err := f.svc.Reauthenticate(f.ctx, p, "wrong password!!", audit.ActionAPIKeyCreate); !errors.Is(err, ErrReauthenticationFailed) {
 			t.Fatalf("wrong password: %v, want ErrReauthenticationFailed", err)
 		}
 	}
 
-	if err := f.svc.Reauthenticate(f.ctx, p, testPassword); err != nil {
+	if err := f.svc.Reauthenticate(f.ctx, p, testPassword, audit.ActionAPIKeyCreate); err != nil {
 		t.Fatalf("right password: %v", err)
 	}
 	for _, bad := range []string{"", strings.Repeat("x", MaxPasswordBytes+1)} {
-		if err := f.svc.Reauthenticate(f.ctx, p, bad); !errors.Is(err, ErrReauthenticationFailed) {
+		if err := f.svc.Reauthenticate(f.ctx, p, bad, audit.ActionAPIKeyCreate); !errors.Is(err, ErrReauthenticationFailed) {
 			t.Errorf("password of %d bytes: %v", len(bad), err)
 		}
 	}
-	if err := f.svc.Reauthenticate(f.ctx, p, testPassword); err != nil { // clears the failure counted above
+	if err := f.svc.Reauthenticate(f.ctx, p, testPassword, audit.ActionAPIKeyCreate); err != nil { // clears the failure counted above
 		t.Fatalf("right password: %v", err)
 	}
 
 	// A principal re-addressed to another tenant finds no such user there (row-level security).
 	moved := p
 	moved.TenantID = otherTenant
-	if err := f.svc.Reauthenticate(f.ctx, moved, testPassword); !errors.Is(err, ErrReauthenticationFailed) {
+	if err := f.svc.Reauthenticate(f.ctx, moved, testPassword, audit.ActionAPIKeyCreate); !errors.Is(err, ErrReauthenticationFailed) {
 		t.Errorf("principal moved to another tenant: %v", err)
 	}
 
@@ -291,13 +292,13 @@ func TestIntegrationReauthenticate(t *testing.T) {
 	for range 4 {
 		wrong()
 	}
-	if err := f.svc.Reauthenticate(f.ctx, p, testPassword); err != nil {
+	if err := f.svc.Reauthenticate(f.ctx, p, testPassword, audit.ActionAPIKeyCreate); err != nil {
 		t.Fatalf("after 4 failures: %v", err)
 	}
 	for range 4 {
 		wrong()
 	}
-	if err := f.svc.Reauthenticate(f.ctx, p, testPassword); err != nil {
+	if err := f.svc.Reauthenticate(f.ctx, p, testPassword, audit.ActionAPIKeyCreate); err != nil {
 		t.Fatalf("after 4 more failures: %v", err)
 	}
 
@@ -306,7 +307,7 @@ func TestIntegrationReauthenticate(t *testing.T) {
 	for range 5 {
 		wrong()
 	}
-	if err := f.svc.Reauthenticate(f.ctx, p, testPassword); !errors.Is(err, ErrReauthenticationFailed) {
+	if err := f.svc.Reauthenticate(f.ctx, p, testPassword, audit.ActionAPIKeyCreate); !errors.Is(err, ErrReauthenticationFailed) {
 		t.Fatalf("locked account, right password: %v", err)
 	}
 	if _, err := f.svc.Login(f.ctx, "owner@example.invalid", testPassword); !errors.Is(err, ErrInvalidCredentials) {
@@ -317,7 +318,7 @@ func TestIntegrationReauthenticate(t *testing.T) {
 		t.Fatalf("locked user = %+v", users)
 	}
 	f.clock.Advance(16 * time.Minute)
-	if err := f.svc.Reauthenticate(f.ctx, p, testPassword); err != nil {
+	if err := f.svc.Reauthenticate(f.ctx, p, testPassword, audit.ActionAPIKeyCreate); err != nil {
 		t.Fatalf("after the lock ran out: %v", err)
 	}
 	for range 5 {
@@ -326,7 +327,7 @@ func TestIntegrationReauthenticate(t *testing.T) {
 	if err := f.svc.Unlock(f.ctx, tenantID, "owner@example.invalid"); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.svc.Reauthenticate(f.ctx, p, testPassword); err != nil {
+	if err := f.svc.Reauthenticate(f.ctx, p, testPassword, audit.ActionAPIKeyCreate); err != nil {
 		t.Fatalf("after unlock: %v", err)
 	}
 }

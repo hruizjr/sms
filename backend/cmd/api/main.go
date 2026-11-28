@@ -15,9 +15,11 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/hruizjr/sms/backend/internal/apikey"
+	"github.com/hruizjr/sms/backend/internal/audit"
 	"github.com/hruizjr/sms/backend/internal/config"
 	"github.com/hruizjr/sms/backend/internal/database"
 	"github.com/hruizjr/sms/backend/internal/httpserver"
@@ -26,6 +28,7 @@ import (
 	"github.com/hruizjr/sms/backend/internal/messaging/providers"
 	"github.com/hruizjr/sms/backend/internal/observability"
 	"github.com/hruizjr/sms/backend/internal/portal"
+	"github.com/hruizjr/sms/backend/internal/signinlimit"
 )
 
 func main() {
@@ -38,6 +41,10 @@ func main() {
 func run() error {
 	cfg, err := config.Load(os.LookupEnv)
 	if err != nil {
+		return err
+	}
+	// In production TRUSTED_PROXIES must be set explicitly (addresses, or "none").
+	if err := cfg.ValidateAPI(); err != nil {
 		return err
 	}
 
@@ -58,7 +65,31 @@ func run() error {
 		"db_sslmode", string(cfg.Database.SSLMode),
 		"db_max_conns", cfg.Database.MaxConns,
 		"sms_provider", cfg.Provider.Name,
+		"trusted_proxies", len(cfg.HTTP.Proxies.Prefixes),
+		"trusted_proxies_set", cfg.HTTP.Proxies.Set,
+		"signin_failure_limit_ipv4", cfg.SignInLimit.FailuresPerIPv4,
+		"signin_failure_limit_ipv6_64", cfg.SignInLimit.FailuresPerIPv6Subnet,
+		"signin_failure_limit_ipv6_48", cfg.SignInLimit.FailuresPerIPv6Aggregate,
+		"signin_failure_window", cfg.SignInLimit.FailureWindow.String(),
+		"signin_request_rate", cfg.SignInLimit.RequestsPerSecond,
+		"signin_request_burst", cfg.SignInLimit.RequestBurst,
+		"password_hash_concurrency", cfg.PasswordHash.Concurrency,
+		"password_hash_queue", cfg.PasswordHash.Queue,
+		"password_hash_max_wait", cfg.PasswordHash.MaxWait.String(),
 	)
+	if len(cfg.HTTP.Proxies.Broad) > 0 {
+		broad := make([]string, len(cfg.HTTP.Proxies.Broad))
+		for i, p := range cfg.HTTP.Proxies.Broad {
+			broad[i] = p.String()
+		}
+		logger.Warn("SECURITY WARNING: TRUSTED_PROXIES contains ranges broader than an IPv4 /8 or an IPv6 /32 "+
+			"(accepted because TRUSTED_PROXIES_ALLOW_BROAD_RANGES=true). Any client inside these ranges can "+
+			"choose the client address the API records and rate-limits. List the proxies' actual addresses instead.",
+			"broad_ranges", strings.Join(broad, ","))
+	}
+	if !cfg.HTTP.Proxies.Set {
+		logger.Info("TRUSTED_PROXIES is not set: the direct peer address is the client address (allowed outside production)")
+	}
 
 	// The API only needs the configured provider's declared capabilities (for example a segment
 	// limit); it never calls the provider. Without a provider every capability is unknown.
@@ -105,23 +136,51 @@ func run() error {
 	// One API key service for both: the portal creates and revokes the keys the public API verifies.
 	messages := messaging.NewService(db, caps)
 	keys := apikey.NewService(db)
-	portalAccounts, err := portal.NewService(db)
+	portalAccounts, err := portal.NewService(db, portal.WithHashLimits(portal.HashLimits{
+		Concurrency: cfg.PasswordHash.Concurrency, Queue: cfg.PasswordHash.Queue, MaxWait: cfg.PasswordHash.MaxWait,
+	}))
 	if err != nil {
 		return err
 	}
+	// The security audit log and the per-source sign-in limit (Phase 4 Group 6) are stored in
+	// PostgreSQL, so every API instance shares them and a restart resets nothing.
+	auditLog := audit.NewService(db)
+	signIns, err := signinlimit.New(db, signinlimit.Config{
+		FailuresPerIPv4: cfg.SignInLimit.FailuresPerIPv4, FailuresPerIPv6Subnet: cfg.SignInLimit.FailuresPerIPv6Subnet,
+		FailuresPerIPv6Aggregate: cfg.SignInLimit.FailuresPerIPv6Aggregate, FailureWindow: cfg.SignInLimit.FailureWindow,
+		RequestsPerSecond: cfg.SignInLimit.RequestsPerSecond, RequestBurst: cfg.SignInLimit.RequestBurst,
+	}, signinlimit.WithCleanupMetrics(metrics))
+	if err != nil {
+		return err
+	}
+	// Deletes ended rate-limit windows (at once, then every minute) until shutdown, reporting every
+	// cycle to the metrics; waited for before the pool is closed.
+	cleanupCtx, stopCleanup := context.WithCancel(ctx)
+	cleanupDone := make(chan struct{})
+	go func() {
+		defer close(cleanupDone)
+		signIns.Run(cleanupCtx, logger)
+	}()
+	defer func() {
+		stopCleanup()
+		<-cleanupDone
+	}()
 	router := httpserver.NewRouter(httpserver.RouterDeps{
-		Logger:    logger,
-		Metrics:   metrics,
-		Readiness: readiness,
-		Database:  db,
+		Logger:         logger,
+		Metrics:        metrics,
+		Readiness:      readiness,
+		Database:       db,
+		TrustedProxies: cfg.HTTP.Proxies.Prefixes,
 		PublicAPI: &httpserver.PublicAPIDeps{
 			Messages: messages,
 			Auth:     keys,
 		},
 		Portal: &httpserver.PortalDeps{
-			Messages: messages,
-			Auth:     portalAccounts,
-			APIKeys:  keys,
+			Messages:      messages,
+			Auth:          portalAccounts,
+			APIKeys:       keys,
+			Audit:         auditLog,
+			SignInLimiter: signIns,
 		},
 	})
 	server := httpserver.NewServer(httpserver.ServerConfig{

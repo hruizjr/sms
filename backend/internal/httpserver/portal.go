@@ -9,7 +9,9 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"net/netip"
 	"slices"
+	"strconv"
 	"time"
 	"unicode/utf8"
 
@@ -17,10 +19,12 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/hruizjr/sms/backend/internal/apikey"
+	"github.com/hruizjr/sms/backend/internal/audit"
 	"github.com/hruizjr/sms/backend/internal/messaging"
 	"github.com/hruizjr/sms/backend/internal/middleware"
 	"github.com/hruizjr/sms/backend/internal/portal"
 	"github.com/hruizjr/sms/backend/internal/portalapi"
+	"github.com/hruizjr/sms/backend/internal/signinlimit"
 	"github.com/hruizjr/sms/backend/internal/tenancy"
 )
 
@@ -36,8 +40,9 @@ type PortalAuthenticator interface {
 	Login(ctx context.Context, email, password string) (portal.Session, error)
 	Authenticate(ctx context.Context, token string) (portal.Principal, error)
 	Logout(ctx context.Context, p portal.Principal) error
-	// Reauthenticate verifies the signed-in user's current password before a sensitive action.
-	Reauthenticate(ctx context.Context, p portal.Principal, password string) error
+	// Reauthenticate verifies the signed-in user's current password before a sensitive action, and
+	// records a failure in the audit log as a failure of action.
+	Reauthenticate(ctx context.Context, p portal.Principal, password string, action audit.Action) error
 }
 
 // PortalMessageService is what the portal needs from the messaging engine (implemented by
@@ -52,16 +57,39 @@ type PortalMessageService interface {
 // the same service that verifies keys on the public API).
 type PortalAPIKeyService interface {
 	List(ctx context.Context, tenantID tenancy.ID) ([]apikey.Key, error)
-	Create(ctx context.Context, tenantID tenancy.ID, label string, scopes []apikey.Scope) (apikey.Key, string, error)
-	Revoke(ctx context.Context, tenantID tenancy.ID, keyID [16]byte) (apikey.Key, error)
+	// Create and Revoke write their audit event in the same transaction as the change.
+	Create(ctx context.Context, tenantID tenancy.ID, label string, scopes []apikey.Scope, actor audit.Actor, via string) (apikey.Key, string, error)
+	Revoke(ctx context.Context, tenantID tenancy.ID, keyID [16]byte, actor audit.Actor, via string) (apikey.Key, error)
+}
+
+// PortalAuditService records security events that change nothing else (refusals) and lists an
+// organization's audit log (implemented by audit.Service).
+type PortalAuditService interface {
+	Record(ctx context.Context, tenantID tenancy.ID, ev audit.Event) error
+	RecordPlatform(ctx context.Context, ev audit.PlatformEvent) error
+	List(ctx context.Context, tenantID tenancy.ID, f audit.Filter) ([]audit.Entry, string, error)
+}
+
+// SignInLimiter applies the layered per-source sign-in limits (implemented by signinlimit.Limiter).
+type SignInLimiter interface {
+	// Admit takes a token of the source's all-attempt bucket and reserves its failed-attempt slots.
+	Admit(ctx context.Context, ip netip.Addr) (signinlimit.Admission, error)
+	// Refund returns the slots of an attempt that succeeded or whose password was never checked.
+	Refund(ctx context.Context, res signinlimit.Reservation) error
+	Config() signinlimit.Config
 }
 
 // PortalDeps are the dependencies of the client portal API. When they are set, NewRouter mounts
 // /portal/v1. All are required.
 type PortalDeps struct {
-	Auth     PortalAuthenticator
-	Messages PortalMessageService
-	APIKeys  PortalAPIKeyService
+	Auth          PortalAuthenticator
+	Messages      PortalMessageService
+	APIKeys       PortalAPIKeyService
+	Audit         PortalAuditService
+	SignInLimiter SignInLimiter
+	// Now is the clock of the deduplication intervals of refusals recorded by the HTTP layer; nil
+	// uses time.Now. (Audit event times are assigned by the database.)
+	Now func() time.Time
 }
 
 type portalPrincipalKey struct{}
@@ -76,7 +104,17 @@ func portalPrincipalFrom(ctx context.Context) portal.Principal {
 // session's CSRF token; each handler checks the permission its operation requires. The tenant is
 // taken from the session only.
 func mountPortalAPI(r chi.Router, deps PortalDeps, logger *slog.Logger) {
-	api := &portalAPI{auth: deps.Auth, svc: deps.Messages, keys: deps.APIKeys, logger: logger}
+	if deps.Auth == nil || deps.Messages == nil || deps.APIKeys == nil || deps.Audit == nil || deps.SignInLimiter == nil {
+		panic("httpserver: every PortalDeps field is required") // programmer error at startup
+	}
+	now := deps.Now
+	if now == nil {
+		now = time.Now
+	}
+	api := &portalAPI{
+		auth: deps.Auth, svc: deps.Messages, keys: deps.APIKeys, audit: deps.Audit, limiter: deps.SignInLimiter,
+		now: now, logger: logger,
+	}
 	r.Group(func(r chi.Router) {
 		r.Use(api.requireSession)
 		portalapi.HandlerWithOptions(api, portalapi.ChiServerOptions{
@@ -87,10 +125,13 @@ func mountPortalAPI(r chi.Router, deps PortalDeps, logger *slog.Logger) {
 }
 
 type portalAPI struct {
-	auth   PortalAuthenticator
-	svc    PortalMessageService
-	keys   PortalAPIKeyService
-	logger *slog.Logger
+	auth    PortalAuthenticator
+	svc     PortalMessageService
+	keys    PortalAPIKeyService
+	audit   PortalAuditService
+	limiter SignInLimiter
+	now     func() time.Time
+	logger  *slog.Logger
 }
 
 var _ portalapi.ServerInterface = (*portalAPI)(nil)
@@ -145,43 +186,94 @@ func isSafeMethod(method string) bool {
 func (a *portalAPI) require(w http.ResponseWriter, r *http.Request, permission portal.Permission) (portal.Principal, bool) {
 	p := portalPrincipalFrom(r.Context())
 	if !p.Has(permission) {
-		writePortalProblem(w, r, http.StatusForbidden, "forbidden", "Permission denied",
-			"Your role does not allow this action ("+string(permission)+").", nil)
+		forbidden(w, r, permission)
 		return p, false
 	}
 	return p, true
 }
 
+// requireAudited is require for the protected operations whose refusals are security events (API key
+// management and the audit log): a refusal is recorded as a denied action, at most once per user,
+// action and audit.DeniedInterval (five minutes), so repeating a refused request cannot multiply
+// audit writes. The request is refused whether or not the event could be written; a failure to write
+// it is logged as an error.
+func (a *portalAPI) requireAudited(w http.ResponseWriter, r *http.Request, permission portal.Permission, action audit.Action) (portal.Principal, bool) {
+	p := portalPrincipalFrom(r.Context())
+	if p.Has(permission) {
+		return p, true
+	}
+	actor := audit.PortalUser(p.UserID)
+	err := a.audit.Record(r.Context(), p.TenantID, audit.Event{
+		Action: action, Outcome: audit.OutcomeDenied, Actor: actor,
+		Details: audit.Details{
+			Reason: audit.ReasonInsufficientRole, Role: string(p.Role), RequiredPermission: string(permission),
+			DedupIntervalSeconds: int(audit.DeniedInterval / time.Second),
+		},
+		DedupKey: audit.DeniedKey(actor, action, a.now()),
+	})
+	if err != nil {
+		a.logger.ErrorContext(r.Context(), "audit event of a refused request not recorded",
+			slog.String("request_id", middleware.RequestIDFromContext(r.Context())),
+			slog.String("tenant_id", p.TenantID.String()), slog.String("action", string(action)), slog.String("error", err.Error()))
+	}
+	forbidden(w, r, permission)
+	return p, false
+}
+
+func forbidden(w http.ResponseWriter, r *http.Request, permission portal.Permission) {
+	writePortalProblem(w, r, http.StatusForbidden, "forbidden", "Permission denied",
+		"Your role does not allow this action ("+string(permission)+").", nil)
+}
+
 // SignIn implements POST /portal/v1/session.
 func (a *portalAPI) SignIn(w http.ResponseWriter, r *http.Request, _ portalapi.SignInParams) {
+	// The per-source limits apply to every request, before the body is read and before any
+	// credential is checked, so a refusal reveals nothing about the account and never touches its
+	// lockout state.
+	admission, ok := a.admitSignIn(w, r)
+	if !ok {
+		return
+	}
 	raw, ok := readJSONBody(w, r, maxSignInRequestBytes)
 	if !ok {
+		a.refundSignIn(r, admission.Reservation) // no password was checked
 		return
 	}
 	fields, errs, malformed := parseStringObject(raw, []string{"email", "password"}, []string{"email", "password"})
 	if malformed {
+		a.refundSignIn(r, admission.Reservation)
 		malformedJSON(w, r)
 		return
 	}
 	if len(errs) > 0 {
+		a.refundSignIn(r, admission.Reservation)
 		writePortalProblem(w, r, http.StatusBadRequest, problemValidationError, "The request is invalid", "One or more fields are invalid.", errs)
 		return
 	}
 	session, err := a.auth.Login(r.Context(), fields["email"], fields["password"])
 	switch {
 	case errors.Is(err, portal.ErrInvalidCredentials):
+		// The failure keeps its reserved slots.
 		a.logger.InfoContext(r.Context(), "portal sign-in failed",
 			slog.String("request_id", middleware.RequestIDFromContext(r.Context())))
 		writePortalProblem(w, r, http.StatusUnauthorized, "invalid-credentials", "Sign-in failed",
 			"The email address or password is incorrect, or the account is temporarily locked.", nil)
 		return
 	case errors.Is(err, portal.ErrTenantNotActive):
+		// A correct password, but no session: counted like a failure (no refund).
 		accountNotActive(w, r)
+		return
+	case errors.Is(err, portal.ErrBusy):
+		// The password was never checked: the attempt returns its slots.
+		a.refundSignIn(r, admission.Reservation)
+		serviceBusy(w, r)
 		return
 	case err != nil:
 		a.serverError(w, r, "portal sign-in", err)
 		return
 	}
+	// A successful sign-in returns exactly its own slots; earlier failures stay counted.
+	a.refundSignIn(r, admission.Reservation)
 	p := session.Principal
 	a.logger.InfoContext(r.Context(), "portal sign-in",
 		slog.String("request_id", middleware.RequestIDFromContext(r.Context())),
@@ -196,6 +288,73 @@ func (a *portalAPI) SignIn(w http.ResponseWriter, r *http.Request, _ portalapi.S
 		SameSite: http.SameSiteStrictMode,
 	})
 	writeJSON(w, http.StatusOK, toPortalSession(p))
+}
+
+// refundTimeout bounds a refund, which runs even if the client has gone away.
+const refundTimeout = 5 * time.Second
+
+// refundSignIn returns an attempt's failed-attempt slots. A refund that fails leaves the slots
+// counted (the safe direction) and is logged.
+func (a *portalAPI) refundSignIn(r *http.Request, res signinlimit.Reservation) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), refundTimeout)
+	defer cancel()
+	if err := a.limiter.Refund(ctx, res); err != nil {
+		a.logger.ErrorContext(r.Context(), "sign-in failure slot not refunded",
+			slog.String("request_id", middleware.RequestIDFromContext(r.Context())), slog.String("error", err.Error()))
+	}
+}
+
+// admitSignIn applies the per-source sign-in limits to the request's source. When a limit refuses
+// the attempt it writes 429 with Retry-After and returns false. The first refusal of a failure
+// budget's window, or of a token bucket's report interval, is recorded as a platform audit event (no
+// organization is identified); later refusals are not recorded one by one, so a flood cannot multiply
+// audit writes.
+func (a *portalAPI) admitSignIn(w http.ResponseWriter, r *http.Request) (signinlimit.Admission, bool) {
+	ip := middleware.ClientIPFromContext(r.Context())
+	admission, err := a.limiter.Admit(r.Context(), ip)
+	if err != nil {
+		a.serverError(w, r, "portal sign-in rate limit", err)
+		return admission, false
+	}
+	if admission.Allowed {
+		return admission, true
+	}
+	refusal := admission.Refusal
+	if refusal.Report {
+		cfg := a.limiter.Config()
+		details := audit.Details{Limit: refusal.Limit, SourcePrefixLength: refusal.Source.Bits()}
+		if refusal.Layer == signinlimit.LayerRequestRate {
+			details.Reason, details.RatePerSecond = audit.ReasonTooManyRequests, cfg.RequestsPerSecond
+		} else {
+			details.Reason, details.WindowSeconds = audit.ReasonTooManyFailures, int(cfg.FailureWindow/time.Second)
+		}
+		err := a.audit.RecordPlatform(r.Context(), audit.PlatformEvent{
+			Action: audit.ActionSignInRateLimited, Outcome: audit.OutcomeDenied, Details: details,
+		})
+		if err != nil {
+			a.logger.ErrorContext(r.Context(), "audit event of a rate-limited sign-in not recorded",
+				slog.String("request_id", middleware.RequestIDFromContext(r.Context())), slog.String("error", err.Error()))
+		}
+	}
+	a.logger.InfoContext(r.Context(), "portal sign-in rate limited",
+		slog.String("request_id", middleware.RequestIDFromContext(r.Context())), slog.String("limit", string(refusal.Layer)))
+	w.Header().Set("Retry-After", strconv.FormatInt(int64(refusal.RetryAfter/time.Second), 10))
+	detail := "Too many failed sign-in attempts from your network. Wait before trying again."
+	if refusal.Layer == signinlimit.LayerRequestRate {
+		detail = "Too many sign-in requests from your network. Wait before trying again."
+	}
+	writePortalProblem(w, r, http.StatusTooManyRequests, "too-many-sign-in-attempts", "Too many sign-in attempts", detail, nil)
+	return admission, false
+}
+
+// serviceBusyRetryAfter is the Retry-After of a 503 caused by exhausted password-hashing capacity.
+const serviceBusyRetryAfter = "2"
+
+// serviceBusy writes 503 (service-busy): the password-hashing capacity is exhausted; nothing was checked.
+func serviceBusy(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Retry-After", serviceBusyRetryAfter)
+	writePortalProblem(w, r, http.StatusServiceUnavailable, "service-busy", "Service busy",
+		"The service is busy. Try again in a moment.", nil)
 }
 
 // GetSession implements GET /portal/v1/session.

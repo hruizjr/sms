@@ -2,7 +2,7 @@
 
 | Status | Owner | Last updated |
 | ------ | ----- | ------------ |
-| Draft — pending owner review (MFA, MVP roles and API key scopes in §3 updated for owner decisions of 2026-11-26; portal sessions and passwords in §3 for decision log §20, 2026-11-27; S-3 status for §21; S-3 and S-8 for G4-7 and G4-8, 2026-11-28) | Project owner | 2026-11-28 |
+| Draft — pending owner review (MFA, MVP roles and API key scopes in §3 updated for owner decisions of 2026-11-26; portal sessions and passwords in §3 for decision log §20, 2026-11-27; S-3 status for §21; S-3 and S-8 for G4-7 and G4-8, 2026-11-28; §3, §7, §9 and S-8 for Phase 4 Group 6, decision log §23, 2026-11-28; §3, §7, §9, S-8 and S-12 for the Group 6 security review remediation, G6-10 to G6-20, 2026-11-28; §3, §9, §9.1, S-12, S-13 and S-14 for the final remediation, G6-21 to G6-25, 2026-11-28) | Project owner | 2026-11-28 |
 
 This baseline sets the minimum security principles for all work. It is **not** a complete security
 program; §11 lists the security engineering still required. Nothing here is legal advice.
@@ -46,13 +46,43 @@ program; §11 lists the security engineering still required. Nothing here is leg
   every state-changing request. Re-authentication for sensitive actions applies once such actions exist.
 - **Passwords:** hashed with **Argon2id** (owner decision G3-2, 2026-11-27: OWASP parameters, 19 MiB, 2 iterations,
   1 lane); at least 12 characters (G3-3); five consecutive failed sign-ins lock the account for 15 minutes.
-  Breached-password checks and per-IP rate limiting of sign-in are **not implemented yet**.
+  **Layered per-source limits of sign-in are implemented** (Phase 4 Group 6, decision log §23, G6-11 and G6-12),
+  shared by all API instances through PostgreSQL and answered with `429` and `Retry-After` before any credential
+  check; they never lock an account and are independent of the lockout. Initial, configurable defaults: a budget of
+  **failed** attempts of 100 per IPv4 address, 100 per IPv6 /64 and 500 per IPv6 /48 in 15 minutes (each attempt
+  reserves a slot; a successful sign-in returns only its own slot), and an all-attempt token bucket of 10 requests
+  per second with a burst of 100 per IPv4 address or IPv6 /64. Password hashing runs with bounded concurrency and a
+  bounded wait queue; beyond it, `503` without checking the password. The client address is the direct peer unless
+  the peer is a configured trusted proxy (`TRUSTED_PROXIES`, which **must be set explicitly in production**: proxy
+  addresses or `none`; ranges broader than an IPv4 /8 or IPv6 /32 need an explicit opt-in and log a warning).
+  Breached-password checks are **not implemented yet**.
+  *Token bucket, precisely:*
+  - one token per attempt, whatever its outcome; capacity 100 tokens; refill 10 tokens per second;
+  - an idle source can use the full burst of 100 at once;
+  - starting from a full bucket, about 200 attempts can be accepted within 10 seconds (100 plus 10 × 10, subject to
+    token timing);
+  - once the burst is spent, at most 10 per second (600 a minute) are sustained;
+  - one shared row per source, so the same totals apply across all API instances.
+- **Authentication availability (final review of Phase 4 Group 6).**
+  - **What the controls do.** The per-source token bucket and the bounded password hasher protect memory and CPU.
+  - **Valid credentials skip the failure budget.** A successful sign-in returns its reserved slots, so sign-ins with
+    valid credentials (an attacker's own account, or several) are limited only by each source's token bucket.
+  - **The queue can be monopolized.** Several valid accounts and source addresses can keep the one shared hashing
+    queue full. Admission is first-come-first-served, not fair per source, so other users then receive `503`.
+  - **IPv6.** There is no all-attempt limit per IPv6 /48: each /64 has its own bucket.
+  - **Shared resources.** In a load test on a 4-vCPU development container, a sign-in flood also raised
+    `/v1/messages` latency (p50 about 4 ms to about 80 ms), because the flood and the messages API share CPU and the
+    database pool.
+  - **Requirements.** The production requirements are in S-12; no new threshold is set without a measured rationale
+    and owner approval.
 - **MFA:** mandatory for **every human internal admin account** — Super Admin, Operations and Finance (owner
   decision D-021, widened on 2026-11-26, MVP-04); available (possibly mandatory by policy) for clients.
 - **API keys:** random, high-entropy, with a visible prefix for identification; stored only as hashes;
   shown once; scoped (permissions, optional IP allowlist); revocable; last-used tracking. **MVP** (owner,
   2026-11-26, MVP-06): create, label, show once, store hashed and revoke, with the contract scopes
-  `messages:send` and `messages:read`; IP allowlisting and advanced scope management are deferred.
+  `messages:send` and `messages:read`; IP allowlisting and advanced scope management are deferred. **Last-used
+  tracking is implemented** (owner decision G4-6, decision log §23): written at most once per key per minute after a
+  successful, authorized request, so it can lag the latest use by up to a minute.
 - **Authorization:** RBAC with deny-by-default; every endpoint declares its required permission; checks
   happen server-side in a central mechanism, plus tenant scoping. Role design is an open task. **MVP roles**
   (owner, 2026-11-26): client **Owner** (manages users and API keys), **Sender** (sending functions) and
@@ -128,7 +158,12 @@ program; §11 lists the security engineering still required. Nothing here is leg
 - CSRF protection for cookie-authenticated requests; strict CORS.
 - Security headers (CSP, HSTS, `X-Content-Type-Options`, frame protection) on portal responses.
 - Request size limits, timeouts, and pagination limits.
-- Rate limiting per IP, per user, per tenant, per API key; stricter limits on authentication endpoints.
+- Rate limiting per IP, per user, per tenant, per API key; stricter limits on authentication endpoints. *Status:*
+  portal sign-in is limited per source in layers (failed-attempt budgets per IPv4 address, IPv6 /64 and /48; an
+  all-attempt token bucket; bounded password hashing — Phase 4 Group 6, G6-11, G6-12); per-user, per-tenant and
+  per-key limits of the public API are not implemented yet. Edge rate limiting or a WAF in front of the API is a
+  production gate (S-12): the application limits do not stop an attacker controlling many networks, and a
+  distributed flood can still make sign-in busy (`503`).
 - File imports: size and row limits, type checking, processing in background with progress, no execution
   of content; exported CSV/Excel cells sanitized against formula injection.
 - Outbound webhooks: HMAC signatures with timestamps (replay protection), URL validation against private,
@@ -147,14 +182,67 @@ program; §11 lists the security engineering still required. Nothing here is leg
 
 ## 9. Audit logging
 
-- Append-only, tamper-evident storage (approach to be designed — e.g. restricted DB role with insert-only
-  rights, periodic hash chaining or export to write-once storage).
+- Append-only storage under the application's permissions, plus tamper evidence that holds against privileged
+  database access: an **external immutable export** (write-once storage outside the database's administrative
+  domain) or **externally anchored integrity evidence** (for example periodic digests published or stored where the
+  database administrators cannot change them). A hash chain kept inside the same PostgreSQL database does **not**
+  protect against a database superuser, who can rewrite the chain together with the rows.
 - Recorded: authentication events, MFA changes, role/permission changes, API key lifecycle, credit and
   pricing changes, sender ID decisions, campaign approvals, provider/routing configuration changes,
   data exports, admin access to tenant data, tenant suspension.
 - Each record: timestamp (UTC), actor, actor type (user/API key/system), tenant, action, target, result,
   source IP, request ID, and relevant before/after values (excluding secrets).
 - Retention: to be defined (likely long; regulatory input required).
+- *Status (Phase 4 Group 6, decision log §23):* a durable audit log exists for portal sign-in, sign-out, failed
+  sign-in, account lockout, sign-in rate limiting, API key creation (including failed password confirmation) and
+  revocation, and refused API key and audit log requests. Tenant events are stored under forced RLS and readable by
+  the organization's owners; events of no identifiable organization are stored in a platform table the application
+  cannot read. Append-only is enforced by privileges (insert only, with the event ID and time assigned by
+  PostgreSQL so the application can neither back-date nor collide with an event) and by triggers that reject
+  updates, deletes and truncation by any role including the table owner. These controls stop ordinary application
+  modification; they are **not** tamper-proof and do **not** protect against a database superuser (or the table
+  owner after disabling the triggers). An account lock is recorded with the outcome `enforced`. Refused requests are
+  recorded once per user, action and five minutes, and attempts on a locked account once per lock, through a unique
+  deduplication key (no event is modified). Portal user creation, unlocking and session revocation by `smsctl` are
+  recorded as system actions. Sender ID approvals (`smsctl sender-id approve`, `bootstrap`) are recorded as
+  `sender_id.approve` in the organization's log, in the same transaction as the approval (a repeated approval changes
+  and records nothing). Each record holds the fields above except before/after values (no audited action changes a
+  value yet). The external immutable export (S-8) and the retention period (S-4) remain open; platform-wide events
+  stay readable only by database administrators until an approved internal function exists.
+- *Limitations of system actions:* `smsctl` actions are recorded with the actor `system` and `via: smsctl`. The tool
+  has no operator identity, so the record does not say which person acted. **Not audited:** `smsctl` tenant creation,
+  activation, suspension and reactivation (platform-owned tenant registry). Both need the platform administration
+  audit design of S-14; no tenant-log workaround is used.
+
+### 9.1 Operational monitoring of the security controls
+
+The repository has no alerting infrastructure: the API exposes Prometheus metrics on its separate, non-public
+metrics listener, and production monitoring must collect them and configure the alerts below. Labels never contain
+addresses, users or tenants. The thresholds are **initial recommendations** to be tuned against production traffic;
+they are alert conditions, not rate limits.
+
+**Implemented metrics; the alert must be configured externally:**
+
+| Concern | Metric | Recommended alert |
+| ------- | ------ | ----------------- |
+| Cleanup failure / last-success age | `sms_signin_limit_cleanup_last_success_timestamp_seconds` (per process; 0 until a cycle succeeds; a failed cycle never moves it) and `sms_signin_limit_cleanup_runs_total{result="failure"}` | `time() - sms_signin_limit_cleanup_last_success_timestamp_seconds > 300` for 2 min (five cycles missed) |
+| Cleanup failure (rate) | `sms_signin_limit_cleanup_runs_total{result="failure"}` | `increase(...[15m]) >= 3` on any process |
+| Cleanup backlog | `sms_signin_limit_cleanup_incomplete_runs_total` (a cycle stopped at its work bound of 50,000 rows per table) | `increase(...[15m]) >= 3`: new sources arrive faster than cleanup removes them. Check edge limits (S-12) and table growth (below) |
+| Cleanup duration | `sms_signin_limit_cleanup_duration_seconds` (histogram) | p99 over 30 min `> 30` s (the cycle's timeout is 60 s) |
+| Rows deleted by cleanup | `sms_signin_limit_cleanup_deleted_rows_total{table}` | No fixed alert; graph it. A sudden rise means many new sources (a distributed flood) |
+| Rate-limit `429` | `sms_http_requests_total{route="/portal/v1/session",code="429"}` | More than 20 % of sign-in requests for 10 min: an attack, or a limit too low for a shared address |
+| Password-hashing `503` | `sms_http_requests_total{route=~"/portal/v1/session\|/portal/v1/api-keys",code="503"}` | Any for 5 min (warning); more than 10 % of sign-in requests for 10 min (critical): the hashing queue is saturated |
+| Effect on the messages API | `sms_http_request_duration_seconds{route=~"/v1/messages.*"}` | p99 above the agreed service level (to be set) for 10 min, especially during sign-in floods |
+| Audit-write failure, same transaction | `sms_http_requests_total{code="500"}` on the audited portal routes. When an event cannot be written, the change is rolled back and the request fails | Any sustained `500`. Confirm through the error log |
+
+**Monitoring not implemented yet** (no metric exists):
+
+| Concern | Today | Required |
+| ------- | ----- | -------- |
+| Audit-write failure, refusal events | Logged as errors (`audit event of a refused request not recorded`, `audit event of a rate-limited sign-in not recorded`); no metric | A counter of failed audit writes by action, alerted on any increase. A log-based alert on those messages is the interim option |
+| Hashing queue saturation | Visible only as `503` | Gauges of busy hashing slots and waiting callers, and a counter of refusals |
+| Rate-limit table growth | Rows can be counted in PostgreSQL; no metric | Live rows and size of `portal_sign_in_failure_budgets` and `portal_sign_in_request_buckets` from the database monitoring, for example the PostgreSQL statistics views; alert above about 500,000 rows each (ten cycles' work of one process; initial value) |
+| Database pool pressure during sign-in floods | No pool metric | pgx pool statistics: acquired connections, acquire wait time, empty acquires; alert when acquire waits rise with sign-in traffic |
 
 ## 10. Infrastructure and supply chain (when infrastructure exists)
 
@@ -176,7 +264,10 @@ program; §11 lists the security engineering still required. Nothing here is leg
 | S-5 | Privacy impact assessment; DPO and NPC obligations (with counsel) | Before production |
 | S-6 | Secret management and key rotation design | Hosting decision |
 | S-7 | Abuse-prevention policy and tooling (KYC, sender ID vetting, content rules) | Before production sending |
-| S-8 | Audit log tamper-evidence design | Before admin features, and before production in any case: API key creation and revocation must be durable audit events; application logs are not a substitute (owner decision G4-8, 2026-11-28) |
+| S-8 | Audit log tamper-evidence design | Before admin features, and before production in any case: API key creation and revocation must be durable audit events; application logs are not a substitute (owner decision G4-8, 2026-11-28). **Durable, append-only audit log implemented** (Phase 4 Group 6, decision log §23). **Production requirement (G6-19):** an external immutable export of the audit log, or externally anchored integrity evidence, so that alteration by privileged database access is detectable; an internal PostgreSQL hash chain does not satisfy it. Not implemented |
 | S-9 | Incident response and breach notification runbooks | Before production |
 | S-10 | Independent penetration test | Before production launch |
 | S-11 | Telco-specific security requirements (from telco checklist) | When telco specs received |
+| S-12 | Sign-in abuse controls at the edge, and production capacity measurements (G6-11, G6-12, G6-15, G6-24) | Before production (and edge limits before any public deployment): edge rate limiting or WAF in front of the API; the real `TRUSTED_PROXIES` of the hosting (D-145); Argon2 throughput, and the hashing concurrency, queue and wait, measured on the production hardware; database-pool contention tested during sign-in floods (effect on `/v1/messages`); the sign-in limit defaults reviewed against measured traffic (carrier-grade NAT); an evaluation of an aggregate all-attempt limit per IPv6 /48; an evaluation of fair or per-source hashing admission, so one source cannot monopolize the queue (valid-account sign-ins refund their failure slots, §3). No new threshold without a measured rationale and owner approval |
+| S-13 | Production monitoring and alerting of the security controls (§9.1; G6-23) | Before production: collect the implemented metrics and configure the alerts of §9.1; implement the missing monitoring there (audit-write failure counter, hashing queue gauges, rate-limit table growth, database pool statistics) |
+| S-14 | Platform administration audit (G6-25) | Before admin features, and before production in any case: an audit design for platform-level administration, recording tenant creation, activation, suspension and reactivation (today unaudited `smsctl` commands). Its records cannot live in a tenant's log, and need a writer role and a reader policy (D-021); actions must be attributed to authenticated operators (MFA-protected internal admin accounts, D-021) instead of the `system` actor. Owner: the admin portal / platform administration group, when the owner authorizes it |

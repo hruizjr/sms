@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const approveSenderID = `-- name: ApproveSenderID :exec
+const approveSenderID = `-- name: ApproveSenderID :execrows
 
 INSERT INTO sender_ids (tenant_id, sender_id)
 VALUES ($1, $2)
@@ -27,9 +27,13 @@ type ApproveSenderIDParams struct {
 // Messaging (internal/messaging, Phase 4 Group 2). Every query on tenant data runs inside the
 // tenant's transaction-local context (database.DB.InTenantTx) and also filters by tenant_id
 // explicitly; row-level security is the second line of defence. Times come from the database clock.
-func (q *Queries) ApproveSenderID(ctx context.Context, arg ApproveSenderIDParams) error {
-	_, err := q.db.Exec(ctx, approveSenderID, arg.TenantID, arg.SenderID)
-	return err
+// 1 row for a new approval, 0 when the sender ID was already approved.
+func (q *Queries) ApproveSenderID(ctx context.Context, arg ApproveSenderIDParams) (int64, error) {
+	result, err := q.db.Exec(ctx, approveSenderID, arg.TenantID, arg.SenderID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const claimDispatchJobs = `-- name: ClaimDispatchJobs :many

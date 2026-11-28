@@ -43,7 +43,22 @@ P="$COMPOSE_PROJECT_NAME"
 API="http://127.0.0.1:${API_PORT:-8080}"
 BROKEN_MIGRATION="backend/migrations/29991231235959_local_stack_check_broken.sql"
 BASELINE_VERSION="20261125041208"
-LATEST_VERSION="20261127200000"
+# The expected migrations are derived from the migration files themselves (never hard-coded), so a
+# new migration is expected automatically and a database that has not applied it fails the check.
+migration_versions() { # every migration file's version, ascending, one per line
+  local f name
+  for f in backend/migrations/[0-9]*_*.sql; do
+    name="$(basename "$f")"
+    [[ "$f" == "$BROKEN_MIGRATION" || ! -f "$f" ]] && continue
+    echo "${name%%_*}"
+  done | sort -n
+}
+EXPECTED_VERSIONS="$(migration_versions | paste -sd ' ' -)"
+LATEST_VERSION="$(migration_versions | tail -n 1)"
+if [[ ! "$LATEST_VERSION" =~ ^[0-9]{14}$ ]]; then
+  echo "could not determine the latest migration version from backend/migrations" >&2
+  exit 2
+fi
 failures=0
 
 compose() { docker compose "$@"; }
@@ -76,6 +91,18 @@ api_refuses_migrator_role() {
 }
 api_sessions_as() { psql_value "SELECT coalesce(string_agg(DISTINCT usename, ','), '') FROM pg_stat_activity WHERE application_name = 'sms-api'"; }
 db_version() { psql_value "SELECT max(version_id) FROM goose_db_version WHERE is_applied"; }
+# The applied versions (as goose records them), ascending, space-separated.
+applied_versions() { psql_value "SELECT string_agg(v::text, ' ' ORDER BY v) FROM (SELECT DISTINCT version_id AS v FROM goose_db_version WHERE is_applied AND version_id > 0) a"; }
+# Succeeds if `migrate status` lists every migration file as applied and none as pending.
+migrate_status_all_applied() {
+  local out
+  out="$(docker compose run --rm --no-deps migrate status 2>&1)" || return 1
+  ! grep -qi 'pending' <<<"$out" || return 1
+  local v
+  for v in $EXPECTED_VERSIONS; do
+    grep -Eq "^$v[[:space:]]+applied" <<<"$out" || return 1
+  done
+}
 equals() { [[ "$1" == "$2" ]]; }
 inspect() { docker inspect -f "$2" "$P-$1-1"; }
 
@@ -96,7 +123,9 @@ echo "== Fresh start (new volume): postgres -> migrate -> api"
 compose up -d --build --wait
 pass "up --build --wait succeeded"
 expect "migrate exited 0" equals "$(inspect migrate '{{.State.ExitCode}}')" 0
-expect "database version is the latest migration" equals "$(db_version)" "$LATEST_VERSION"
+expect "database version is the latest migration ($LATEST_VERSION, from the migration files)" equals "$(db_version)" "$LATEST_VERSION"
+expect "every migration file is applied" equals "$(applied_versions)" "$EXPECTED_VERSIONS"
+expect "migrate status lists every migration as applied, none pending" migrate_status_all_applied
 expect "GET /healthz is 200" equals "$(http_code /healthz)" 200
 expect "GET /readyz is 200" equals "$(http_code /readyz)" 200
 expect "api health status is healthy" equals "$(inspect api '{{.State.Health.Status}}')" healthy
@@ -379,6 +408,10 @@ psql_value "DROP OWNED BY sms_migrator, sms_app; DROP ROLE sms_migrator; DROP RO
     version_id bigint NOT NULL, is_applied boolean NOT NULL, tstamp timestamp NOT NULL DEFAULT now());
   INSERT INTO goose_db_version (version_id, is_applied) VALUES (0, true), ($BASELINE_VERSION, true);" >/dev/null
 old_rows="$(psql_value "SELECT string_agg(version_id || '@' || tstamp, ',' ORDER BY id) FROM goose_db_version")"
+expect "the check detects a database that has not applied the latest migration" \
+  fails equals "$(db_version)" "$LATEST_VERSION"
+expect "the check detects a database that has not applied every migration" \
+  fails equals "$(applied_versions)" "$EXPECTED_VERSIONS"
 expect "the old volume has no application roles" \
   equals "$(psql_value "SELECT count(*) FROM pg_roles WHERE rolname IN ('sms_app', 'sms_migrator')")" 0
 if compose up -d --build --wait >/dev/null 2>&1; then
@@ -393,6 +426,7 @@ expect "goose_db_version now belongs to sms_migrator" \
 compose up -d --build --wait
 pass "after the upgrade, up --build --wait succeeded"
 expect "the remaining migrations were applied" equals "$(db_version)" "$LATEST_VERSION"
+expect "every migration file is applied after the upgrade" equals "$(applied_versions)" "$EXPECTED_VERSIONS"
 expect "the existing migration history was kept" \
   equals "$(psql_value "SELECT string_agg(version_id || '@' || tstamp, ',' ORDER BY id) FROM goose_db_version WHERE version_id <= $BASELINE_VERSION")" "$old_rows"
 expect "the api's database sessions use sms_app" equals "$(api_sessions_as)" sms_app

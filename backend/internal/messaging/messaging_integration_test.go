@@ -94,7 +94,7 @@ func (e *env) tenant(name string) tenancy.ID {
 	if _, err := repo.Activate(e.ctx, t.ID); err != nil {
 		e.t.Fatal(err)
 	}
-	if err := e.svc.ApproveSenderID(e.ctx, t.ID, senderID); err != nil {
+	if err := e.svc.ApproveSenderID(e.ctx, t.ID, senderID, "test"); err != nil {
 		e.t.Fatal(err)
 	}
 	return t.ID
@@ -213,7 +213,7 @@ func TestIntegrationAcceptRules(t *testing.T) {
 		t.Errorf("unapproved sender ID: %v", err)
 	}
 	// Rejections are not recorded: after approval, the same key is accepted.
-	if err := e.svc.ApproveSenderID(e.ctx, tenantID, "NOTAPPROVED"); err != nil {
+	if err := e.svc.ApproveSenderID(e.ctx, tenantID, "NOTAPPROVED", "test"); err != nil {
 		t.Fatal(err)
 	}
 	if res, err := e.svc.Accept(e.ctx, tenantID, req); err != nil || res.Replayed {

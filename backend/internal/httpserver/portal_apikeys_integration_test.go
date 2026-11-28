@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/hruizjr/sms/backend/internal/apikey"
+	"github.com/hruizjr/sms/backend/internal/audit"
 	"github.com/hruizjr/sms/backend/internal/database"
 	"github.com/hruizjr/sms/backend/internal/database/dbtest"
 	"github.com/hruizjr/sms/backend/internal/messaging"
@@ -45,7 +46,7 @@ func TestIntegrationPortalAPIKeys(t *testing.T) {
 	}
 	deps, logs := testDeps(true)
 	deps.PublicAPI = &PublicAPIDeps{Messages: msgs, Auth: keys}
-	deps.Portal = &PortalDeps{Messages: msgs, Auth: accounts, APIKeys: keys}
+	deps.Portal = &PortalDeps{Messages: msgs, Auth: accounts, APIKeys: keys, Audit: audit.NewService(db), SignInLimiter: testSignInLimiter(t, db)}
 	h := NewRouter(deps)
 
 	tenants := tenancy.NewRepository(db.Pool())
@@ -57,7 +58,7 @@ func TestIntegrationPortalAPIKeys(t *testing.T) {
 		if _, err := tenants.Activate(ctx, tn.ID); err != nil {
 			t.Fatal(err)
 		}
-		if err := msgs.ApproveSenderID(ctx, tn.ID, sender); err != nil {
+		if err := msgs.ApproveSenderID(ctx, tn.ID, sender, "test"); err != nil {
 			t.Fatal(err)
 		}
 		return tn.ID
@@ -83,7 +84,7 @@ func TestIntegrationPortalAPIKeys(t *testing.T) {
 		return `{` + fields + `,"current_password":"` + portalTestPassword + `"}`
 	}
 	createBody := withPassword(`"name":"Order notifications","scopes":["messages:send","messages:read"]`)
-	existing, _, err := keys.Create(ctx, tenantA, "Existing key", []apikey.Scope{apikey.ScopeMessagesRead})
+	existing, _, err := keys.Create(ctx, tenantA, "Existing key", []apikey.Scope{apikey.ScopeMessagesRead}, audit.System, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +224,7 @@ func TestIntegrationPortalAPIKeys(t *testing.T) {
 	if code, b := publicSend(created.Key, "k1"); code != http.StatusAccepted {
 		t.Fatalf("public API with the new key: %d %s", code, b)
 	}
-	_, readOnly, err := keys.Create(ctx, tenantA, "Read only", []apikey.Scope{apikey.ScopeMessagesRead})
+	_, readOnly, err := keys.Create(ctx, tenantA, "Read only", []apikey.Scope{apikey.ScopeMessagesRead}, audit.System, "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -27,6 +27,8 @@ type fakeAuth struct {
 	err    error
 }
 
+func (fakeAuth) RecordUse(context.Context, apikey.Principal) error { return nil }
+
 func (f fakeAuth) Authenticate(_ context.Context, token string) (apikey.Principal, error) {
 	if f.err != nil {
 		return apikey.Principal{}, f.err

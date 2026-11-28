@@ -5,12 +5,15 @@ import (
 	"encoding/base64"
 	"errors"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestPasswordHashRoundTrip(t *testing.T) {
 	t.Parallel()
-	h := newHasher(1)
+	h := newHasher(HashLimits{Concurrency: 1, Queue: 1, MaxWait: time.Minute})
 	ctx := context.Background()
 	encoded, err := h.hash(ctx, "correct horse battery")
 	if err != nil {
@@ -136,5 +139,139 @@ func TestSessionTokenAndCSRF(t *testing.T) {
 	}
 	if (Principal{}).CheckCSRF("") {
 		t.Error("an empty token matched an empty principal")
+	}
+}
+
+// The hasher never runs more than Concurrency hashes at once, lets at most Queue callers wait, and
+// refuses the rest at once with ErrBusy (a distributed flood cannot pile up unbounded waiting work).
+func TestHasherBoundsConcurrencyAndQueue(t *testing.T) {
+	t.Parallel()
+	h := newHasher(HashLimits{Concurrency: 2, Queue: 3, MaxWait: 5 * time.Second})
+	ctx := context.Background()
+	// Hold both slots.
+	for range 2 {
+		if err := h.acquire(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Three callers queue; the next ones are refused immediately.
+	var queued sync.WaitGroup
+	results := make(chan error, 3)
+	for range 3 {
+		queued.Add(1)
+		go func() {
+			queued.Done()
+			results <- h.acquire(ctx)
+		}()
+	}
+	queued.Wait()
+	deadline := time.Now().Add(5 * time.Second)
+	for len(h.queue) < 3 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond) // waiting for the goroutines to enter the queue (test only)
+	}
+	start := time.Now()
+	for range 10 {
+		if err := h.acquire(ctx); !errors.Is(err, ErrBusy) {
+			t.Fatalf("acquire with a full queue = %v, want ErrBusy", err)
+		}
+	}
+	if time.Since(start) > time.Second {
+		t.Error("refusals at a full queue were not immediate")
+	}
+	// Releasing the slots admits the queued callers, two at a time.
+	h.release()
+	h.release()
+	for range 2 {
+		if err := <-results; err != nil {
+			t.Fatalf("queued acquire = %v", err)
+		}
+	}
+	h.release()
+	if err := <-results; err != nil {
+		t.Fatalf("queued acquire = %v", err)
+	}
+	h.release()
+	h.release()
+}
+
+func TestHasherMaxWaitAndCancellation(t *testing.T) {
+	t.Parallel()
+	h := newHasher(HashLimits{Concurrency: 1, Queue: 4, MaxWait: 50 * time.Millisecond})
+	if err := h.acquire(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer h.release()
+	start := time.Now()
+	if err := h.acquire(context.Background()); !errors.Is(err, ErrBusy) {
+		t.Fatalf("acquire after MaxWait = %v, want ErrBusy", err)
+	}
+	if d := time.Since(start); d < 40*time.Millisecond || d > 2*time.Second {
+		t.Errorf("waited %v, want about 50ms", d)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := h.acquire(ctx); !errors.Is(err, ErrBusy) || !errors.Is(err, context.Canceled) {
+		t.Errorf("acquire with a cancelled context = %v, want ErrBusy wrapping context.Canceled", err)
+	}
+	if len(h.queue) != 0 {
+		t.Errorf("queue holds %d callers after they left", len(h.queue))
+	}
+}
+
+// Many concurrent verifications: the number running at once never exceeds Concurrency.
+func TestHasherConcurrentLoad(t *testing.T) {
+	t.Parallel()
+	limits := HashLimits{Concurrency: 2, Queue: 4, MaxWait: 10 * time.Second}
+	h := newHasher(limits)
+	ctx := context.Background()
+	encoded, err := h.hash(ctx, "synthetic password one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var running, peak, ok, busy atomic.Int64
+	var wg sync.WaitGroup
+	for range 40 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := h.acquire(ctx); err != nil {
+				if errors.Is(err, ErrBusy) {
+					busy.Add(1)
+				}
+				return
+			}
+			n := running.Add(1)
+			for p := peak.Load(); n > p && !peak.CompareAndSwap(p, n); p = peak.Load() {
+			}
+			running.Add(-1)
+			h.release()
+			if _, err := h.verify(ctx, "synthetic password one", encoded); err == nil {
+				ok.Add(1)
+			} else if errors.Is(err, ErrBusy) {
+				busy.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if peak.Load() > int64(limits.Concurrency) {
+		t.Errorf("peak concurrency %d > %d", peak.Load(), limits.Concurrency)
+	}
+	if ok.Load()+busy.Load() == 0 {
+		t.Error("nothing ran")
+	}
+	if len(h.slots) != 0 || len(h.queue) != 0 {
+		t.Errorf("slots %d, queue %d left after the load", len(h.slots), len(h.queue))
+	}
+}
+
+func TestHashLimitsValidate(t *testing.T) {
+	t.Parallel()
+	if err := DefaultHashLimits.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range []HashLimits{{0, 1, time.Second}, {1, -1, time.Second}, {1, 1, 0}, {257, 1, time.Second}} {
+		if l.Validate() == nil {
+			t.Errorf("Validate(%+v) succeeded", l)
+		}
 	}
 }

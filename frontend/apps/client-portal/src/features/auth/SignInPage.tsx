@@ -28,6 +28,10 @@ function failureMessage(error: unknown): string {
         return 'The email address or password is incorrect, or the account is temporarily locked after too many attempts. Try again later.';
       case 'account-not-active':
         return 'Your organization’s account is not active. Contact support.';
+      case 'too-many-sign-in-attempts':
+        return `There have been too many sign-in attempts from your network. Wait ${waitText(error.retryAfterSeconds)} and try again.`;
+      case 'service-busy':
+        return `The service is busy. Wait ${waitText(error.retryAfterSeconds)} and try again.`;
     }
     return 'Sign-in failed. Try again.';
   }
@@ -35,6 +39,14 @@ function failureMessage(error: unknown): string {
     return 'The server could not be reached. Check your connection and try again.';
   }
   return 'Sign-in failed. Try again.';
+}
+
+/** "about N minutes" (or seconds) for a Retry-After delay; "a few minutes" when it is unknown. */
+function waitText(seconds: number | undefined): string {
+  if (seconds === undefined) return 'a few minutes';
+  if (seconds < 60) return seconds === 1 ? '1 second' : `${String(seconds)} seconds`;
+  const minutes = Math.ceil(seconds / 60);
+  return minutes === 1 ? 'about 1 minute' : `about ${String(minutes)} minutes`;
 }
 
 export function SignInPage({ notice }: { notice?: string }) {

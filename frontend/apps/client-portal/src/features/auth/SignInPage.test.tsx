@@ -41,6 +41,40 @@ describe('sign-in page', () => {
     expect(password).toHaveValue('');
   });
 
+  it('explains a sign-in rate limit with the wait from Retry-After, without naming the account', async () => {
+    renderApp('/', (r) =>
+      r.method === 'POST'
+        ? problem(429, 'too-many-sign-in-attempts', {}, { 'Retry-After': '360' })
+        : problem(401, 'unauthenticated'),
+    );
+    const { email, password, submit } = await form();
+    fireEvent.change(email, { target: { value: 'user@example.invalid' } });
+    fireEvent.change(password, { target: { value: 'a password' } });
+    fireEvent.click(submit);
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'There have been too many sign-in attempts from your network. Wait about 6 minutes and try again.',
+    );
+    expect(alert).not.toHaveTextContent('user@example.invalid');
+    expect(password).toHaveValue('');
+  });
+
+  it('explains a busy service (503) with the wait from Retry-After', async () => {
+    renderApp('/', (r) =>
+      r.method === 'POST'
+        ? problem(503, 'service-busy', {}, { 'Retry-After': '2' })
+        : problem(401, 'unauthenticated'),
+    );
+    const { email, password, submit } = await form();
+    fireEvent.change(email, { target: { value: 'user@example.invalid' } });
+    fireEvent.change(password, { target: { value: 'a password' } });
+    fireEvent.click(submit);
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The service is busy. Wait 2 seconds and try again.',
+    );
+    expect(password).toHaveValue('');
+  });
+
   it('explains an inactive organization and a connection failure', async () => {
     let mode: 'inactive' | 'offline' = 'inactive';
     renderApp('/', (r) => {

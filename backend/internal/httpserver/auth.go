@@ -11,9 +11,11 @@ import (
 	"github.com/hruizjr/sms/backend/internal/middleware"
 )
 
-// Authenticator verifies API keys (implemented by apikey.Service).
+// Authenticator verifies API keys and records their use (implemented by apikey.Service).
 type Authenticator interface {
 	Authenticate(ctx context.Context, token string) (apikey.Principal, error)
+	// RecordUse records that the key was used for a request it is authorized for (throttled).
+	RecordUse(ctx context.Context, p apikey.Principal) error
 }
 
 type principalKey struct{}
@@ -28,7 +30,9 @@ func principalFrom(ctx context.Context) (apikey.Principal, bool) {
 // requireAPIKey authenticates every /v1 request with a Bearer API key (contract security scheme
 // api_key, D-143) and checks the permission the operation requires (x-required-permission):
 // messages:send for POST, messages:read for GET. The tenant is taken from the key only; no request
-// field can select it. It runs before parameter binding and body parsing.
+// field can select it. It runs before parameter binding and body parsing. Once the key is
+// authenticated and authorized, its last-used time is recorded (throttled, owner decision G4-6); a
+// failure to record it is logged and does not fail the request, because the time is informational.
 func requireAPIKey(auth Authenticator, logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -60,6 +64,11 @@ func requireAPIKey(auth Authenticator, logger *slog.Logger) func(http.Handler) h
 				writePublicProblem(w, r, http.StatusForbidden, "forbidden", "Permission denied",
 					"This API key does not have the "+string(scope)+" permission.", nil)
 				return
+			}
+			if err := auth.RecordUse(r.Context(), p); err != nil {
+				logger.WarnContext(r.Context(), "api key last-used time not recorded",
+					slog.String("request_id", middleware.RequestIDFromContext(r.Context())),
+					slog.String("tenant_id", p.TenantID.String()), slog.String("error", err.Error()))
 			}
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, p)))
 		})

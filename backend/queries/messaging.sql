@@ -2,7 +2,8 @@
 -- tenant's transaction-local context (database.DB.InTenantTx) and also filters by tenant_id
 -- explicitly; row-level security is the second line of defence. Times come from the database clock.
 
--- name: ApproveSenderID :exec
+-- name: ApproveSenderID :execrows
+-- 1 row for a new approval, 0 when the sender ID was already approved.
 INSERT INTO sender_ids (tenant_id, sender_id)
 VALUES (@tenant_id, @sender_id)
 ON CONFLICT (tenant_id, sender_id) DO NOTHING;

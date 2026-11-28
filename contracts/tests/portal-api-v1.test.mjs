@@ -1,5 +1,5 @@
 // Contract tests for contracts/openapi/portal-api-v1.yaml (Phase 4 Group 3; owner decisions G3-1 to
-// G3-6). Redocly checks validity and style; these tests check the security rules of the portal API
+// G3-6; Group 6: audit log, API key last use, sign-in rate limit). Redocly checks validity and style; these tests check the security rules of the portal API
 // and that it stays consistent with the public API. They read the bundled specifications, so run
 // `pnpm run bundle` first (`pnpm run check` does both). Standard library only (node:test).
 
@@ -88,7 +88,9 @@ test('every operation except the session declares the permission it requires', (
     if (o.path === '/portal/v1/session') continue;
     const want = o.path.startsWith('/portal/v1/api-keys')
       ? 'api_keys:manage'
-      : o.method === 'get'
+      : o.path.startsWith('/portal/v1/audit-events')
+        ? 'audit_log:read'
+        : o.method === 'get'
         ? 'messages:read'
         : 'messages:send';
     assert.equal(o.op['x-required-permission'], want, o.id);
@@ -164,4 +166,68 @@ test('responses never contain the message text or provider identifiers', () => {
       assert.ok(!text.includes(forbidden), `${name} must not contain ${forbidden}`);
     }
   }
+});
+
+test('the audit log is read-only and never contains secrets, credentials or message text', () => {
+  const item = spec.paths['/portal/v1/audit-events'];
+  assert.deepEqual(Object.keys(item).filter((k) => METHODS.includes(k)), ['get']);
+  assert.equal(item.get['x-required-permission'], 'audit_log:read');
+  assert.ok(item.get.responses['403']);
+  const names = ['AuditEvent', 'AuditParty', 'AuditDetails'].flatMap((name) =>
+    Object.keys(spec.components.schemas[name].properties),
+  );
+  for (const name of names) {
+    assert.doesNotMatch(name, /password|secret|hash|token|authorization|cookie|^key$|body|text|tenant/i, `audit field ${name}`);
+  }
+  assert.equal(spec.components.schemas.AuditDetails.additionalProperties, false);
+  // Only owners hold audit_log:read, as for API key management.
+  assert.ok(spec.components.schemas.Permission.enum.includes('audit_log:read'));
+});
+
+test('sign-in declares the per-source rate limit with Retry-After', () => {
+  const tooMany = resolve(spec.paths['/portal/v1/session'].post.responses['429']);
+  assert.ok(tooMany, 'POST /portal/v1/session must declare 429');
+  assert.ok(resolve(tooMany.headers['Retry-After']), '429 must declare Retry-After');
+  assert.match(tooMany.content['application/problem+json'].example.type, /too-many-sign-in-attempts$/);
+});
+
+test('an account lock is recorded with the outcome enforced, not success', () => {
+  const outcome = spec.components.schemas.AuditOutcome;
+  assert.deepEqual(outcome.enum, ['success', 'failure', 'denied', 'enforced']);
+  assert.match(outcome.description, /`enforced`[^]*`portal\.account_locked`/);
+});
+
+test('the audit log does not claim tamper-proof storage', () => {
+  const text = JSON.stringify(spec);
+  assert.doesNotMatch(text, /cannot be changed or deleted/i);
+  assert.doesNotMatch(text, /(?<!not )tamper-proof/i);
+  assert.match(spec.info.description, /not tamper-proof storage: a database\s+superuser can still change or remove\s+records/);
+});
+
+test('password checks declare 503 service-busy with Retry-After', () => {
+  for (const [path, method] of [['/portal/v1/session', 'post'], ['/portal/v1/api-keys', 'post']]) {
+    const busy = resolve(spec.paths[path][method].responses['503']);
+    assert.ok(busy, `${method.toUpperCase()} ${path} must declare 503`);
+    assert.ok(resolve(busy.headers['Retry-After']), '503 must declare Retry-After');
+    assert.match(busy.content['application/problem+json'].example.type, /service-busy$/);
+  }
+});
+
+test('refused requests carry their deduplication interval; administration actions are listed', () => {
+  const details = spec.components.schemas.AuditDetails.properties;
+  assert.equal(details.dedup_interval_seconds.type, 'integer');
+  for (const action of ['portal_user.create', 'portal_user.unlock', 'portal_user.sessions_revoke', 'sender_id.approve']) {
+    assert.ok(spec.components.schemas.AuditAction.enum.includes(action), action);
+  }
+  assert.equal(details.sender_id.type, 'string');
+  assert.equal(details.sender_id.maxLength, 32);
+});
+
+test('API keys report when they were last used, nullable', () => {
+  const key = spec.components.schemas.ApiKey;
+  assert.ok(key.required.includes('last_used_at'));
+  assert.deepEqual(
+    key.properties.last_used_at.oneOf.map((s) => s.type),
+    ['string', 'null'],
+  );
 });

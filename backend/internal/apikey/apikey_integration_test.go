@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hruizjr/sms/backend/internal/audit"
 	"github.com/hruizjr/sms/backend/internal/database"
 	"github.com/hruizjr/sms/backend/internal/database/dbtest"
 	"github.com/hruizjr/sms/backend/internal/tenancy"
@@ -56,7 +57,7 @@ func TestIntegrationCreateAndAuthenticate(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	tenantID := f.activeTenant(t, "Key Co")
-	key, token, err := f.svc.Create(f.ctx, tenantID, "ci key", []Scope{ScopeMessagesSend})
+	key, token, err := f.svc.Create(f.ctx, tenantID, "ci key", []Scope{ScopeMessagesSend}, audit.System, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +94,7 @@ func TestIntegrationAuthenticationRefusals(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	a, b := f.activeTenant(t, "Tenant A"), f.activeTenant(t, "Tenant B")
-	key, token, err := f.svc.Create(f.ctx, a, "a key", []Scope{ScopeMessagesSend, ScopeMessagesRead})
+	key, token, err := f.svc.Create(f.ctx, a, "a key", []Scope{ScopeMessagesSend, ScopeMessagesRead}, audit.System, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,22 +118,22 @@ func TestIntegrationAuthenticationRefusals(t *testing.T) {
 	}
 
 	// Revocation takes effect immediately and only once.
-	if _, err := f.svc.Revoke(f.ctx, a, key.ID); err != nil {
+	if _, err := f.svc.Revoke(f.ctx, a, key.ID, audit.System, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.svc.Authenticate(f.ctx, token); !errors.Is(err, ErrUnauthenticated) {
 		t.Errorf("revoked key: %v, want ErrUnauthenticated", err)
 	}
-	if _, err := f.svc.Revoke(f.ctx, a, key.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := f.svc.Revoke(f.ctx, a, key.ID, audit.System, ""); !errors.Is(err, ErrNotFound) {
 		t.Errorf("second revocation: %v, want ErrNotFound", err)
 	}
 	// Another tenant cannot revoke or list the key.
-	_, tokenA2, err := f.svc.Create(f.ctx, a, "a key 2", []Scope{ScopeMessagesRead})
+	_, tokenA2, err := f.svc.Create(f.ctx, a, "a key 2", []Scope{ScopeMessagesRead}, audit.System, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	p, _ := f.svc.Authenticate(f.ctx, tokenA2)
-	if _, err := f.svc.Revoke(f.ctx, b, p.KeyID); !errors.Is(err, ErrNotFound) {
+	if _, err := f.svc.Revoke(f.ctx, b, p.KeyID, audit.System, ""); !errors.Is(err, ErrNotFound) {
 		t.Errorf("tenant B revoking tenant A's key: %v, want ErrNotFound", err)
 	}
 	if keys, err := f.svc.List(f.ctx, b); err != nil || len(keys) != 0 {
@@ -153,11 +154,11 @@ func TestIntegrationCreateValidatesScopes(t *testing.T) {
 	f := newFixture(t)
 	tenantID := f.activeTenant(t, "Scope Co")
 	for _, scopes := range [][]Scope{nil, {"messages:delete"}, {ScopeMessagesSend, "admin"}} {
-		if _, _, err := f.svc.Create(f.ctx, tenantID, "k", scopes); !errors.Is(err, ErrInvalidScopes) {
+		if _, _, err := f.svc.Create(f.ctx, tenantID, "k", scopes, audit.System, ""); !errors.Is(err, ErrInvalidScopes) {
 			t.Errorf("scopes %v: %v, want ErrInvalidScopes", scopes, err)
 		}
 	}
-	k, _, err := f.svc.Create(f.ctx, tenantID, "k", []Scope{ScopeMessagesRead, ScopeMessagesRead})
+	k, _, err := f.svc.Create(f.ctx, tenantID, "k", []Scope{ScopeMessagesRead, ScopeMessagesRead}, audit.System, "")
 	if err != nil || len(k.Scopes) != 1 {
 		t.Errorf("duplicate scopes: %+v, %v; want one scope", k.Scopes, err)
 	}
@@ -168,11 +169,11 @@ func TestIntegrationCreateValidatesLabel(t *testing.T) {
 	f := newFixture(t)
 	tenantID := f.activeTenant(t, "Label Co")
 	for _, label := range []string{"", "   ", strings.Repeat("x", MaxLabelCharacters+1), "tab\there", "line\nbreak", "\xff"} {
-		if _, _, err := f.svc.Create(f.ctx, tenantID, label, []Scope{ScopeMessagesSend}); !errors.Is(err, ErrInvalidLabel) {
+		if _, _, err := f.svc.Create(f.ctx, tenantID, label, []Scope{ScopeMessagesSend}, audit.System, ""); !errors.Is(err, ErrInvalidLabel) {
 			t.Errorf("label %q: %v, want ErrInvalidLabel", label, err)
 		}
 	}
-	k, _, err := f.svc.Create(f.ctx, tenantID, "  "+strings.Repeat("ñ", MaxLabelCharacters)+" ", []Scope{ScopeMessagesSend})
+	k, _, err := f.svc.Create(f.ctx, tenantID, "  "+strings.Repeat("ñ", MaxLabelCharacters)+" ", []Scope{ScopeMessagesSend}, audit.System, "")
 	if err != nil || k.Label != strings.Repeat("ñ", MaxLabelCharacters) {
 		t.Errorf("100-character label: %q, %v", k.Label, err)
 	}
